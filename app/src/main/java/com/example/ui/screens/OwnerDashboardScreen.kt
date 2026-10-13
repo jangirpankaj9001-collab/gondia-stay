@@ -19,10 +19,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HomeWork
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -36,8 +40,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalContext
+import com.example.util.ContactHelper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -76,6 +83,9 @@ fun OwnerDashboardScreen(
 
     var showProfileSwitcher by remember { mutableStateOf(false) }
     var propertyToDelete by remember { mutableStateOf<PropertyListing?>(null) }
+    val context = LocalContext.current
+    var showEditPhoneDialog by remember { mutableStateOf(false) }
+    var editingPhoneInput by remember { mutableStateOf("") }
 
     val basicCount = ownerProperties.count { !it.isFeatured }
     val featuredCount = ownerProperties.count { it.isFeatured }
@@ -205,6 +215,127 @@ fun OwnerDashboardScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Owner Contact & WhatsApp Settings Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("owner_contact_management_card"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF25D366).copy(alpha = 0.15f),
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Chat,
+                                            contentDescription = null,
+                                            tint = Color(0xFF25D366),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "WhatsApp & Calling Number",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = ContactHelper.formatDisplayPhone(currentOwnerPhone),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = BluePrimary
+                                    )
+                                }
+                            }
+
+                            // Edit Phone Button
+                            OutlinedButton(
+                                onClick = {
+                                    editingPhoneInput = currentOwnerPhone
+                                    showEditPhoneDialog = true
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("edit_owner_phone_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = AccentGreen.copy(alpha = 0.12f),
+                                contentColor = AccentGreen
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = AccentGreen,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "WhatsApp Chat Enabled",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Quick test WhatsApp button
+                            Button(
+                                onClick = {
+                                    val testMsg = "Hello $currentOwnerName, testing WhatsApp chat connection from Gondia Stay Owner Dashboard."
+                                    ContactHelper.openWhatsApp(context, currentOwnerPhone, testMsg)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("test_owner_whatsapp_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Chat,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Test Link", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 
@@ -429,6 +560,64 @@ fun OwnerDashboardScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { propertyToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Edit Owner Contact & WhatsApp Phone Dialog
+    if (showEditPhoneDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditPhoneDialog = false },
+            title = { Text("Update Owner Contact Number") },
+            text = {
+                Column {
+                    Text(
+                        text = "Enter your 10-digit mobile number for calls & WhatsApp messaging from prospective tenants in Gondia:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editingPhoneInput,
+                        onValueChange = { input ->
+                            editingPhoneInput = input.filter { it.isDigit() || it == '+' || it == ' ' || it == '-' }
+                        },
+                        label = { Text("Mobile Number (WhatsApp & Call)") },
+                        placeholder = { Text("e.g. 9823012345 / +91 9823012345") },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Phone, contentDescription = null, tint = BluePrimary)
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("edit_phone_input_field")
+                    )
+                    if (editingPhoneInput.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Formatted: ${ContactHelper.formatDisplayPhone(editingPhoneInput)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = BluePrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editingPhoneInput.isNotBlank()) {
+                            viewModel.updateCurrentOwnerPhone(editingPhoneInput)
+                        }
+                        showEditPhoneDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BluePrimary)
+                ) {
+                    Text("Save & Sync Listings")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showEditPhoneDialog = false }) {
                     Text("Cancel")
                 }
             }

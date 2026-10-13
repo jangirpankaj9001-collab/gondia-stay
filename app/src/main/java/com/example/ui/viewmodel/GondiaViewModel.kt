@@ -214,6 +214,21 @@ class GondiaViewModel(application: Application) : AndroidViewModel(application) 
         _userMessage.value = "Switched to owner: $name"
     }
 
+    // Update Owner Contact / WhatsApp Phone number across listings
+    fun updateCurrentOwnerPhone(newPhone: String) {
+        val trimmed = newPhone.trim()
+        if (trimmed.isNotBlank()) {
+            _currentOwnerPhone.value = trimmed
+            viewModelScope.launch {
+                val myProps = allProperties.value.filter { it.ownerId == _currentOwnerId.value }
+                myProps.forEach { prop ->
+                    repository.updateProperty(prop.copy(ownerPhone = trimmed))
+                }
+                _userMessage.value = "Owner contact & WhatsApp number updated across your listings!"
+            }
+        }
+    }
+
     // Owner actions
     fun saveProperty(property: PropertyListing, isEdit: Boolean) {
         // Enforce owner check: if edit, requester must own it!

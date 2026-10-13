@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.ContactMethod
 import com.example.ui.theme.AccentGreen
@@ -213,7 +214,7 @@ fun ContactRevealDialog(
                     )
 
                     Text(
-                        text = ownerPhone,
+                        text = com.example.util.ContactHelper.formatDisplayPhone(ownerPhone),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.ExtraBold,
                         color = BluePrimary
@@ -221,11 +222,37 @@ fun ContactRevealDialog(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
-                        text = "Preferred: ${preferredMethod.label}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF25D366).copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Chat,
+                                    contentDescription = null,
+                                    tint = Color(0xFF25D366),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "WhatsApp Active",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF16A34A)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Pref: ${preferredMethod.label}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -233,31 +260,11 @@ fun ContactRevealDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Call Button
+                    // WhatsApp Button (Prominent)
                     Button(
                         onClick = {
-                            dialPhone(context, ownerPhone)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BluePrimary),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("call_owner_button")
-                    ) {
-                        Icon(imageVector = Icons.Default.Call, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Call Now ($ownerPhone)", fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // WhatsApp Button
-                    Button(
-                        onClick = {
-                            val cleanNumber = ownerPhone.replace("+", "").replace(" ", "").replace("-", "")
-                            val msg = "Hello $ownerName, I saw your listing for '$itemTitle' on Gondia Stay app. Is it currently available?"
-                            openWhatsApp(context, cleanNumber, msg)
+                            val msg = "Hello $ownerName, I saw your listing for '$itemTitle' on Gondia Stay app. Is it currently available for rent?"
+                            com.example.util.ContactHelper.openWhatsApp(context, ownerPhone, msg)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                         shape = RoundedCornerShape(12.dp),
@@ -273,6 +280,25 @@ fun ContactRevealDialog(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    // Call Button
+                    Button(
+                        onClick = {
+                            com.example.util.ContactHelper.dialPhone(context, ownerPhone)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BluePrimary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("call_owner_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Call, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Call Now (${com.example.util.ContactHelper.formatDisplayPhone(ownerPhone)})", fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     OutlinedButton(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(12.dp),
@@ -283,26 +309,5 @@ fun ContactRevealDialog(
                 }
             }
         }
-    }
-}
-
-private fun dialPhone(context: Context, phoneNumber: String) {
-    try {
-        val intent = Intent(Intent.ACTION_DIAL).apply {
-            data = Uri.parse("tel:$phoneNumber")
-        }
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Unable to launch dialer: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun openWhatsApp(context: Context, cleanPhone: String, message: String) {
-    try {
-        val url = "https://wa.me/$cleanPhone?text=${Uri.encode(message)}"
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Unable to open WhatsApp: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
     }
 }
