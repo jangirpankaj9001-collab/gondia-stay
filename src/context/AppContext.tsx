@@ -5,7 +5,8 @@ import {
   PropertyType, 
   SortOption, 
   FilterCriteria, 
-  OWNER_PROFILES 
+  OWNER_PROFILES,
+  OwnerProfile
 } from '../types';
 import { INITIAL_PROPERTIES, INITIAL_TIFFINS } from '../data/initialData';
 
@@ -13,7 +14,7 @@ interface AppContextType {
   properties: PropertyListing[];
   tiffinServices: TiffinService[];
   favorites: string[];
-  currentOwner: typeof OWNER_PROFILES[0];
+  currentOwner: OwnerProfile;
   searchQuery: string;
   selectedLocality: string;
   selectedType: PropertyType;
@@ -79,10 +80,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [currentOwner, setCurrentOwner] = useState(() => {
+  const [currentOwner, setCurrentOwner] = useState<OwnerProfile>(() => {
     try {
       const saved = localStorage.getItem('gondia_stay_current_owner');
-      return saved ? JSON.parse(saved) : OWNER_PROFILES[0];
+      return saved ? (JSON.parse(saved) as OwnerProfile) : OWNER_PROFILES[0];
     } catch {
       return OWNER_PROFILES[0];
     }
@@ -141,7 +142,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const trimmed = newPhone.trim();
     if (!trimmed) return;
     
-    setCurrentOwner(prev => ({ ...prev, phone: trimmed }));
+    setCurrentOwner((prev: OwnerProfile) => ({ ...prev, phone: trimmed }));
     
     // Update all properties owned by this owner
     setProperties(prev => prev.map(p => {

@@ -113,3 +113,5 @@ export const OWNER_PROFILES = [
   { id: "owner_patel", name: "Prakash Patel", phone: "+919890123456" },
   { id: "owner_meshram", name: "Anil Meshram", phone: "+919403889900" }
 ];
+
+export type OwnerProfile = typeof OWNER_PROFILES[number];
