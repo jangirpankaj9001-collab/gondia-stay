@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   PropertyListing, 
   TiffinService, 
@@ -8,7 +8,17 @@ import {
   OWNER_PROFILES,
   OwnerProfile
 } from '../types';
-import { INITIAL_PROPERTIES, INITIAL_TIFFINS } from '../data/initialData';
+import { INITIAL_TIFFINS } from '../data/initialData';
+import { 
+  isFirebaseConfigured, 
+  ADMIN_PASSCODE 
+} from '../firebase/config';
+import { 
+  subscribeToFirestoreProperties, 
+  savePropertyToFirestore, 
+  moderatePropertyInFirestore, 
+  deletePropertyFromFirestore
+} from '../firebase/propertiesService';
 
 interface AppContextType {
   properties: PropertyListing[];
@@ -24,6 +34,13 @@ interface AppContextType {
   activeTab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail';
   toastMessage: string | null;
 
+  // Firebase Firestore Status & Moderation
+  isFirestoreLoading: boolean;
+  firestoreError: string | null;
+  isFirebaseConnected: boolean;
+  isAdminAuthenticated: boolean;
+  isFirebaseModalOpen: boolean;
+
   setSearchQuery: (query: string) => void;
   setSelectedLocality: (locality: string) => void;
   setSelectedType: (type: PropertyType) => void;
@@ -32,13 +49,16 @@ interface AppContextType {
   toggleFavorite: (propertyId: string) => void;
   switchOwner: (ownerId: string) => void;
   updateOwnerPhone: (newPhone: string) => void;
-  saveProperty: (property: PropertyListing, isEdit: boolean) => void;
-  deleteProperty: (propertyId: string) => void;
+  saveProperty: (property: PropertyListing, isEdit: boolean) => Promise<boolean>;
+  deleteProperty: (propertyId: string) => Promise<void>;
   toggleFeatured: (propertyId: string) => void;
-  approveProperty: (propertyId: string, approve: boolean) => void;
+  approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
   navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
   showToast: (msg: string) => void;
   resetFilters: () => void;
+  verifyAdminPasscode: (passcode: string) => boolean;
+  logoutAdmin: () => void;
+  setIsFirebaseModalOpen: (open: boolean) => void;
 }
 
 const defaultFilterCriteria: FilterCriteria = {
@@ -53,12 +73,19 @@ const defaultFilterCriteria: FilterCriteria = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [properties, setProperties] = useState<PropertyListing[]>(() => {
+  // Properties are exclusively loaded from Firestore (no demo properties, no localStorage fallback)
+  const [properties, setProperties] = useState<PropertyListing[]>([]);
+  const [isFirestoreLoading, setIsFirestoreLoading] = useState<boolean>(true);
+  const [firestoreError, setFirestoreError] = useState<string | null>(null);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured());
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState<boolean>(false);
+
+  // Admin authentication state
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('gondia_stay_properties');
-      return saved ? JSON.parse(saved) : INITIAL_PROPERTIES;
+      return localStorage.getItem('gondia_stay_is_admin') === 'true';
     } catch {
-      return INITIAL_PROPERTIES;
+      return false;
     }
   });
 
@@ -98,9 +125,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail'>('explore');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  }, []);
+
+  // Set up real-time Cloud Firestore subscription on the 'properties' collection
+  // Requirement 4: Real-time listener ensures admin dashboard and public users update automatically
   useEffect(() => {
-    localStorage.setItem('gondia_stay_properties', JSON.stringify(properties));
-  }, [properties]);
+    const configured = isFirebaseConfigured();
+    setIsFirebaseConnected(configured);
+
+    if (!configured) {
+      setIsFirestoreLoading(false);
+      setProperties([]);
+      return;
+    }
+
+    setIsFirestoreLoading(true);
+    setFirestoreError(null);
+
+    const unsubscribe = subscribeToFirestoreProperties(
+      (remoteProperties) => {
+        setIsFirestoreLoading(false);
+        setFirestoreError(null);
+        setProperties(remoteProperties);
+      },
+      (error) => {
+        setIsFirestoreLoading(false);
+        setFirestoreError(error.message || 'Error connecting to Cloud Firestore');
+        showToast('Firestore error: ' + (error.message || 'Check database permissions'));
+      }
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [showToast]);
 
   useEffect(() => {
     localStorage.setItem('gondia_stay_tiffins', JSON.stringify(tiffinServices));
@@ -113,13 +176,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('gondia_stay_current_owner', JSON.stringify(currentOwner));
   }, [currentOwner]);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3200);
-  };
 
   const toggleFavorite = (propertyId: string) => {
     setFavorites(prev => {
@@ -138,50 +194,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateOwnerPhone = (newPhone: string) => {
+  const updateOwnerPhone = async (newPhone: string) => {
     const trimmed = newPhone.trim();
     if (!trimmed) return;
     
     setCurrentOwner((prev: OwnerProfile) => ({ ...prev, phone: trimmed }));
     
-    // Update all properties owned by this owner
-    setProperties(prev => prev.map(p => {
-      if (p.ownerId === currentOwner.id) {
-        return { ...p, ownerPhone: trimmed };
+    if (isFirebaseConfigured()) {
+      try {
+        const myProps = properties.filter(p => p.ownerId === currentOwner.id);
+        for (const prop of myProps) {
+          await savePropertyToFirestore({ ...prop, ownerPhone: trimmed }, true);
+        }
+      } catch (err) {
+        console.warn('Failed to update phone on Firestore:', err);
       }
-      return p;
-    }));
+    }
 
-    showToast("Contact & WhatsApp number updated across all your listings!");
+    showToast("Contact number updated across your listings!");
   };
 
-  const saveProperty = (property: PropertyListing, isEdit: boolean) => {
-    if (isEdit) {
-      setProperties(prev => prev.map(p => p.id === property.id ? property : p));
-      if (selectedProperty?.id === property.id) {
-        setSelectedProperty(property);
+  /**
+   * Saves a property listing directly to Cloud Firestore.
+   * Requirement 1 & 2: Connect the owner listing submission form to Cloud Firestore and save immediately.
+   * Requirement 3: Set every new listing's status to "pending".
+   */
+  const saveProperty = async (property: PropertyListing, isEdit: boolean): Promise<boolean> => {
+    if (!isFirebaseConfigured()) {
+      const err = new Error('Firebase Cloud Firestore is not configured. Please add your Firebase credentials in Settings.');
+      showToast(err.message);
+      throw err;
+    }
+
+    try {
+      await savePropertyToFirestore(property, isEdit);
+      if (isEdit) {
+        showToast("Listing updated in Cloud Firestore!");
+      } else {
+        showToast("Listing submitted to Firestore! Status: pending approval.");
       }
-      showToast("Listing updated successfully!");
-    } else {
-      // New listing gets PENDING status for moderation/approval workflow
-      const newListing: PropertyListing = {
-        ...property,
-        id: `prop_${Date.now()}`,
-        status: 'PENDING',
-        createdAt: Date.now()
-      };
-      setProperties(prev => [newListing, ...prev]);
-      showToast("New listing submitted! Status: Pending Approval.");
+      return true;
+    } catch (error: any) {
+      console.error('Error saving property to Firestore:', error);
+      showToast('Error saving: ' + (error.message || 'Check database connection'));
+      throw error;
     }
   };
 
-  const deleteProperty = (propertyId: string) => {
-    setProperties(prev => prev.filter(p => p.id !== propertyId));
+  /**
+   * Deletes a property listing directly from Cloud Firestore.
+   */
+  const deleteProperty = async (propertyId: string): Promise<void> => {
+    if (!isFirebaseConfigured()) {
+      showToast("Firebase is not connected.");
+      return;
+    }
+
+    try {
+      await deletePropertyFromFirestore(propertyId);
+      showToast("Listing removed from Cloud Firestore.");
+    } catch (err: any) {
+      showToast("Error deleting listing: " + (err.message || ''));
+      throw err;
+    }
+
     if (selectedProperty?.id === propertyId) {
       setSelectedProperty(null);
       setActiveTab('explore');
     }
-    showToast("Listing deleted.");
   };
 
   const toggleFeatured = (propertyId: string) => {
@@ -195,15 +275,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const approveProperty = (propertyId: string, approve: boolean) => {
-    setProperties(prev => prev.map(p => {
-      if (p.id === propertyId) {
-        const newStatus = approve ? 'APPROVED' : 'REJECTED';
-        showToast(approve ? "Listing approved and live for all tenants!" : "Listing rejected.");
-        return { ...p, status: newStatus };
-      }
-      return p;
-    }));
+  /**
+   * Admin Moderation: Approve or reject a listing in Cloud Firestore.
+   * Requirement 5: Let admin approve or reject listings from the admin dashboard.
+   */
+  const approveProperty = async (propertyId: string, approve: boolean): Promise<boolean> => {
+    const targetProp = properties.find(p => p.id === propertyId);
+    if (!targetProp) return false;
+
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to approve listings.");
+      return false;
+    }
+
+    // Never allow users to approve their own listings
+    if (targetProp.ownerId === currentOwner.id) {
+      showToast("Security Violation: You cannot approve your own listing.");
+      return false;
+    }
+
+    if (!isFirebaseConfigured()) {
+      showToast("Firebase is not connected.");
+      return false;
+    }
+
+    try {
+      await moderatePropertyInFirestore(
+        propertyId, 
+        approve, 
+        'admin_moderator', 
+        targetProp.ownerId
+      );
+      showToast(approve ? "Listing approved in Cloud Firestore! Live for all visitors." : "Listing rejected.");
+      return true;
+    } catch (err: any) {
+      console.error('Error moderating listing in Firestore:', err);
+      showToast("Moderation error: " + (err.message || ''));
+      return false;
+    }
+  };
+
+  const verifyAdminPasscode = (passcode: string): boolean => {
+    if (passcode.trim() === ADMIN_PASSCODE.trim()) {
+      setIsAdminAuthenticated(true);
+      try {
+        localStorage.setItem('gondia_stay_is_admin', 'true');
+      } catch {}
+      showToast("Admin access unlocked!");
+      return true;
+    }
+    showToast("Incorrect Admin Passcode.");
+    return false;
+  };
+
+  const logoutAdmin = () => {
+    setIsAdminAuthenticated(false);
+    try {
+      localStorage.removeItem('gondia_stay_is_admin');
+    } catch {}
+    showToast("Logged out of Admin Mode.");
   };
 
   const navigateTo = (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => {
@@ -237,6 +367,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedProperty,
       activeTab,
       toastMessage,
+      isFirestoreLoading,
+      firestoreError,
+      isFirebaseConnected,
+      isAdminAuthenticated,
+      isFirebaseModalOpen,
       setSearchQuery,
       setSelectedLocality,
       setSelectedType,
@@ -251,7 +386,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       approveProperty,
       navigateTo,
       showToast,
-      resetFilters
+      resetFilters,
+      verifyAdminPasscode,
+      logoutAdmin,
+      setIsFirebaseModalOpen
     }}>
       {children}
     </AppContext.Provider>

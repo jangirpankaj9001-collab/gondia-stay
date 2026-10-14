@@ -10,7 +10,8 @@ import {
   Sparkles,
   PhoneCall,
   Menu,
-  X
+  X,
+  Database
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { OWNER_PROFILES } from '../types';
@@ -23,7 +24,10 @@ export const Header: React.FC = () => {
     currentOwner, 
     switchOwner, 
     favorites,
-    properties 
+    properties,
+    isFirebaseConnected,
+    isFirestoreLoading,
+    setIsFirebaseModalOpen
   } = useApp();
 
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
@@ -136,8 +140,32 @@ export const Header: React.FC = () => {
             </button>
           </nav>
 
-          {/* Right Action: Owner Profile Switcher dropdown */}
+          {/* Right Action: Firebase Sync & Owner Profile Switcher dropdown */}
           <div className="flex items-center gap-2">
+            
+            {/* Cloud Firestore Status Button */}
+            <button
+              onClick={() => setIsFirebaseModalOpen(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                isFirebaseConnected 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                  : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 animate-pulse'
+              }`}
+              title="Cloud Database & Multi-Device Sync Settings"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {isFirestoreLoading 
+                  ? 'Syncing...' 
+                  : isFirebaseConnected 
+                    ? 'Cloud Sync' 
+                    : 'Connect DB'}
+              </span>
+              <span className={`w-2 h-2 rounded-full ${
+                isFirebaseConnected ? 'bg-emerald-500' : 'bg-amber-500'
+              }`} />
+            </button>
+
             <div className="relative">
               <button
                 onClick={() => setShowOwnerMenu(!showOwnerMenu)}

@@ -14,7 +14,14 @@ export type FurnishingStatus =
 export type ListingStatus = 
   | 'APPROVED'
   | 'PENDING'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'approved'
+  | 'pending'
+  | 'rejected';
+
+export const isApproved = (status?: string): boolean => (status || '').toLowerCase() === 'approved';
+export const isPending = (status?: string): boolean => (status || '').toLowerCase() === 'pending';
+export const isRejected = (status?: string): boolean => (status || '').toLowerCase() === 'rejected';
 
 export type ContactMethod = 
   | 'PHONE'
