@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, initializeFirestore, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 export interface FirebaseConfigParams {
   apiKey?: string;
@@ -70,6 +71,7 @@ export const resetFirebaseWebConfig = (): void => {
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
+let storage: FirebaseStorage | null = null;
 
 const config = getActiveFirebaseConfig();
 
@@ -84,6 +86,16 @@ if (config && config.apiKey && config.projectId) {
       db = getFirestore(app);
     }
     auth = getAuth(app);
+    try {
+      const bucketName = config.storageBucket || (config.projectId ? `${config.projectId}.firebasestorage.app` : undefined);
+      storage = bucketName ? getStorage(app, `gs://${bucketName}`) : getStorage(app);
+    } catch (storageErr) {
+      try {
+        storage = getStorage(app);
+      } catch (err2) {
+        console.warn('[GondiaStay] Firebase Storage init warning:', err2);
+      }
+    }
     console.log('[GondiaStay] Connected to Firebase Project:', config.projectId);
   } catch (error) {
     console.error('[GondiaStay] Firebase initialization error:', error);
@@ -92,7 +104,8 @@ if (config && config.apiKey && config.projectId) {
   console.info('[GondiaStay] Firebase configuration pending. App will prompt to connect.');
 }
 
-export { app, db, auth };
+export { app, db, auth, storage };
 export const isFirebaseConfigured = (): boolean => db !== null;
+export const isStorageConfigured = (): boolean => storage !== null;
 export const getActiveProjectId = (): string => config?.projectId || '';
 
