@@ -1,17 +1,29 @@
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage, isStorageConfigured } from './config';
+import { 
+  compressAndResizeImage, 
+  formatBytes, 
+  getFileFingerprint,
+  OptimizedImageResult 
+} from '../utils/imageOptimizer';
 
 export interface UploadProgressInfo {
   fileName: string;
-  percent: number;
-  completed: number;
-  total: number;
+  percent: number;        // Overall progress percentage (0 - 100)
+  completed: number;      // Number of completed files
+  total: number;          // Total number of files
+  bytesTransferred?: number;
+  totalBytes?: number;
+  phase?: 'optimizing' | 'uploading' | 'complete';
 }
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB per photo
+const MAX_ORIGINAL_FILE_SIZE_BYTES = 25 * 1024 * 1024; // Up to 25 MB before compression
+
+// In-memory cache of uploaded photo URLs keyed by file fingerprint to prevent duplicate uploads
+const uploadedUrlCache = new Map<string, string>();
 
 /**
- * Validates that the selected file is an image and is within acceptable size limits.
+ * Validates that the selected file is an image and is within acceptable initial limits.
  */
 export const validateImageFile = (file: File): { valid: boolean; error?: string } => {
   if (!file) {
@@ -26,12 +38,12 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
     };
   }
 
-  // Size check
-  if (file.size > MAX_FILE_SIZE_BYTES) {
+  // Initial raw size check before compression
+  if (file.size > MAX_ORIGINAL_FILE_SIZE_BYTES) {
     const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
     return {
       valid: false,
-      error: `"${file.name}" is too large (${sizeInMb} MB). Maximum allowed size per photo is 10 MB.`
+      error: `"${file.name}" is too large (${sizeInMb} MB). Maximum allowed size before optimization is 25 MB.`
     };
   }
 
@@ -39,7 +51,9 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
 };
 
 /**
- * Uploads a single property photo to Firebase Storage and returns its public HTTPS download URL.
+ * Uploads a single property photo to Firebase Storage.
+ * Automatically compresses and resizes the photo to target 200–400 KB before upload if needed.
+ * Prevents duplicate uploads by checking recent fingerprint cache.
  */
 export const uploadPropertyPhoto = async (
   file: File,
@@ -52,26 +66,54 @@ export const uploadPropertyPhoto = async (
 
   if (!storage || !isStorageConfigured()) {
     throw new Error(
-      'Firebase Storage is not initialized. Please verify your Firebase project settings.'
+      'Firebase Storage is not initialized. Please verify your Firebase project configuration.'
     );
   }
 
+  // Check duplicate upload cache first
+  const fingerprint = getFileFingerprint(file);
+  const cachedUrl = uploadedUrlCache.get(fingerprint);
+  if (cachedUrl) {
+    if (onProgress) onProgress(100);
+    return cachedUrl;
+  }
+
+  // Compress & resize photo to target 200–400 KB if over 400KB or if not yet JPEG
+  let uploadableFile = file;
+  if (file.size > 400 * 1024 || file.type !== 'image/jpeg') {
+    try {
+      const optimized = await compressAndResizeImage(file, {
+        maxDimension: 1600,
+        targetMaxBytes: 400 * 1024,
+        targetMinBytes: 200 * 1024,
+        initialQuality: 0.82,
+        minQuality: 0.65
+      });
+      uploadableFile = optimized.file;
+    } catch (compressErr) {
+      console.warn('Image compression fallback to original:', compressErr);
+      uploadableFile = file;
+    }
+  }
+
   // Sanitize file name and create a unique storage path
-  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const sanitizedName = uploadableFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const storagePath = `property_photos/${uniqueId}_${sanitizedName}`;
   const fileRef = ref(storage, storagePath);
 
   const metadata = {
-    contentType: file.type || 'image/jpeg',
+    contentType: uploadableFile.type || 'image/jpeg',
     customMetadata: {
-      source: 'GondiaStay Owner Submission',
-      uploadedAt: new Date().toISOString()
+      source: 'GondiaStay Optimized Upload',
+      originalName: file.name,
+      uploadedAt: new Date().toISOString(),
+      optimizedSize: `${(uploadableFile.size / 1024).toFixed(0)}KB`
     }
   };
 
   return new Promise<string>((resolve, reject) => {
-    const uploadTask = uploadBytesResumable(fileRef, file, metadata);
+    const uploadTask = uploadBytesResumable(fileRef, uploadableFile, metadata);
 
     uploadTask.on(
       'state_changed',
@@ -87,7 +129,7 @@ export const uploadPropertyPhoto = async (
         console.error('Firebase Storage upload error:', error);
         let errorMsg = `Failed to upload "${file.name}".`;
         if (error.code === 'storage/unauthorized') {
-          errorMsg = 'Permission denied by Firebase Storage rules. Please check your storage rules.';
+          errorMsg = 'Permission denied by Firebase Storage rules. Please check your storage security rules.';
         } else if (error.code === 'storage/quota-exceeded') {
           errorMsg = 'Firebase Storage quota exceeded. Please check your Firebase plan.';
         } else if (error.code === 'storage/canceled') {
@@ -100,6 +142,8 @@ export const uploadPropertyPhoto = async (
       async () => {
         try {
           const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          // Cache to prevent duplicate uploads
+          uploadedUrlCache.set(fingerprint, downloadUrl);
           resolve(downloadUrl);
         } catch (err: any) {
           reject(new Error(`Failed to retrieve photo download URL: ${err.message || ''}`));
@@ -110,18 +154,20 @@ export const uploadPropertyPhoto = async (
 };
 
 /**
- * Uploads multiple property photos in batch and calls onProgress with the batch status.
+ * Uploads multiple property photos efficiently with controlled concurrency (2 at a time),
+ * aggregate progress tracking, and duplicate prevention.
  * Returns an array of download URLs for the uploaded photos.
  */
 export const uploadMultiplePropertyPhotos = async (
   files: File[],
-  onProgress?: (info: UploadProgressInfo) => void
+  onProgress?: (info: UploadProgressInfo) => void,
+  concurrencyLimit = 2
 ): Promise<string[]> => {
   if (!files || files.length === 0) {
     return [];
   }
 
-  // Pre-validate all files first
+  // Pre-validate all files
   for (const file of files) {
     const val = validateImageFile(file);
     if (!val.valid) {
@@ -129,33 +175,57 @@ export const uploadMultiplePropertyPhotos = async (
     }
   }
 
-  const uploadedUrls: string[] = [];
   const total = files.length;
+  const results: string[] = new Array(total);
+  const fileProgress: number[] = new Array(total).fill(0);
+  let completedCount = 0;
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const url = await uploadPropertyPhoto(file, (percent) => {
-      if (onProgress) {
-        onProgress({
-          fileName: file.name,
-          percent,
-          completed: i,
-          total
-        });
-      }
+  const updateOverallProgress = (activeFileName: string) => {
+    if (!onProgress) return;
+    const sumProgress = fileProgress.reduce((a, b) => a + b, 0);
+    const overallPercent = Math.round(sumProgress / total);
+    onProgress({
+      fileName: activeFileName,
+      percent: Math.min(100, Math.max(0, overallPercent)),
+      completed: completedCount,
+      total,
+      phase: completedCount === total ? 'complete' : 'uploading'
     });
+  };
 
-    uploadedUrls.push(url);
+  // Run with worker pool to upload efficiently without overwhelming mobile network
+  let nextIndex = 0;
 
-    if (onProgress) {
-      onProgress({
-        fileName: file.name,
-        percent: 100,
-        completed: i + 1,
-        total
+  const runWorker = async () => {
+    while (nextIndex < total) {
+      const currentIndex = nextIndex++;
+      const file = files[currentIndex];
+
+      const url = await uploadPropertyPhoto(file, (singlePercent) => {
+        fileProgress[currentIndex] = singlePercent;
+        updateOverallProgress(file.name);
       });
+
+      results[currentIndex] = url;
+      fileProgress[currentIndex] = 100;
+      completedCount++;
+      updateOverallProgress(file.name);
     }
+  };
+
+  const poolSize = Math.min(concurrencyLimit, total);
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < poolSize; w++) {
+    workers.push(runWorker());
   }
 
-  return uploadedUrls;
+  await Promise.all(workers);
+  return results;
 };
+
+export { 
+  compressAndResizeImage, 
+  formatBytes, 
+  getFileFingerprint
+};
+export type { OptimizedImageResult };

@@ -38,12 +38,16 @@ import {
   UploadCloud,
   Camera,
   ImagePlus,
+  Zap,
   X
 } from 'lucide-react';
 import { 
   uploadMultiplePropertyPhotos, 
   validateImageFile, 
-  UploadProgressInfo 
+  UploadProgressInfo,
+  compressAndResizeImage,
+  formatBytes,
+  getFileFingerprint
 } from './firebase/storageService';
 import { useApp } from './context/AppContext';
 import { Header } from './components/Header';
@@ -117,14 +121,20 @@ export const App: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  // Selected photos for property listing (supports multiple photos, gallery picker, reordering, and removal)
+  // Selected photos for property listing (supports multiple photos, gallery picker, reordering, duplicate prevention, and compression)
   const [selectedPhotos, setSelectedPhotos] = useState<Array<{
     id: string;
     file?: File;
     url: string;
     isExisting: boolean;
     name: string;
-    sizeFormatted?: string;
+    originalSize?: number;
+    originalSizeFormatted?: string;
+    optimizedSize?: number;
+    optimizedSizeFormatted?: string;
+    savedPercentage?: number;
+    fingerprint?: string;
+    isOptimizing?: boolean;
   }>>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressInfo | null>(null);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
@@ -136,20 +146,38 @@ export const App: React.FC = () => {
     setActiveDetailPhotoIndex(0);
   }, [selectedProperty]);
 
-  // Gallery photo selection handler
+  // Gallery photo selection handler with duplicate prevention and automatic compression
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setPhotoUploadError(null);
+
+    // Track existing fingerprints to prevent duplicate selection
+    const existingFingerprints = new Set(
+      selectedPhotos
+        .map(p => p.fingerprint)
+        .filter((fp): fp is string => Boolean(fp))
+    );
+
     const newItems: Array<{
       id: string;
       file?: File;
       url: string;
       isExisting: boolean;
       name: string;
-      sizeFormatted?: string;
+      originalSize?: number;
+      originalSizeFormatted?: string;
+      optimizedSize?: number;
+      optimizedSizeFormatted?: string;
+      savedPercentage?: number;
+      fingerprint?: string;
+      isOptimizing?: boolean;
     }> = [];
+
+    const filesToOptimize: Array<{ id: string; file: File }> = [];
+    let duplicateCount = 0;
+    const batchSeen = new Set<string>();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -159,21 +187,73 @@ export const App: React.FC = () => {
         continue;
       }
 
+      const fingerprint = getFileFingerprint(file);
+      if (existingFingerprints.has(fingerprint) || batchSeen.has(fingerprint)) {
+        duplicateCount++;
+        continue;
+      }
+      batchSeen.add(fingerprint);
+
       const previewUrl = URL.createObjectURL(file);
-      const sizeInMb = (file.size / (1024 * 1024)).toFixed(2);
+      const itemId = `photo_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const origSize = file.size;
+
       newItems.push({
-        id: `photo_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+        id: itemId,
         file,
         url: previewUrl,
         isExisting: false,
         name: file.name,
-        sizeFormatted: `${sizeInMb} MB`
+        originalSize: origSize,
+        originalSizeFormatted: formatBytes(origSize),
+        fingerprint,
+        isOptimizing: true
       });
+
+      filesToOptimize.push({ id: itemId, file });
+    }
+
+    if (duplicateCount > 0) {
+      showToast(`Skipped ${duplicateCount} duplicate photo${duplicateCount > 1 ? 's' : ''} already in list.`);
     }
 
     if (newItems.length > 0) {
       setSelectedPhotos(prev => [...prev, ...newItems]);
-      showToast(`Added ${newItems.length} photo${newItems.length > 1 ? 's' : ''} from gallery.`);
+      showToast(`Added ${newItems.length} photo${newItems.length > 1 ? 's' : ''} (optimizing for fast upload)...`);
+
+      // Optimize each photo in the background targeting 200–400 KB
+      filesToOptimize.forEach(({ id, file }) => {
+        compressAndResizeImage(file, {
+          maxDimension: 1600,
+          targetMaxBytes: 400 * 1024,
+          targetMinBytes: 200 * 1024,
+          initialQuality: 0.82,
+          minQuality: 0.65
+        })
+          .then((optimized) => {
+            setSelectedPhotos(current =>
+              current.map(item => {
+                if (item.id === id) {
+                  return {
+                    ...item,
+                    file: optimized.file,
+                    optimizedSize: optimized.compressedSize,
+                    optimizedSizeFormatted: optimized.compressedSizeFormatted,
+                    savedPercentage: optimized.savedPercentage,
+                    isOptimizing: false
+                  };
+                }
+                return item;
+              })
+            );
+          })
+          .catch((err) => {
+            console.warn('Background optimization error for', file.name, err);
+            setSelectedPhotos(current =>
+              current.map(item => (item.id === id ? { ...item, isOptimizing: false } : item))
+            );
+          });
+      });
     }
 
     e.target.value = '';
@@ -199,6 +279,23 @@ export const App: React.FC = () => {
     });
     showToast("Set as primary cover photo!");
   };
+
+  // Photo optimization summary statistics for UI
+  const totalOriginalBytes = useMemo(() => {
+    return selectedPhotos.reduce((sum, p) => sum + (p.originalSize || 0), 0);
+  }, [selectedPhotos]);
+
+  const totalOptimizedBytes = useMemo(() => {
+    return selectedPhotos.reduce((sum, p) => sum + (p.optimizedSize || p.originalSize || 0), 0);
+  }, [selectedPhotos]);
+
+  const hasNewPhotos = useMemo(() => {
+    return selectedPhotos.some(p => !p.isExisting);
+  }, [selectedPhotos]);
+
+  const anyPhotoOptimizing = useMemo(() => {
+    return selectedPhotos.some(p => p.isOptimizing);
+  }, [selectedPhotos]);
 
   // New Listing Form State
   const [formData, setFormData] = useState({
@@ -322,12 +419,41 @@ export const App: React.FC = () => {
 
       if (newPhotosToUpload.length > 0) {
         setIsUploadingPhotos(true);
-        const filesToUpload = newPhotosToUpload.map(p => p.file as File);
+        setUploadProgress({
+          fileName: 'Preparing optimized photos (200–400 KB)...',
+          percent: 5,
+          completed: 0,
+          total: newPhotosToUpload.length,
+          phase: 'optimizing'
+        });
+
+        // Ensure any photo that is still optimizing completes compression
+        const filesToUpload: File[] = [];
+        for (const item of newPhotosToUpload) {
+          if (item.file) {
+            if (item.isOptimizing) {
+              try {
+                const opt = await compressAndResizeImage(item.file, {
+                  maxDimension: 1600,
+                  targetMaxBytes: 400 * 1024,
+                  targetMinBytes: 200 * 1024,
+                  initialQuality: 0.82,
+                  minQuality: 0.65
+                });
+                filesToUpload.push(opt.file);
+              } catch {
+                filesToUpload.push(item.file);
+              }
+            } else {
+              filesToUpload.push(item.file);
+            }
+          }
+        }
         
         try {
           const uploadedUrls = await uploadMultiplePropertyPhotos(filesToUpload, (info) => {
             setUploadProgress(info);
-          });
+          }, 2);
           
           let uploadIdx = 0;
           for (const item of selectedPhotos) {
@@ -463,7 +589,8 @@ export const App: React.FC = () => {
       id: `existing_${idx}_${Date.now()}`,
       url,
       isExisting: true,
-      name: `Photo ${idx + 1}`
+      name: `Photo ${idx + 1}`,
+      fingerprint: `existing_${url}`
     }));
     setSelectedPhotos(existingItems);
     setOwnerSubTab('new');
@@ -1268,7 +1395,7 @@ export const App: React.FC = () => {
                           Property Photos *
                         </label>
                         <p className="text-[11px] text-slate-500">
-                          Select multiple photos directly from your phone gallery (JPG, PNG, WebP up to 10MB each).
+                          Select multiple photos directly from your phone gallery. Photos are automatically resized & compressed (target 200–400 KB) for quick uploads without visual quality loss.
                         </p>
                       </div>
                       {selectedPhotos.length > 0 && (
@@ -1277,6 +1404,36 @@ export const App: React.FC = () => {
                         </span>
                       )}
                     </div>
+
+                    {/* Optimization & duplicate protection summary banner */}
+                    {hasNewPhotos && (
+                      <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                            <Zap className="w-4 h-4 text-amber-300" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
+                              <span>{anyPhotoOptimizing ? 'Compressing & Resizing Photos...' : 'Smart Optimization Active (Target 200–400 KB)'}</span>
+                              {anyPhotoOptimizing && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+                            </div>
+                            <p className="text-[11px] text-emerald-800">
+                              {totalOriginalBytes > totalOptimizedBytes && totalOptimizedBytes > 0
+                                ? `${formatBytes(totalOriginalBytes)} optimized to ${formatBytes(totalOptimizedBytes)} (${Math.round(((totalOriginalBytes - totalOptimizedBytes) / totalOriginalBytes) * 100)}% bandwidth saved for fast upload)`
+                                : 'Prevents duplicates and scales camera photos smoothly'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                          <span className="text-[10px] font-bold text-emerald-800 bg-white/90 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            High Visual Quality
+                          </span>
+                          <span className="text-[10px] font-bold text-blue-800 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-full">
+                            Duplicate Protected
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Hidden file input */}
                     <input
@@ -1302,7 +1459,7 @@ export const App: React.FC = () => {
                           <span>{selectedPhotos.length > 0 ? 'Upload More Photos from Gallery' : 'Upload Photos from Phone Gallery'}</span>
                         </div>
                         <p className="text-[11px] text-slate-500">
-                          Tap here to browse photos. Upload multiple angles of bedrooms, hall, kitchen & washroom.
+                          Tap here to browse photos. Select multiple angles (hall, bedrooms, kitchen, washroom). Photos are resized & compressed automatically to 200–400 KB.
                         </p>
                       </div>
                     </label>
@@ -1321,9 +1478,11 @@ export const App: React.FC = () => {
                         <div className="flex items-center justify-between text-xs font-bold text-blue-900">
                           <span className="flex items-center gap-1.5">
                             <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                            Uploading to Firebase Storage: {uploadProgress.fileName}
+                            {uploadProgress.phase === 'optimizing'
+                              ? 'Optimizing and preparing photos (target 200–400 KB)...'
+                              : `Uploading to Firebase Storage: ${uploadProgress.fileName}`}
                           </span>
-                          <span>{uploadProgress.percent}% ({uploadProgress.completed + 1} of {uploadProgress.total})</span>
+                          <span>{uploadProgress.percent}% ({Math.min(uploadProgress.total, uploadProgress.completed + 1)} of {uploadProgress.total})</span>
                         </div>
                         <div className="w-full h-2 bg-blue-200 rounded-full overflow-hidden">
                           <div 
@@ -1385,9 +1544,29 @@ export const App: React.FC = () => {
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
 
+                              {/* Per-Photo Optimization / Compression Badge */}
+                              {photo.isOptimizing ? (
+                                <span className="absolute bottom-6 left-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 backdrop-blur-xs">
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" /> Optimizing...
+                                </span>
+                              ) : photo.optimizedSize && photo.originalSize && photo.originalSize > photo.optimizedSize ? (
+                                <span className="absolute bottom-6 left-1.5 bg-emerald-700/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 backdrop-blur-xs shadow-xs">
+                                  <Zap className="w-2.5 h-2.5 text-amber-300" /> {photo.optimizedSizeFormatted}
+                                  <span className="text-emerald-200 text-[9px]">(-{photo.savedPercentage}%)</span>
+                                </span>
+                              ) : photo.isExisting ? (
+                                <span className="absolute bottom-6 left-1.5 bg-slate-800/80 text-slate-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">
+                                  Saved
+                                </span>
+                              ) : photo.originalSizeFormatted ? (
+                                <span className="absolute bottom-6 left-1.5 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">
+                                  {photo.originalSizeFormatted}
+                                </span>
+                              ) : null}
+
                               {/* Bottom caption */}
                               <div className="absolute bottom-1.5 left-2 right-2 text-white text-[10px] font-medium truncate pointer-events-none">
-                                {photo.name} {photo.sizeFormatted ? `(${photo.sizeFormatted})` : ''}
+                                {photo.name}
                               </div>
                             </div>
                           ))}
