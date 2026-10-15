@@ -8,10 +8,16 @@ import {
   OWNER_PROFILES,
   OwnerProfile
 } from '../types';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged, 
+  User 
+} from 'firebase/auth';
 import { INITIAL_TIFFINS } from '../data/initialData';
 import { 
-  isFirebaseConfigured, 
-  ADMIN_PASSCODE 
+  auth,
+  isFirebaseConfigured
 } from '../firebase/config';
 import { 
   subscribeToFirestoreProperties, 
@@ -39,6 +45,8 @@ interface AppContextType {
   firestoreError: string | null;
   isFirebaseConnected: boolean;
   isAdminAuthenticated: boolean;
+  adminUser: User | null;
+  isAdminLoading: boolean;
   isFirebaseModalOpen: boolean;
 
   setSearchQuery: (query: string) => void;
@@ -56,8 +64,9 @@ interface AppContextType {
   navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
   showToast: (msg: string) => void;
   resetFilters: () => void;
+  loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  logoutAdmin: () => Promise<void>;
   verifyAdminPasscode: (passcode: string) => boolean;
-  logoutAdmin: () => void;
   setIsFirebaseModalOpen: (open: boolean) => void;
 }
 
@@ -80,14 +89,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured());
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState<boolean>(false);
 
-  // Admin authentication state
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('gondia_stay_is_admin') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Firebase Authentication Admin state
+  const [adminUser, setAdminUser] = useState<User | null>(null);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+  const [isAdminLoading, setIsAdminLoading] = useState<boolean>(true);
 
   const [tiffinServices, setTiffinServices] = useState<TiffinService[]>(() => {
     try {
@@ -130,6 +135,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  }, []);
+
+  // Real-time Firebase Authentication listener for Admin
+  useEffect(() => {
+    if (!auth) {
+      setIsAdminLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAdminUser(user);
+      setIsAdminAuthenticated(!!user);
+      setIsAdminLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Set up real-time Cloud Firestore subscription on the 'properties' collection
@@ -288,23 +309,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Never allow users to approve their own listings
-    if (targetProp.ownerId === currentOwner.id) {
-      showToast("Security Violation: You cannot approve your own listing.");
-      return false;
-    }
-
     if (!isFirebaseConfigured()) {
       showToast("Firebase is not connected.");
       return false;
     }
 
     try {
+      const moderatorId = adminUser?.email || 'admin_moderator';
       await moderatePropertyInFirestore(
         propertyId, 
         approve, 
-        'admin_moderator', 
-        targetProp.ownerId
+        moderatorId
       );
       showToast(approve ? "Listing approved in Cloud Firestore! Live for all visitors." : "Listing rejected.");
       return true;
@@ -315,25 +330,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const verifyAdminPasscode = (passcode: string): boolean => {
-    if (passcode.trim() === ADMIN_PASSCODE.trim()) {
-      setIsAdminAuthenticated(true);
-      try {
-        localStorage.setItem('gondia_stay_is_admin', 'true');
-      } catch {}
-      showToast("Admin access unlocked!");
-      return true;
+  /**
+   * Secure Admin Authentication using Firebase Authentication (Email/Password)
+   */
+  const loginAdminWithEmailPassword = async (
+    email: string, 
+    pass: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!auth) {
+      const msg = 'Firebase is not initialized. Please connect your Firebase project in Settings.';
+      showToast(msg);
+      return { success: false, error: msg };
     }
-    showToast("Incorrect Admin Passcode.");
-    return false;
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+      setAdminUser(userCredential.user);
+      setIsAdminAuthenticated(true);
+      showToast(`Welcome! Admin signed in as ${userCredential.user.email}`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Firebase Admin Login Error:', err);
+      let errorMsg = 'Invalid email or password.';
+      if (
+        err.code === 'auth/user-not-found' || 
+        err.code === 'auth/wrong-password' || 
+        err.code === 'auth/invalid-credential'
+      ) {
+        errorMsg = 'Invalid admin credentials. Please check your email and password.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMsg = 'Please enter a valid email address.';
+      } else if (err.code === 'auth/too-many-requests') {
+        errorMsg = 'Access temporarily disabled due to multiple failed attempts. Try again later.';
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      showToast(errorMsg);
+      return { success: false, error: errorMsg };
+    }
   };
 
-  const logoutAdmin = () => {
+  const logoutAdmin = async (): Promise<void> => {
+    if (auth) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error('Firebase sign-out error:', err);
+      }
+    }
+    setAdminUser(null);
     setIsAdminAuthenticated(false);
-    try {
-      localStorage.removeItem('gondia_stay_is_admin');
-    } catch {}
-    showToast("Logged out of Admin Mode.");
+    showToast("Logged out of Admin Portal.");
+  };
+
+  // Deprecated passcode fallback helper
+  const verifyAdminPasscode = (_passcode: string): boolean => {
+    return isAdminAuthenticated;
   };
 
   const navigateTo = (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => {
@@ -371,6 +423,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       firestoreError,
       isFirebaseConnected,
       isAdminAuthenticated,
+      adminUser,
+      isAdminLoading,
       isFirebaseModalOpen,
       setSearchQuery,
       setSelectedLocality,
@@ -387,8 +441,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       navigateTo,
       showToast,
       resetFilters,
-      verifyAdminPasscode,
+      loginAdminWithEmailPassword,
       logoutAdmin,
+      verifyAdminPasscode,
       setIsFirebaseModalOpen
     }}>
       {children}

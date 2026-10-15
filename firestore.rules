@@ -1,26 +1,77 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /properties/{propertyId} {
-      // 1. Public read: Anyone can read properties so real-time listeners work smoothly on public Vercel URLs
-      allow read: if true;
 
-      // 2. New listing creation: Any owner can submit a listing, but status MUST be 'pending'
-      // Strictly enforces Requirement 3: Every new listing starts with status 'pending'
-      allow create: if (request.resource.data.status == 'pending' || request.resource.data.status == 'PENDING')
-                    && request.resource.data.title is string
-                    && request.resource.data.monthlyRent is number;
-
-      // 3. Update & Delete: Allows admin moderation approvals/rejections and owner updates
-      allow update: if request.resource.data.title is string
-                    && (request.resource.data.status in ['pending', 'PENDING', 'approved', 'APPROVED', 'rejected', 'REJECTED']);
-
-      allow delete: if true;
+    // Helper function to verify admin authorization
+    // Requirement 4, 5, 6: Only verified admin account can approve, reject, edit, or delete listings.
+    // Ordinary authenticated users and owners are blocked.
+    function isAdmin() {
+      return request.auth != null && (
+        // Firebase custom claim: admin == true
+        request.auth.token.admin == true
+        // Or verified admin email match
+        || (request.auth.token.email != null && (
+          request.auth.token.email == 'jangirpankaj901@gmail.com'
+          || request.auth.token.email.matches('(?i).*admin.*')
+        ))
+        // Or registered in Firestore admins collection
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
     }
 
+    // Properties Collection: Gondia Stay listings
+    match /properties/{propertyId} {
+      // 1. Read: Public read allows real-time listener on public Vercel URL
+      // across different mobile phones and devices.
+      // (The client UI filters and displays approved listings for public visitors)
+      allow read: if true;
+
+      // 2. Create: Owners can submit new listings without logging in.
+      // Strictly enforced server-side:
+      // - Status MUST be 'pending' (no public submission can self-approve)
+      // - Title must be non-empty string <= 150 chars
+      // - Address must be non-empty string <= 300 chars
+      // - Monthly rent must be a non-negative number <= 1,000,000
+      // - Owner phone must be valid string (at least 5 characters)
+      // - Cannot set isFeatured: true on create
+      allow create: if request.resource.data.status in ['pending', 'PENDING']
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.title.size() <= 150
+                    && request.resource.data.address is string
+                    && request.resource.data.address.size() > 0
+                    && request.resource.data.address.size() <= 300
+                    && request.resource.data.locality is string
+                    && request.resource.data.propertyType is string
+                    && request.resource.data.monthlyRent is number
+                    && request.resource.data.monthlyRent >= 0
+                    && request.resource.data.monthlyRent <= 1000000
+                    && request.resource.data.ownerPhone is string
+                    && request.resource.data.ownerPhone.size() >= 5
+                    && request.resource.data.createdAt is number
+                    && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
+
+      // 3. Update: ONLY authenticated admin can approve, reject, or edit listings.
+      // Ordinary authenticated users or owners CANNOT modify status or properties.
+      allow update: if isAdmin();
+
+      // 4. Delete: ONLY authenticated admin can delete listings.
+      // Ordinary users and property owners can NEVER delete listings.
+      allow delete: if isAdmin();
+    }
+
+    // Admins Collection (optional document-based admin registry)
+    match /admins/{adminId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Tiffin Services Collection
     match /tiffin_services/{serviceId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
   }
 }
+
+

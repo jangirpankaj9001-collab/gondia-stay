@@ -95,4 +95,4 @@ if (config && config.apiKey && config.projectId) {
 export { app, db, auth };
 export const isFirebaseConfigured = (): boolean => db !== null;
 export const getActiveProjectId = (): string => config?.projectId || '';
-export const ADMIN_PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE || 'admin123';
+

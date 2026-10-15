@@ -224,7 +224,6 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                   <p>VITE_FIREBASE_AUTH_DOMAIN=your-app.firebaseapp.com</p>
                   <p>VITE_FIREBASE_PROJECT_ID=your-project-id</p>
                   <p>VITE_FIREBASE_STORAGE_BUCKET=your-app.appspot.com</p>
-                  <p>VITE_ADMIN_PASSCODE=gondia_admin_2026</p>
                 </div>
               </div>
             </div>

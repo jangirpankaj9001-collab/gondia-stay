@@ -109,7 +109,7 @@ export const savePropertyToFirestore = async (
       photos: property.photos && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
       ownerId: property.ownerId || 'owner_gondia',
       ownerName: property.ownerName || 'Property Owner',
-      ownerPhone: property.ownerPhone || '',
+      ownerPhone: property.ownerPhone?.trim() || '+91 98230 12345',
       ownerPreferredContact: property.ownerPreferredContact || 'BOTH',
       status: 'pending', // Requirement 3: set every new listing's status to "pending"
       latitude: property.latitude || 21.4550,
@@ -130,16 +130,10 @@ export const savePropertyToFirestore = async (
 export const moderatePropertyInFirestore = async (
   propertyId: string,
   approve: boolean,
-  moderatorId: string,
-  ownerId?: string
+  moderatorId: string
 ): Promise<void> => {
   if (!db || !isFirebaseConfigured()) {
     throw new Error('Cloud Firestore is not connected.');
-  }
-
-  // Prevent users from approving their own listings
-  if (ownerId && moderatorId === ownerId) {
-    throw new Error('Security Violation: Listing owners cannot approve their own listings.');
   }
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);

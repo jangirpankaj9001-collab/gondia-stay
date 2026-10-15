@@ -88,8 +88,9 @@ export const App: React.FC = () => {
     navigateTo,
     showToast,
     resetFilters,
-    verifyAdminPasscode,
+    loginAdminWithEmailPassword,
     logoutAdmin,
+    adminUser,
     setIsFirebaseModalOpen
   } = useApp();
 
@@ -98,7 +99,11 @@ export const App: React.FC = () => {
   const [editingProperty, setEditingProperty] = useState<PropertyListing | null>(null);
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
-  const [adminPasscodeInput, setAdminPasscodeInput] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [moderatingPropId, setModeratingPropId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
@@ -329,10 +334,25 @@ export const App: React.FC = () => {
     'Geyser', 'CCTV Security', 'Balcony', 'Kitchen Setup'
   ];
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (verifyAdminPasscode(adminPasscodeInput)) {
-      setAdminPasscodeInput('');
+    setAdminAuthError(null);
+    setAdminAuthSubmitting(true);
+    const res = await loginAdminWithEmailPassword(adminEmail, adminPassword);
+    setAdminAuthSubmitting(false);
+    if (res.success) {
+      setAdminPassword('');
+    } else {
+      setAdminAuthError(res.error || 'Authentication failed. Please verify credentials.');
+    }
+  };
+
+  const handleModerate = async (propId: string, approve: boolean) => {
+    setModeratingPropId(propId);
+    try {
+      await approveProperty(propId, approve);
+    } finally {
+      setModeratingPropId(null);
     }
   };
 
@@ -536,6 +556,15 @@ export const App: React.FC = () => {
                     : "No approved properties match your current search and filter criteria."}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                  {!isFirebaseConnected && (
+                    <button
+                      onClick={() => setIsFirebaseModalOpen(true)}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5"
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      Connect Database
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setOwnerSubTab('new');
@@ -1240,32 +1269,59 @@ export const App: React.FC = () => {
                       <Lock className="w-6 h-6" />
                     </div>
                     <div className="text-center space-y-1">
-                      <h3 className="text-base font-extrabold text-slate-900">Admin Authentication Required</h3>
+                      <h3 className="text-base font-extrabold text-slate-900">Secure Admin Authentication</h3>
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        To preserve system integrity and prevent unauthorized approvals, only verified administrators can review and approve property listings. Listing owners are never allowed to approve their own submissions.
+                        Sign in with your verified Firebase Admin credentials. Only authenticated administrators can review, approve, reject, edit, or delete property listings.
                       </p>
                     </div>
 
                     <form onSubmit={handleAdminLogin} className="space-y-3 pt-2">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Enter Admin Passcode
+                          Admin Email
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={adminEmail}
+                          onChange={(e) => setAdminEmail(e.target.value)}
+                          placeholder="e.g. admin@gondiastay.com"
+                          className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Admin Password
                         </label>
                         <input
                           type="password"
                           required
-                          value={adminPasscodeInput}
-                          onChange={(e) => setAdminPasscodeInput(e.target.value)}
-                          placeholder="e.g. gondia_admin_2026"
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          placeholder="••••••••"
                           className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-mono"
                         />
                       </div>
+
+                      {adminAuthError && (
+                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{adminAuthError}</span>
+                        </div>
+                      )}
+
                       <button
                         type="submit"
-                        className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5"
+                        disabled={adminAuthSubmitting}
+                        className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5"
                       >
-                        <Key className="w-4 h-4 text-amber-400" />
-                        <span>Unlock Admin Moderation Portal</span>
+                        {adminAuthSubmitting ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        ) : (
+                          <Key className="w-4 h-4 text-amber-400" />
+                        )}
+                        <span>{adminAuthSubmitting ? 'Authenticating...' : 'Sign In to Admin Portal'}</span>
                       </button>
                     </form>
                   </div>
@@ -1276,9 +1332,9 @@ export const App: React.FC = () => {
                       <div className="flex items-center gap-2 font-bold">
                         <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
                         <div>
-                          <span>Admin Moderation Clearance Active (Real-Time Firestore Listener)</span>
+                          <span>Admin Moderation Clearance Active (Firebase Authenticated)</span>
                           <span className="block text-[11px] font-normal text-emerald-700">
-                            Submissions from any phone or browser update here immediately.
+                            Logged in as: <strong className="font-semibold">{adminUser?.email || 'Administrator'}</strong> • Real-time listener active
                           </span>
                         </div>
                       </div>
@@ -1286,7 +1342,7 @@ export const App: React.FC = () => {
                         onClick={logoutAdmin}
                         className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-xl font-bold text-[11px] transition-colors self-start sm:self-auto"
                       >
-                        Exit Admin Mode
+                        Sign Out
                       </button>
                     </div>
 
@@ -1316,28 +1372,28 @@ export const App: React.FC = () => {
                               </div>
 
                               <div className="flex items-center gap-2 shrink-0">
-                                {isOwnListing ? (
-                                  <div className="text-[11px] text-rose-700 font-bold bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
-                                    Self-Approval Blocked (Owner Security Rule)
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => approveProperty(prop.id, true)}
-                                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
-                                    >
-                                      <CheckCircle2 className="w-4 h-4" />
-                                      Approve Listing
-                                    </button>
-                                    <button
-                                      onClick={() => approveProperty(prop.id, false)}
-                                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
-                                    >
-                                      <XCircle className="w-4 h-4" />
-                                      Reject
-                                    </button>
-                                  </>
-                                )}
+                                <button
+                                  onClick={() => handleModerate(prop.id, true)}
+                                  disabled={moderatingPropId === prop.id}
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                  title="Approve property listing and publish to website"
+                                >
+                                  {moderatingPropId === prop.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-4 h-4" />
+                                  )}
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  onClick={() => handleModerate(prop.id, false)}
+                                  disabled={moderatingPropId === prop.id}
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                  title="Reject property listing"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                  <span>Reject</span>
+                                </button>
                               </div>
                             </div>
                           );
