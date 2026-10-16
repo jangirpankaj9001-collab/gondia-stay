@@ -5,7 +5,7 @@ import {
   PropertyType, 
   SortOption, 
   FilterCriteria, 
-  OWNER_PROFILES,
+  DEFAULT_OWNER_PROFILE,
   OwnerProfile
 } from '../types';
 import { 
@@ -23,7 +23,10 @@ import {
   subscribeToFirestoreProperties, 
   savePropertyToFirestore, 
   moderatePropertyInFirestore, 
-  deletePropertyFromFirestore
+  deletePropertyFromFirestore,
+  updatePropertyOccupancyInFirestore,
+  saveOwnerProfileToFirestore,
+  subscribeToOwnerProfile
 } from '../firebase/propertiesService';
 
 interface AppContextType {
@@ -57,6 +60,8 @@ interface AppContextType {
   toggleFavorite: (propertyId: string) => void;
   switchOwner: (ownerId: string) => void;
   updateOwnerPhone: (newPhone: string) => void;
+  updateOwnerProfile: (updates: Partial<OwnerProfile>) => Promise<void>;
+  updatePropertyOccupancy: (propertyId: string, occupancyStatus: 'AVAILABLE' | 'OCCUPIED') => Promise<void>;
   saveProperty: (property: PropertyListing, isEdit: boolean) => Promise<boolean>;
   deleteProperty: (propertyId: string) => Promise<void>;
   toggleFeatured: (propertyId: string) => void;
@@ -115,9 +120,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentOwner, setCurrentOwner] = useState<OwnerProfile>(() => {
     try {
       const saved = localStorage.getItem('gondia_stay_current_owner');
-      return saved ? (JSON.parse(saved) as OwnerProfile) : OWNER_PROFILES[0];
+      return saved ? (JSON.parse(saved) as OwnerProfile) : DEFAULT_OWNER_PROFILE;
     } catch {
-      return OWNER_PROFILES[0];
+      return DEFAULT_OWNER_PROFILE;
     }
   });
 
@@ -152,6 +157,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => unsubscribe();
   }, []);
+
+  // Real-time Firestore owner profile listener
+  useEffect(() => {
+    if (!isFirebaseConfigured() || !currentOwner.id) return;
+    const unsubscribe = subscribeToOwnerProfile(currentOwner.id, (remoteOwner) => {
+      setCurrentOwner(remoteOwner);
+      localStorage.setItem('gondia_stay_current_owner', JSON.stringify(remoteOwner));
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [currentOwner.id]);
 
   // Set up real-time Cloud Firestore subscription on the 'properties' collection
   // Requirement 4: Real-time listener ensures admin dashboard and public users update automatically
@@ -207,32 +224,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const switchOwner = (ownerId: string) => {
-    const found = OWNER_PROFILES.find(p => p.id === ownerId);
-    if (found) {
-      setCurrentOwner(found);
-      showToast(`Switched profile to ${found.name}`);
-    }
+  const switchOwner = (_ownerId: string) => {
+    // Single real owner console (demo switcher removed)
   };
 
   const updateOwnerPhone = async (newPhone: string) => {
-    const trimmed = newPhone.trim();
-    if (!trimmed) return;
-    
-    setCurrentOwner((prev: OwnerProfile) => ({ ...prev, phone: trimmed }));
-    
+    await updateOwnerProfile({ phone: newPhone.trim() });
+  };
+
+  /**
+   * Updates real owner profile and synchronizes directly with Firebase Firestore.
+   * Requirement 1: Use real owner information stored in Firebase.
+   */
+  const updateOwnerProfile = async (updates: Partial<OwnerProfile>): Promise<void> => {
+    const updated: OwnerProfile = {
+      ...currentOwner,
+      ...updates
+    };
+    if (updates.phone && !updates.whatsappNumber && !currentOwner.whatsappNumber) {
+      updated.whatsappNumber = updates.phone;
+    }
+    setCurrentOwner(updated);
+    localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updated));
+
     if (isFirebaseConfigured()) {
       try {
-        const myProps = properties.filter(p => p.ownerId === currentOwner.id);
+        await saveOwnerProfileToFirestore(updated);
+        // Also update any properties belonging to this owner so tenant view sees new info
+        const myProps = properties.filter(p => p.ownerId === updated.id);
         for (const prop of myProps) {
-          await savePropertyToFirestore({ ...prop, ownerPhone: trimmed }, true);
+          await savePropertyToFirestore({
+            ...prop,
+            ownerName: updated.name,
+            ownerPhone: updated.phone,
+            ownerWhatsappNumber: updated.whatsappNumber || updated.phone
+          }, true);
         }
       } catch (err) {
-        console.warn('Failed to update phone on Firestore:', err);
+        console.warn('Failed to sync profile to Firestore:', err);
       }
     }
 
-    showToast("Contact number updated across your listings!");
+    showToast("Owner profile updated & synchronized with Firebase!");
+  };
+
+  /**
+   * Updates rental occupancy status in Firebase Firestore.
+   * Requirement 5: Rental Occupancy Management
+   * Occupied properties remain approved but are excluded from available tenant searches,
+   * display OCCUPIED label, and hide direct owner contact from tenants.
+   */
+  const updatePropertyOccupancy = async (
+    propertyId: string, 
+    occupancyStatus: 'AVAILABLE' | 'OCCUPIED'
+  ): Promise<void> => {
+    if (!isFirebaseConfigured()) {
+      showToast("Firebase is not connected.");
+      return;
+    }
+
+    try {
+      await updatePropertyOccupancyInFirestore(propertyId, occupancyStatus);
+      showToast(occupancyStatus === 'OCCUPIED' 
+        ? "Property marked as Occupied / Rented!" 
+        : "Property marked as Available Again!");
+    } catch (err: any) {
+      console.error('Error updating occupancy in Firestore:', err);
+      showToast("Failed to update occupancy: " + (err.message || ''));
+      throw err;
+    }
   };
 
   /**
@@ -434,6 +494,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleFavorite,
       switchOwner,
       updateOwnerPhone,
+      updateOwnerProfile,
+      updatePropertyOccupancy,
       saveProperty,
       deleteProperty,
       toggleFeatured,

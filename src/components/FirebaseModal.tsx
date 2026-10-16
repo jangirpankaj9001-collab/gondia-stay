@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { 
   isFirebaseConfigured, 
+  isStorageConfigured,
+  getActiveStorageBucket,
   getActiveProjectId, 
   saveFirebaseWebConfig, 
   resetFirebaseWebConfig, 
@@ -33,7 +35,9 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
   propertiesCount
 }) => {
   const isConnected = isFirebaseConfigured();
+  const isStorageConnected = isStorageConfigured();
   const currentProjectId = getActiveProjectId();
+  const activeStorageBucket = getActiveStorageBucket();
   const existingConfig = getActiveFirebaseConfig();
 
   const [apiKey, setApiKey] = useState(existingConfig?.apiKey || '');
@@ -173,11 +177,19 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                 <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    Firestore Cloud Connected!
+                    Firebase Cloud Connected!
                   </div>
                   <div className="text-xs text-emerald-700 space-y-1">
                     <p><span className="font-semibold">Project ID:</span> {currentProjectId}</p>
-                    <p><span className="font-semibold">Synced Properties in Firestore:</span> {propertiesCount}</p>
+                    <p><span className="font-semibold">Firestore Database:</span> Connected ({propertiesCount} properties synced)</p>
+                    <p>
+                      <span className="font-semibold">Firebase Storage:</span>{' '}
+                      {isStorageConnected ? (
+                        <span className="text-emerald-800 font-semibold">Connected (Bucket: {activeStorageBucket})</span>
+                      ) : (
+                        <span className="text-amber-700">Connecting... ({activeStorageBucket})</span>
+                      )}
+                    </p>
                     <p><span className="font-semibold">Sync Mode:</span> Real-time Firestore onSnapshot</p>
                   </div>
                   <div className="pt-2 flex flex-wrap gap-2">

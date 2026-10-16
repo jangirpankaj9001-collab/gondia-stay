@@ -11,18 +11,17 @@ import {
   PhoneCall,
   Menu,
   X,
-  Database
+  Database,
+  MessageCircle
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { OWNER_PROFILES } from '../types';
-import { formatDisplayPhone } from '../utils/contact';
+import { formatDisplayPhone, openWhatsApp } from '../utils/contact';
 
 export const Header: React.FC = () => {
   const { 
     activeTab, 
     navigateTo, 
     currentOwner, 
-    switchOwner, 
     favorites,
     properties,
     isFirebaseConnected,
@@ -170,13 +169,13 @@ export const Header: React.FC = () => {
               <button
                 onClick={() => setShowOwnerMenu(!showOwnerMenu)}
                 className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 transition-colors"
-                title="Switch owner mode"
+                title="Landlord Profile"
               >
                 <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold">
-                  {currentOwner.name[0]}
+                  {currentOwner.name[0] || 'O'}
                 </div>
                 <div className="text-left hidden lg:block">
-                  <div className="leading-tight">{currentOwner.name.split(' ')[0]}</div>
+                  <div className="leading-tight">{currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}</div>
                   <div className="text-[10px] text-slate-500">{formatDisplayPhone(currentOwner.phone)}</div>
                 </div>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
@@ -188,38 +187,55 @@ export const Header: React.FC = () => {
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowOwnerMenu(false)} 
                   />
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95">
-                    <div className="px-3 py-2 border-b border-slate-100">
-                      <p className="text-xs font-bold text-slate-800">Owner Profiles (Demo Switcher)</p>
-                      <p className="text-[11px] text-slate-500">Test multi-owner security isolation</p>
-                    </div>
-                    {OWNER_PROFILES.map((profile) => (
-                      <button
-                        key={profile.id}
-                        onClick={() => {
-                          switchOwner(profile.id);
-                          setShowOwnerMenu(false);
-                        }}
-                        className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-blue-50 transition-colors ${
-                          currentOwner.id === profile.id ? 'bg-blue-50/80 font-bold text-blue-700' : 'text-slate-700'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-semibold">{profile.name}</div>
-                          <div className="text-[10px] text-slate-400">{formatDisplayPhone(profile.phone)}</div>
+                  <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in zoom-in-95 space-y-3">
+                    <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+                        {currentOwner.name[0] || 'O'}
+                      </div>
+                      <div>
+                        <div className="text-xs font-extrabold text-slate-900">
+                          {currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}
                         </div>
-                        {currentOwner.id === profile.id && (
-                          <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold">Active</span>
-                        )}
-                      </button>
-                    ))}
-                    
-                    <div className="mt-2 pt-2 border-t border-slate-100 px-3">
-                      <div className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        100% Free Listing Policy Active
+                        <div className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3" /> Verified Property Owner
+                        </div>
                       </div>
                     </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-600">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[11px]">Contact Phone:</span>
+                        <span className="font-bold text-slate-800">{formatDisplayPhone(currentOwner.phone)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[11px]">WhatsApp:</span>
+                        <span className="font-bold text-emerald-700">{formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone)}</span>
+                      </div>
+                    </div>
+
+                    {/* Quick WhatsApp button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello Mr. ${currentOwner.name}, regarding GondiaStay owner account.`);
+                        setShowOwnerMenu(false);
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                      <span>WhatsApp Chat</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigateTo('owner');
+                        setShowOwnerMenu(false);
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold text-center shadow-xs transition-colors"
+                    >
+                      Open Landlord Hub & Listings
+                    </button>
                   </div>
                 </>
               )}

@@ -39,6 +39,8 @@ import {
   Camera,
   ImagePlus,
   Zap,
+  Home,
+  UserCheck,
   X
 } from 'lucide-react';
 import { 
@@ -56,18 +58,26 @@ import { PropertyCard } from './components/PropertyCard';
 import { TiffinCard } from './components/TiffinCard';
 import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
+import { GondiaMap } from './components/GondiaMap';
 import { 
   PropertyListing, 
   PropertyType, 
+  AccommodationType,
+  ACCOMMODATION_TYPES,
+  KitchenAvailability,
+  SuitableTenantType,
   FurnishingStatus, 
   ContactMethod, 
   GONDIA_LOCALITIES, 
+  GONDIA_LOCALITY_COORDS,
   PROPERTY_TYPES,
   SortOption,
-  OWNER_PROFILES,
+  OwnerProfile,
   isApproved,
   isPending,
-  isRejected
+  isRejected,
+  isOccupied,
+  isAvailable
 } from './types';
 import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps } from './utils/contact';
 
@@ -95,6 +105,8 @@ export const App: React.FC = () => {
     setSelectedType,
     setSortOption,
     updateOwnerPhone,
+    updateOwnerProfile,
+    updatePropertyOccupancy,
     saveProperty,
     deleteProperty,
     toggleFeatured,
@@ -297,31 +309,67 @@ export const App: React.FC = () => {
     return selectedPhotos.some(p => p.isOptimizing);
   }, [selectedPhotos]);
 
-  // New Listing Form State
+  // Owner Profile editing state
+  const [isEditingOwnerProfile, setIsEditingOwnerProfile] = useState(false);
+  const [ownerProfileForm, setOwnerProfileForm] = useState({
+    name: currentOwner.name,
+    phone: currentOwner.phone,
+    whatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
+    email: currentOwner.email || ''
+  });
+
+  useEffect(() => {
+    setOwnerProfileForm({
+      name: currentOwner.name,
+      phone: currentOwner.phone,
+      whatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
+      email: currentOwner.email || ''
+    });
+    setPhoneInput(currentOwner.phone);
+  }, [currentOwner]);
+
+  // Complete Property Listing Form State (Requirement 3)
   const [formData, setFormData] = useState({
     title: '',
     address: '',
     locality: GONDIA_LOCALITIES[1], // Civil Lines
     propertyType: 'FLAT' as PropertyType,
+    accommodationType: '1_BHK' as AccommodationType,
     monthlyRent: 8000,
     securityDeposit: 16000,
-    bedrooms: 2,
+    bedrooms: 1,
     bathrooms: 1,
+    kitchenAvailable: 'PRIVATE' as KitchenAvailability,
+    hallAvailable: true,
     furnishing: 'SEMI_FURNISHED' as FurnishingStatus,
+    suitableTenants: ['ALL'] as SuitableTenantType[],
     availableFrom: 'Immediate',
     amenities: ['24/7 Water', 'Wi-Fi'],
+    ownerName: currentOwner.name,
+    ownerPhone: currentOwner.phone,
+    ownerWhatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
     ownerPreferredContact: 'BOTH' as ContactMethod,
+    latitude: 21.4602,
+    longitude: 80.1945,
     photos: [] as string[]
   });
 
   // Filtered properties for Explore, Map & Saved
-  // Requirement 6: Show only approved listings to public users
-  // Requirement 7: Ensure every visitor opening public URL sees the same approved listings from Firestore
+  // Requirement 4 & 5: Show only approved and available listings to public users
+  // Exclude occupied properties from available-property searches unless includeOccupied filter is checked
+  // Requirement 6: Comprehensive search by title, locality, address, accommodation type, rent, amenities
   const filteredProperties = useMemo(() => {
     return properties.filter(p => {
       // Ordinary user tabs strictly require approved status
       if (activeTab === 'explore' || activeTab === 'map' || activeTab === 'saved') {
         if (!isApproved(p.status)) return false;
+      }
+
+      // Requirement 5: When occupied, exclude from available-property searches in explore tab
+      if (activeTab === 'explore') {
+        if (isOccupied(p.occupancyStatus) && !filterCriteria.includeOccupied) {
+          return false;
+        }
       }
 
       // Saved tab filter
@@ -354,16 +402,44 @@ export const App: React.FC = () => {
         return false;
       }
 
-      // Search query
+      // Requirement 6: Enhanced Explore Search
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesTitle = p.title.toLowerCase().includes(q);
-        const matchesAddress = p.address.toLowerCase().includes(q);
-        const matchesLocality = p.locality.toLowerCase().includes(q);
-        const matchesAmenities = p.amenities.some(a => a.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesAddress && !matchesLocality && !matchesAmenities) {
-          return false;
-        }
+        const q = searchQuery.toLowerCase().trim();
+        const tokens = q.split(/\s+/).filter(Boolean);
+
+        // Every token in query must match some property attribute
+        const matchesAllTokens = tokens.every(token => {
+          // Check rent search (e.g. "8000" or "under 10000")
+          const cleanNum = parseInt(token.replace(/[^0-9]/g, ''), 10);
+          const matchesRent = !isNaN(cleanNum) && cleanNum > 500 && (
+            Math.abs(p.monthlyRent - cleanNum) <= 1500 || p.monthlyRent <= cleanNum
+          );
+
+          const matchesTitle = p.title?.toLowerCase().includes(token);
+          const matchesAddress = p.address?.toLowerCase().includes(token);
+          const matchesLocality = p.locality?.toLowerCase().includes(token);
+          const matchesType = p.propertyType?.toLowerCase().includes(token);
+
+          // Accommodation type search (e.g. "1bhk", "1 bhk", "2bhk", "room", "flat", "pg")
+          const accStr = (p.accommodationType || '').toLowerCase().replace(/_/g, ' ');
+          const accClean = (p.accommodationType || '').toLowerCase().replace(/_/g, '');
+          const matchesAcc = accStr.includes(token) || 
+                             accClean.includes(token) ||
+                             (token === '1bhk' && p.accommodationType === '1_BHK') ||
+                             (token === '2bhk' && p.accommodationType === '2_BHK') ||
+                             (token === '3bhk' && p.accommodationType === '3_BHK') ||
+                             (token === 'room' && (p.accommodationType === 'ROOM' || p.bedrooms === 1)) ||
+                             (token === 'bhk' && p.bedrooms > 0);
+
+          const matchesFurnishing = p.furnishing?.toLowerCase().replace(/_/g, ' ').includes(token);
+          const matchesAmenities = (p.amenities || []).some(a => a.toLowerCase().includes(token));
+          const matchesSuitable = (p.suitableTenants || []).some(s => s.toLowerCase().replace(/_/g, ' ').includes(token));
+
+          return matchesTitle || matchesAddress || matchesLocality || matchesType || 
+                 matchesAcc || matchesFurnishing || matchesAmenities || matchesSuitable || matchesRent;
+        });
+
+        if (!matchesAllTokens) return false;
       }
 
       return true;
@@ -405,7 +481,12 @@ export const App: React.FC = () => {
     setPhotoUploadError(null);
 
     if (!formData.title.trim() || !formData.address.trim()) {
-      showToast('Please fill out all required fields');
+      showToast('Please provide property title and detailed address');
+      return;
+    }
+
+    if (!formData.ownerName.trim() || !formData.ownerPhone.trim()) {
+      showToast('Please provide landlord name and contact phone number');
       return;
     }
 
@@ -488,21 +569,30 @@ export const App: React.FC = () => {
           address: formData.address.trim(),
           locality: formData.locality,
           propertyType: formData.propertyType,
+          accommodationType: formData.accommodationType,
           monthlyRent: Number(formData.monthlyRent),
           securityDeposit: Number(formData.securityDeposit),
           bedrooms: Number(formData.bedrooms),
           bathrooms: Number(formData.bathrooms),
+          kitchenAvailable: formData.kitchenAvailable,
+          hallAvailable: Boolean(formData.hallAvailable),
           furnishing: formData.furnishing,
+          suitableTenants: formData.suitableTenants,
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
+          ownerName: formData.ownerName || currentOwner.name,
+          ownerPhone: formData.ownerPhone || currentOwner.phone,
+          ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || currentOwner.phone,
           ownerPreferredContact: formData.ownerPreferredContact,
+          latitude: Number(formData.latitude) || 21.4602,
+          longitude: Number(formData.longitude) || 80.1945,
         };
         await saveProperty(updated, true);
         setEditingProperty(null);
       } else {
-        // Requirement 2: Save immediately to Firestore
-        // Requirement 3: Set status to "pending"
+        // Requirement 3 & 4: Save directly to Firestore with status "pending"
+        // Requirement 2: Real owner-selected map location coordinates
         const newProp: PropertyListing = {
           id: `prop_${Date.now()}`,
           title: formData.title.trim(),
@@ -510,21 +600,27 @@ export const App: React.FC = () => {
           locality: formData.locality,
           city: 'Gondia',
           propertyType: formData.propertyType,
+          accommodationType: formData.accommodationType,
           monthlyRent: Number(formData.monthlyRent),
           securityDeposit: Number(formData.securityDeposit),
           bedrooms: Number(formData.bedrooms),
           bathrooms: Number(formData.bathrooms),
+          kitchenAvailable: formData.kitchenAvailable,
+          hallAvailable: Boolean(formData.hallAvailable),
           furnishing: formData.furnishing,
+          suitableTenants: formData.suitableTenants,
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
           ownerId: currentOwner.id,
-          ownerName: currentOwner.name,
-          ownerPhone: currentOwner.phone,
+          ownerName: formData.ownerName || currentOwner.name,
+          ownerPhone: formData.ownerPhone || currentOwner.phone,
+          ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || currentOwner.phone,
           ownerPreferredContact: formData.ownerPreferredContact,
-          status: 'pending', // Requirement 3: status set to "pending"
-          latitude: 21.4550,
-          longitude: 80.1920,
+          status: 'pending', // Requirement 4: Set every new listing's status to "pending"
+          occupancyStatus: 'AVAILABLE',
+          latitude: Number(formData.latitude) || 21.4602,
+          longitude: Number(formData.longitude) || 80.1945,
           createdAt: Date.now()
         };
         await saveProperty(newProp, false);
@@ -542,14 +638,23 @@ export const App: React.FC = () => {
         address: '',
         locality: GONDIA_LOCALITIES[1],
         propertyType: 'FLAT',
+        accommodationType: '1_BHK',
         monthlyRent: 8000,
         securityDeposit: 16000,
-        bedrooms: 2,
+        bedrooms: 1,
         bathrooms: 1,
+        kitchenAvailable: 'PRIVATE',
+        hallAvailable: true,
         furnishing: 'SEMI_FURNISHED',
+        suitableTenants: ['ALL'],
         availableFrom: 'Immediate',
         amenities: ['24/7 Water', 'Wi-Fi'],
+        ownerName: currentOwner.name,
+        ownerPhone: currentOwner.phone,
+        ownerWhatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
         ownerPreferredContact: 'BOTH',
+        latitude: 21.4602,
+        longitude: 80.1945,
         photos: []
       });
       setSubmissionError(null);
@@ -573,14 +678,23 @@ export const App: React.FC = () => {
       address: property.address,
       locality: property.locality,
       propertyType: property.propertyType,
+      accommodationType: property.accommodationType || '1_BHK',
       monthlyRent: property.monthlyRent,
       securityDeposit: property.securityDeposit,
       bedrooms: property.bedrooms,
       bathrooms: property.bathrooms,
+      kitchenAvailable: property.kitchenAvailable || 'PRIVATE',
+      hallAvailable: property.hallAvailable !== undefined ? property.hallAvailable : true,
       furnishing: property.furnishing,
+      suitableTenants: property.suitableTenants || ['ALL'],
       availableFrom: property.availableFrom,
       amenities: property.amenities,
+      ownerName: property.ownerName || currentOwner.name,
+      ownerPhone: property.ownerPhone || currentOwner.phone,
+      ownerWhatsappNumber: property.ownerWhatsappNumber || property.ownerPhone || currentOwner.phone,
       ownerPreferredContact: property.ownerPreferredContact,
+      latitude: property.latitude || GONDIA_LOCALITY_COORDS[property.locality]?.lat || 21.4602,
+      longitude: property.longitude || GONDIA_LOCALITY_COORDS[property.locality]?.lng || 80.1945,
       photos: property.photos || []
     });
 
@@ -709,26 +823,56 @@ export const App: React.FC = () => {
                   Connect directly with verified local property owners in Civil Lines, Ram Nagar, Kudwa Naka, and Rail Toly. Real-time Cloud Firestore synchronization across mobile & desktop.
                 </p>
 
-                {/* Search Bar Input */}
-                <div className="pt-2 flex flex-col sm:flex-row gap-2 max-w-xl">
+                {/* Functional Explore Search Bar (Requirement 6) */}
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    // Keyboard Enter / Search submit action
+                  }}
+                  className="pt-2 flex flex-col sm:flex-row gap-2 max-w-xl"
+                >
                   <div className="relative flex-1">
-                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <button
+                      type="submit"
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
+                      title="Search properties in Gondia"
+                      aria-label="Search"
+                    >
+                      <Search className="w-4 h-4" />
+                    </button>
                     <input 
                       type="text"
-                      placeholder="Search locality, flat, 1BHK, Wi-Fi, near railway station..."
+                      placeholder="Search locality, flat, 1BHK, 2BHK, room, rent (e.g. 8000)..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-400 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-blue-400 shadow-md"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="w-full pl-10 pr-9 py-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-400 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-blue-400 shadow-md"
                     />
+                    {searchQuery.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                        title="Clear search"
+                        aria-label="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   <button 
+                    type="button"
                     onClick={() => setShowFilterModal(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all shadow-md active:scale-95"
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all shadow-md active:scale-95 cursor-pointer"
                   >
                     <SlidersHorizontal className="w-4 h-4" />
                     <span>Filters</span>
                   </button>
-                </div>
+                </form>
               </div>
             </div>
 
@@ -825,24 +969,36 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Empty State */}
+            {/* Empty State (Requirement 6) */}
             {!isFirestoreLoading && filteredProperties.length === 0 && (
               <div className="text-center py-16 px-4 bg-white rounded-3xl border border-slate-200 space-y-4">
                 <Building2 className="w-12 h-12 text-slate-300 mx-auto" />
-                <h3 className="text-base font-bold text-slate-800">No approved properties yet</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  {properties.length === 0 
-                    ? "Your Cloud Firestore database is currently ready. When owners submit listings, they will appear here once approved by admin."
-                    : "No approved properties match your current search and filter criteria."}
+                <h3 className="text-base font-bold text-slate-800">
+                  {searchQuery.trim() ? `No properties found for "${searchQuery}"` : 'No approved properties found'}
+                </h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  {searchQuery.trim() 
+                    ? 'No approved and available properties matched your search. Check your spelling, try searching by locality (e.g. Civil Lines, Ram Nagar), accommodation type (e.g. 1 BHK, 2 BHK, separate room), or clear your search query.'
+                    : properties.length === 0 
+                      ? 'Your Cloud Firestore database is active and ready. When landlords submit listings, they will appear here live across all devices once approved by admin.'
+                      : 'No properties match your current filters. Try resetting your price or amenity filters to explore more stays.'}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                  {!isFirebaseConnected && (
+                  {searchQuery.trim() && (
                     <button
-                      onClick={() => setIsFirebaseModalOpen(true)}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5"
+                      onClick={() => setSearchQuery('')}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Database className="w-3.5 h-3.5" />
-                      Connect Database
+                      <X className="w-3.5 h-3.5" />
+                      Clear Search
+                    </button>
+                  )}
+                  {(selectedLocality !== 'All' || selectedType !== 'ALL') && (
+                    <button
+                      onClick={resetFilters}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+                    >
+                      Reset All Filters
                     </button>
                   )}
                   <button
@@ -850,16 +1006,10 @@ export const App: React.FC = () => {
                       setOwnerSubTab('new');
                       navigateTo('owner');
                     }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5"
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Post New Property Listing
-                  </button>
-                  <button
-                    onClick={resetFilters}
-                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl shadow-xs"
-                  >
-                    Reset Filters
                   </button>
                 </div>
               </div>
@@ -888,88 +1038,17 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Interactive Vector Map of Gondia Hotspots */}
-              <div className="relative w-full h-80 sm:h-96 bg-gradient-to-br from-slate-100 to-blue-50/50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center">
-                <svg viewBox="0 0 600 400" className="w-full h-full">
-                  <path 
-                    d="M 50 120 Q 200 100 450 140 T 580 180" 
-                    fill="none" 
-                    stroke="#94a3b8" 
-                    strokeWidth="6" 
-                    strokeDasharray="8 6" 
-                  />
-                  <text x="490" y="130" fill="#64748b" fontSize="10" fontWeight="bold">Main Railway Line</text>
-
-                  <path 
-                    d="M 120 30 C 250 120 300 280 400 380" 
-                    fill="none" 
-                    stroke="#cbd5e1" 
-                    strokeWidth="12" 
-                  />
-                  <text x="140" y="50" fill="#64748b" fontSize="9" fontWeight="bold">Ring Road Corridor</text>
-
-                  {[
-                    { name: 'Civil Lines', x: 260, y: 150, count: properties.filter(p => isApproved(p.status) && p.locality === 'Civil Lines').length },
-                    { name: 'Rail Toly', x: 370, y: 170, count: properties.filter(p => isApproved(p.status) && p.locality === 'Rail Toly').length },
-                    { name: 'Ram Nagar', x: 200, y: 280, count: properties.filter(p => isApproved(p.status) && p.locality === 'Ram Nagar').length },
-                    { name: 'Kudwa Naka', x: 420, y: 270, count: properties.filter(p => isApproved(p.status) && p.locality === 'Kudwa Naka').length },
-                    { name: 'Ring Road', x: 120, y: 200, count: properties.filter(p => isApproved(p.status) && p.locality === 'Ring Road').length },
-                    { name: 'Station Road', x: 330, y: 215, count: properties.filter(p => isApproved(p.status) && p.locality === 'Station Road').length },
-                  ].map((loc) => {
-                    const isSelected = selectedMapLocality === loc.name;
-                    return (
-                      <g 
-                        key={loc.name}
-                        onClick={() => {
-                          setSelectedMapLocality(isSelected ? null : loc.name);
-                          setSelectedLocality(isSelected ? 'All' : loc.name);
-                        }}
-                        className="cursor-pointer transition-transform hover:scale-110"
-                        transform={`translate(${loc.x}, ${loc.y})`}
-                      >
-                        <circle 
-                          r={isSelected ? "22" : "18"} 
-                          fill={isSelected ? "#2563eb" : "#ffffff"} 
-                          stroke="#2563eb" 
-                          strokeWidth="3" 
-                          className="shadow-md"
-                        />
-                        <text 
-                          y="4" 
-                          textAnchor="middle" 
-                          fill={isSelected ? "#ffffff" : "#1e40af"} 
-                          fontSize="11" 
-                          fontWeight="bold"
-                        >
-                          {loc.count}
-                        </text>
-                        <rect 
-                          x="-35" 
-                          y="22" 
-                          width="70" 
-                          height="18" 
-                          rx="4" 
-                          fill="#0f172a" 
-                          opacity="0.85" 
-                        />
-                        <text 
-                          x="0" 
-                          y="34" 
-                          textAnchor="middle" 
-                          fill="#ffffff" 
-                          fontSize="8" 
-                          fontWeight="600"
-                        >
-                          {loc.name}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-
-                <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-xs px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-700 shadow-xs">
-                  <span className="font-bold text-slate-900">Tip:</span> Tap any circle to view stays in that neighborhood!
-                </div>
+              {/* Interactive OpenStreetMap of Gondia (Requirement 2) */}
+              <div className="w-full">
+                <GondiaMap
+                  properties={properties.filter(p => isApproved(p.status))}
+                  selectedPropertyId={selectedProperty?.id}
+                  onSelectProperty={(property) => {
+                    navigateTo('detail', property);
+                  }}
+                  mode="explore"
+                  heightClass="h-[460px] sm:h-[540px]"
+                />
               </div>
 
               {/* Stays in selected map locality */}
@@ -1055,9 +1134,9 @@ export const App: React.FC = () => {
         {activeTab === 'owner' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             
-            {/* Owner Hub Welcome & Stats Card */}
-            <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6 mb-6">
+            {/* Owner Hub Welcome & Stats Card (Requirement 1) */}
+            <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="bg-blue-600/30 text-blue-400 border border-blue-500/30 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
@@ -1070,27 +1149,147 @@ export const App: React.FC = () => {
                     )}
                   </div>
                   <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight">
-                    Welcome, {currentOwner.name}
+                    Welcome, {currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}
                   </h1>
                   <p className="text-xs text-slate-400 mt-1">
-                    Managing properties in Gondia • Registered Phone: <span className="text-white font-bold">{formatDisplayPhone(currentOwner.phone)}</span>
+                    Real Owner Account stored in Cloud Firestore • Gondia, Maharashtra
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setIsEditingOwnerProfile(!isEditingOwnerProfile)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border border-slate-700 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>{isEditingOwnerProfile ? 'Close Editor' : 'Edit Profile'}</span>
+                  </button>
                   <button
                     onClick={() => {
                       setEditingProperty(null);
                       setSubmissionError(null);
                       setOwnerSubTab('new');
                     }}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Post New Listing</span>
                   </button>
                 </div>
               </div>
+
+              {/* Requirement 1: Owner contact number, WhatsApp number, and working WhatsApp contact button */}
+              <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered Contact Number</span>
+                    <div className="text-sm font-extrabold text-white mt-0.5 flex items-center gap-1.5">
+                      <Phone className="w-4 h-4 text-blue-400" />
+                      <span>{formatDisplayPhone(currentOwner.phone)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered WhatsApp Number</span>
+                    <div className="text-sm font-extrabold text-emerald-400 mt-0.5 flex items-center gap-1.5">
+                      <MessageCircle className="w-4 h-4 fill-current text-emerald-400" />
+                      <span>{formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello Mr. ${currentOwner.name}, contacting you regarding your property listings on GondiaStay.`)}
+                    className="px-4 py-2.5 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center gap-2 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-current" />
+                    <span>WhatsApp Owner</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dialPhone(currentOwner.phone)}
+                    className="px-3.5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Call</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Inline Owner Profile Editor */}
+              {isEditingOwnerProfile && (
+                <div className="bg-slate-800 p-5 rounded-2xl border border-blue-500/30 space-y-4 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-blue-400" />
+                      Edit Real Landlord Profile (Cloud Firestore)
+                    </h3>
+                    <span className="text-[10px] text-slate-400">Syncs automatically to cloud</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Landlord Name *</label>
+                      <input
+                        type="text"
+                        value={ownerProfileForm.name}
+                        onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, name: e.target.value })}
+                        placeholder="Rajesh Sharma"
+                        className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Phone Number *</label>
+                      <input
+                        type="text"
+                        value={ownerProfileForm.phone}
+                        onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, phone: e.target.value })}
+                        placeholder="+91 98230 12345"
+                        className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">WhatsApp Number *</label>
+                      <input
+                        type="text"
+                        value={ownerProfileForm.whatsappNumber}
+                        onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, whatsappNumber: e.target.value })}
+                        placeholder="+91 98230 12345"
+                        className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingOwnerProfile(false)}
+                      className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-lg cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!ownerProfileForm.name.trim() || !ownerProfileForm.phone.trim()) {
+                          showToast("Please provide owner name and phone.");
+                          return;
+                        }
+                        await updateOwnerProfile({
+                          name: ownerProfileForm.name.trim(),
+                          phone: ownerProfileForm.phone.trim(),
+                          whatsappNumber: (ownerProfileForm.whatsappNumber || ownerProfileForm.phone).trim()
+                        });
+                        setIsEditingOwnerProfile(false);
+                      }}
+                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-lg shadow-xs cursor-pointer"
+                    >
+                      Save Profile to Firebase
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Quick Stat Counters */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -1203,7 +1402,7 @@ export const App: React.FC = () => {
                             className="w-16 h-16 rounded-xl object-cover shrink-0" 
                           />
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
                                 isApproved(property.status)
                                   ? 'bg-emerald-100 text-emerald-800'
@@ -1213,6 +1412,18 @@ export const App: React.FC = () => {
                               }`}>
                                 {isApproved(property.status) ? 'Approved • Live' : isPending(property.status) ? 'Pending Approval' : 'Rejected'}
                               </span>
+
+                              {/* Requirement 5: Occupancy badge */}
+                              {isOccupied(property.occupancyStatus) ? (
+                                <span className="bg-rose-700 text-white text-[10px] font-black px-2 py-0.5 rounded-full tracking-wider animate-pulse">
+                                  OCCUPIED / RENTED
+                                </span>
+                              ) : (
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                  Available for Rent
+                                </span>
+                              )}
+
                               {property.isFeatured && (
                                 <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                                   <Sparkles className="w-3 h-3 text-amber-600" /> Featured
@@ -1226,7 +1437,36 @@ export const App: React.FC = () => {
                         </div>
 
                         {/* Actions for owner */}
-                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                          {/* Requirement 5: Owner-only Mark as Rented / Occupied and Mark as Available Again */}
+                          {isApproved(property.status) && (
+                            <button
+                              type="button"
+                              onClick={() => updatePropertyOccupancy(
+                                property.id, 
+                                isOccupied(property.occupancyStatus) ? 'AVAILABLE' : 'OCCUPIED'
+                              )}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer ${
+                                isOccupied(property.occupancyStatus)
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                  : 'bg-rose-600 hover:bg-rose-700 text-white'
+                              }`}
+                              title="Toggle occupancy status (synchronized in Firebase)"
+                            >
+                              {isOccupied(property.occupancyStatus) ? (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Mark Available Again</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Home className="w-3.5 h-3.5" />
+                                  <span>Mark as Rented / Occupied</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+
                           <button
                             onClick={() => toggleFeatured(property.id)}
                             className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1"
@@ -1238,7 +1478,7 @@ export const App: React.FC = () => {
 
                           <button
                             onClick={() => handleEditClick(property)}
-                            className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             <span>Edit</span>
@@ -1250,7 +1490,7 @@ export const App: React.FC = () => {
                                 deleteProperty(property.id);
                               }
                             }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1345,7 +1585,15 @@ export const App: React.FC = () => {
                       </label>
                       <select
                         value={formData.locality}
-                        onChange={(e) => setFormData({ ...formData, locality: e.target.value })}
+                        onChange={(e) => {
+                          const newLoc = e.target.value;
+                          const coords = GONDIA_LOCALITY_COORDS[newLoc];
+                          setFormData({ 
+                            ...formData, 
+                            locality: newLoc,
+                            ...(coords ? { latitude: coords.lat, longitude: coords.lng } : {})
+                          });
+                        }}
                         className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600 font-semibold"
                       >
                         {GONDIA_LOCALITIES.filter(l => l !== 'All').map(loc => (
@@ -1356,7 +1604,7 @@ export const App: React.FC = () => {
 
                     <div>
                       <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Property Type *
+                        Property Category *
                       </label>
                       <select
                         value={formData.propertyType}
@@ -1367,6 +1615,39 @@ export const App: React.FC = () => {
                           <option key={pt.type} value={pt.type}>{pt.label}</option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+
+                  {/* Requirement 3: Accommodation Type Selector */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                      Accommodation Type *
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {ACCOMMODATION_TYPES.map(acc => {
+                        const isSelected = formData.accommodationType === acc.type;
+                        return (
+                          <button
+                            type="button"
+                            key={acc.type}
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                accommodationType: acc.type,
+                                bedrooms: acc.defaultBedrooms,
+                                propertyType: acc.type === 'ROOM' ? 'ROOM' : acc.type === 'PG' ? 'PG' : acc.type === 'INDEPENDENT_HOUSE' ? 'INDEPENDENT_HOUSE' : 'FLAT'
+                              }));
+                            }}
+                            className={`p-2.5 text-xs rounded-xl border text-center font-bold transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <div>{acc.label}</div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1385,6 +1666,41 @@ export const App: React.FC = () => {
                       }}
                       className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600"
                     />
+                  </div>
+
+                  {/* Requirement 2 & 3: Accurate Map Location in Gondia */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                        Accurate Map Location in Gondia *
+                      </label>
+                      <span className="text-[11px] text-blue-600 font-bold">
+                        Tap map or drag pin to your building
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Tenants explore stays by location and use Google directions. Never guess—pinpoint the exact building location on the interactive Gondia map below.
+                    </p>
+                    <GondiaMap
+                      mode="picker"
+                      pickerLocation={{ lat: formData.latitude, lng: formData.longitude }}
+                      onPickerLocationChange={(pos) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          latitude: pos.lat,
+                          longitude: pos.lng,
+                          locality: pos.locality || prev.locality
+                        }));
+                      }}
+                      heightClass="h-64 sm:h-72"
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 font-mono">
+                      <span>Coordinates: {formData.latitude.toFixed(4)}° N, {formData.longitude.toFixed(4)}° E</span>
+                      <span className="text-emerald-700 font-sans font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Accurate Coordinates Set
+                      </span>
+                    </div>
                   </div>
 
                   {/* Property Photos Upload Section */}
@@ -1614,30 +1930,50 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Specs */}
+                  {/* Requirement 3: Dynamic Accommodation Specs & Living Spaces */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">Bedrooms</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.bedrooms}
-                        onChange={(e) => setFormData({ ...formData, bedrooms: Number(e.target.value) })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">Bathrooms</label>
+                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                        {formData.accommodationType === 'ROOM' 
+                          ? 'Available Separate Rooms *' 
+                          : 'Bedrooms (BHK Count) *'}
+                      </label>
                       <input
                         type="number"
                         min="1"
-                        value={formData.bathrooms}
-                        onChange={(e) => setFormData({ ...formData, bathrooms: Number(e.target.value) })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl"
+                        max="10"
+                        value={formData.bedrooms}
+                        onChange={(e) => setFormData({ ...formData, bedrooms: Math.max(1, Number(e.target.value)) })}
+                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold"
                       />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        {formData.accommodationType === 'ROOM' 
+                          ? 'Number of separate rooms for rent' 
+                          : 'Number of dedicated bedrooms'}
+                      </span>
                     </div>
+
                     <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">Furnishing</label>
+                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                        Bathrooms / Washrooms *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={formData.bathrooms}
+                        onChange={(e) => setFormData({ ...formData, bathrooms: Math.max(1, Number(e.target.value)) })}
+                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Dedicated or attached washrooms
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                        Furnishing Status *
+                      </label>
                       <select
                         value={formData.furnishing}
                         onChange={(e) => setFormData({ ...formData, furnishing: e.target.value as FurnishingStatus })}
@@ -1647,6 +1983,86 @@ export const App: React.FC = () => {
                         <option value="SEMI_FURNISHED">Semi Furnished</option>
                         <option value="UNFURNISHED">Unfurnished</option>
                       </select>
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Beds, wardrobes, fans, lights
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Requirement 3: Kitchen & Living Room Availability */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                        Kitchen Availability *
+                      </label>
+                      <select
+                        value={formData.kitchenAvailable}
+                        onChange={(e) => setFormData({ ...formData, kitchenAvailable: e.target.value as KitchenAvailability })}
+                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                      >
+                        <option value="PRIVATE">Private Dedicated Kitchen</option>
+                        <option value="SHARED">Shared Kitchen with Others</option>
+                        <option value="NOT_AVAILABLE">No Kitchen / Not Available</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                        Hall / Living Room *
+                      </label>
+                      <select
+                        value={formData.hallAvailable ? 'YES' : 'NO'}
+                        onChange={(e) => setFormData({ ...formData, hallAvailable: e.target.value === 'YES' })}
+                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                      >
+                        <option value="YES">Living Room / Hall Included</option>
+                        <option value="NO">No Hall (Room / Bedroom Only)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Requirement 3: Suitable Tenants Multi-Select */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                      Suitable Tenants *
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'ALL', label: 'All Tenants Welcome' },
+                        { id: 'STUDENTS', label: 'Students' },
+                        { id: 'WORKING_PROFESSIONALS', label: 'Working Professionals' },
+                        { id: 'FAMILIES', label: 'Families' }
+                      ].map(st => {
+                        const isSelected = formData.suitableTenants.includes(st.id as SuitableTenantType);
+                        return (
+                          <button
+                            type="button"
+                            key={st.id}
+                            onClick={() => {
+                              let updated: SuitableTenantType[];
+                              if (st.id === 'ALL') {
+                                updated = ['ALL'];
+                              } else {
+                                const withoutAll = formData.suitableTenants.filter(t => t !== 'ALL');
+                                if (isSelected) {
+                                  updated = withoutAll.filter(t => t !== st.id);
+                                  if (updated.length === 0) updated = ['ALL'];
+                                } else {
+                                  updated = [...withoutAll, st.id as SuitableTenantType];
+                                }
+                              }
+                              setFormData({ ...formData, suitableTenants: updated });
+                            }}
+                            className={`px-3 py-1.5 text-xs rounded-xl border font-bold transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {st.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1690,6 +2106,50 @@ export const App: React.FC = () => {
                           <span>{method === 'BOTH' ? 'WhatsApp & Calls' : method === 'WHATSAPP' ? 'WhatsApp Only' : 'Phone Calls'}</span>
                         </label>
                       ))}
+                    </div>
+                  {/* Requirement 1 & 3: Actual Landlord Contact Information */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        <span>Actual Landlord Contact Information (Stored in Cloud Firestore)</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500">Auto-filled from owner account</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">Landlord Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.ownerName}
+                          onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
+                          placeholder="e.g. Rajesh Sharma"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">Contact Phone Number *</label>
+                        <input
+                          type="tel"
+                          required
+                          value={formData.ownerPhone}
+                          onChange={(e) => setFormData({ ...formData, ownerPhone: e.target.value })}
+                          placeholder="+91 98765 43210"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">WhatsApp Number *</label>
+                        <input
+                          type="tel"
+                          required
+                          value={formData.ownerWhatsappNumber}
+                          onChange={(e) => setFormData({ ...formData, ownerWhatsappNumber: e.target.value })}
+                          placeholder="+91 98765 43210"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
+                        />
+                      </div>
                     </div>
                   </div>
 

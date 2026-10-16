@@ -1,5 +1,17 @@
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage, isStorageConfigured } from './config';
+import { 
+  ref, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  getStorage, 
+  FirebaseStorage 
+} from 'firebase/storage';
+import { 
+  storage, 
+  isStorageConfigured, 
+  getStorageInstance, 
+  app, 
+  getActiveFirebaseConfig 
+} from './config';
 import { 
   compressAndResizeImage, 
   formatBytes, 
@@ -51,7 +63,7 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
 };
 
 /**
- * Uploads a single property photo to Firebase Storage.
+ * Uploads a single property photo to Firebase Storage using the same existing Firebase project and app instance.
  * Automatically compresses and resizes the photo to target 200–400 KB before upload if needed.
  * Prevents duplicate uploads by checking recent fingerprint cache.
  */
@@ -64,7 +76,9 @@ export const uploadPropertyPhoto = async (
     throw new Error(validation.error);
   }
 
-  if (!storage || !isStorageConfigured()) {
+  // Retrieve or initialize the Storage instance on the existing Firebase app instance
+  const storageInstance = getStorageInstance();
+  if (!storageInstance) {
     throw new Error(
       'Firebase Storage is not initialized. Please verify your Firebase project configuration.'
     );
@@ -100,7 +114,6 @@ export const uploadPropertyPhoto = async (
   const sanitizedName = uploadableFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const storagePath = `property_photos/${uniqueId}_${sanitizedName}`;
-  const fileRef = ref(storage, storagePath);
 
   const metadata = {
     contentType: uploadableFile.type || 'image/jpeg',
@@ -112,45 +125,76 @@ export const uploadPropertyPhoto = async (
     }
   };
 
-  return new Promise<string>((resolve, reject) => {
-    const uploadTask = uploadBytesResumable(fileRef, uploadableFile, metadata);
+  const executeUpload = (inst: FirebaseStorage, isRetry = false): Promise<string> => {
+    const fileRef = ref(inst, storagePath);
 
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        if (snapshot.totalBytes > 0) {
-          const percent = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          if (onProgress) {
-            onProgress(percent);
+    return new Promise<string>((resolve, reject) => {
+      const uploadTask = uploadBytesResumable(fileRef, uploadableFile, metadata);
+
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          if (snapshot.totalBytes > 0) {
+            const percent = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            if (onProgress) {
+              onProgress(percent);
+            }
+          }
+        },
+        (error: any) => {
+          console.error('Firebase Storage upload error:', error);
+
+          // If bucket-not-found, attempt alternate bucket (.appspot.com vs .firebasestorage.app)
+          if (!isRetry && (error.code === 'storage/bucket-not-found' || error.message?.includes('bucket-not-found'))) {
+            const cfg = getActiveFirebaseConfig();
+            if (cfg?.projectId && app) {
+              const currentBucket = (inst as any)?._bucket?.bucket || '';
+              const altBucket = currentBucket.includes('firebasestorage.app')
+                ? `${cfg.projectId}.appspot.com`
+                : `${cfg.projectId}.firebasestorage.app`;
+
+              if (altBucket !== currentBucket) {
+                console.log(`[GondiaStay] Retrying photo upload with alternative bucket "${altBucket}"...`);
+                try {
+                  const altStorage = getStorage(app, `gs://${altBucket}`);
+                  executeUpload(altStorage, true).then(resolve).catch(reject);
+                  return;
+                } catch (altErr) {
+                  console.warn('[GondiaStay] Alternative bucket switch failed:', altErr);
+                }
+              }
+            }
+          }
+
+          let errorMsg = `Failed to upload "${file.name}".`;
+          if (error.code === 'storage/unauthorized') {
+            errorMsg = 'Permission denied by Firebase Storage security rules. Please check your Storage security rules.';
+          } else if (error.code === 'storage/bucket-not-found') {
+            errorMsg = 'Firebase Storage bucket not found. Please ensure Firebase Storage is enabled in your Firebase Console (Build > Storage).';
+          } else if (error.code === 'storage/quota-exceeded') {
+            errorMsg = 'Firebase Storage quota exceeded. Please check your Firebase plan.';
+          } else if (error.code === 'storage/canceled') {
+            errorMsg = 'Photo upload was canceled.';
+          } else if (error.message) {
+            errorMsg = `Upload error: ${error.message}`;
+          }
+          reject(new Error(errorMsg));
+        },
+        async () => {
+          try {
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            // Cache to prevent duplicate uploads
+            uploadedUrlCache.set(fingerprint, downloadUrl);
+            resolve(downloadUrl);
+          } catch (err: any) {
+            reject(new Error(`Failed to retrieve photo download URL: ${err.message || ''}`));
           }
         }
-      },
-      (error) => {
-        console.error('Firebase Storage upload error:', error);
-        let errorMsg = `Failed to upload "${file.name}".`;
-        if (error.code === 'storage/unauthorized') {
-          errorMsg = 'Permission denied by Firebase Storage rules. Please check your storage security rules.';
-        } else if (error.code === 'storage/quota-exceeded') {
-          errorMsg = 'Firebase Storage quota exceeded. Please check your Firebase plan.';
-        } else if (error.code === 'storage/canceled') {
-          errorMsg = 'Photo upload was canceled.';
-        } else if (error.message) {
-          errorMsg = `Upload error: ${error.message}`;
-        }
-        reject(new Error(errorMsg));
-      },
-      async () => {
-        try {
-          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-          // Cache to prevent duplicate uploads
-          uploadedUrlCache.set(fingerprint, downloadUrl);
-          resolve(downloadUrl);
-        } catch (err: any) {
-          reject(new Error(`Failed to retrieve photo download URL: ${err.message || ''}`));
-        }
-      }
-    );
-  });
+      );
+    });
+  };
+
+  return executeUpload(storageInstance);
 };
 
 /**

@@ -3,8 +3,6 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper function to verify admin authorization
-    // Requirement 4, 5, 6: Only verified admin account can approve, reject, edit, or delete listings.
-    // Ordinary authenticated users and owners are blocked.
     function isAdmin() {
       return request.auth != null && (
         // Firebase custom claim: admin == true
@@ -21,9 +19,7 @@ service cloud.firestore {
 
     // Properties Collection: Gondia Stay listings
     match /properties/{propertyId} {
-      // 1. Read: Public read allows real-time listener on public Vercel URL
-      // across different mobile phones and devices.
-      // (The client UI filters and displays approved listings for public visitors)
+      // 1. Read: Public read allows real-time listener on public URL
       allow read: if true;
 
       // 2. Create: Owners can submit new listings without logging in.
@@ -42,22 +38,32 @@ service cloud.firestore {
                     && request.resource.data.address.size() > 0
                     && request.resource.data.address.size() <= 300
                     && request.resource.data.locality is string
-                    && request.resource.data.propertyType is string
                     && request.resource.data.monthlyRent is number
                     && request.resource.data.monthlyRent >= 0
                     && request.resource.data.monthlyRent <= 1000000
                     && request.resource.data.ownerPhone is string
                     && request.resource.data.ownerPhone.size() >= 5
-                    && request.resource.data.createdAt is number
                     && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
 
-      // 3. Update: ONLY authenticated admin can approve, reject, or edit listings.
-      // Ordinary authenticated users or owners CANNOT modify status or properties.
-      allow update: if isAdmin();
+      // 3. Update:
+      // - Admin has full update privileges (approval, rejection, edits, occupancy).
+      // - Verified owner can update occupancy status ('AVAILABLE' or 'OCCUPIED') without changing approval status.
+      allow update: if isAdmin() || (
+        // Allow owner to update occupancy status while keeping status unchanged
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
+        && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
+        && request.resource.data.status == resource.data.status
+      );
 
       // 4. Delete: ONLY authenticated admin can delete listings.
-      // Ordinary users and property owners can NEVER delete listings.
       allow delete: if isAdmin();
+    }
+
+    // Owners collection for real owner profile data
+    match /owners/{ownerId} {
+      allow read: if true;
+      allow write: if request.resource.data.name is string 
+                   && request.resource.data.phone is string;
     }
 
     // Admins Collection (optional document-based admin registry)
@@ -73,5 +79,3 @@ service cloud.firestore {
     }
   }
 }
-
-

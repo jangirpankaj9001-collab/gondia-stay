@@ -14,9 +14,11 @@ import {
   Edit3,
   Trash2,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Home,
+  CheckCircle
 } from 'lucide-react';
-import { PropertyListing } from '../types';
+import { PropertyListing, isOccupied, isApproved } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp, dialPhone } from '../utils/contact';
 
@@ -37,10 +39,12 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
     favorites, 
     toggleFavorite, 
     navigateTo, 
-    toggleFeatured 
+    toggleFeatured,
+    updatePropertyOccupancy
   } = useApp();
 
   const isFav = favorites.includes(property.id);
+  const occupied = isOccupied(property.occupancyStatus);
 
   const mainPhoto = property.photos && property.photos.length > 0 
     ? property.photos[0] 
@@ -71,9 +75,15 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
         {/* Top Badges */}
         <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="bg-blue-600/90 backdrop-blur-xs text-white text-xs font-bold px-2.5 py-1 rounded-lg shadow-xs">
-              {property.propertyType}
-            </span>
+            {occupied ? (
+              <span className="bg-rose-700 text-white text-xs font-black px-2.5 py-1 rounded-lg shadow-md border border-rose-900 tracking-wider flex items-center gap-1 animate-pulse">
+                OCCUPIED
+              </span>
+            ) : (
+              <span className="bg-blue-600/90 backdrop-blur-xs text-white text-xs font-bold px-2.5 py-1 rounded-lg shadow-xs">
+                {property.propertyType}
+              </span>
+            )}
             {property.isFeatured && (
               <span className="bg-amber-500 text-white text-xs font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs">
                 <Star className="w-3.5 h-3.5 fill-current" />
@@ -193,10 +203,37 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
                 <span className="font-semibold text-slate-700 truncate">
                   Owner: {property.ownerName} ({formatDisplayPhone(property.ownerPhone)})
                 </span>
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
-                  WhatsApp Active
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                  occupied ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {occupied ? 'Occupied' : 'Available'}
                 </span>
               </div>
+
+              {/* Requirement 5: Owner-only Mark as Rented / Occupied and Mark as Available Again */}
+              {isApproved(property.status) && (
+                <button
+                  type="button"
+                  onClick={() => updatePropertyOccupancy(property.id, occupied ? 'AVAILABLE' : 'OCCUPIED')}
+                  className={`w-full py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors shadow-xs ${
+                    occupied
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-rose-600 hover:bg-rose-700 text-white'
+                  }`}
+                >
+                  {occupied ? (
+                    <>
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Mark as Available Again</span>
+                    </>
+                  ) : (
+                    <>
+                      <Home className="w-3.5 h-3.5" />
+                      <span>Mark as Rented / Occupied</span>
+                    </>
+                  )}
+                </button>
+              )}
 
               <div className="flex items-center justify-between gap-2">
                 <button
@@ -238,38 +275,59 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
               </div>
             </div>
           ) : (
-            /* Tenant View: One-click WhatsApp, Call, and Details */
-            <div className="flex items-center gap-2">
-              {/* Direct WhatsApp Button */}
-              <button
-                type="button"
-                onClick={() => openWhatsApp(property.ownerPhone, defaultMsg)}
-                className="flex-1 bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] transition-transform"
-              >
-                <MessageCircle className="w-4 h-4 fill-current" />
-                <span>WhatsApp</span>
-              </button>
+            /* Tenant View: Check Occupancy Status */
+            occupied ? (
+              /* Requirement 5: When occupied, hide owner contact number and WhatsApp button from tenant view */
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse" />
+                  <div>
+                    <div className="leading-tight">OCCUPIED / RENTED</div>
+                    <div className="text-[10px] text-rose-600 font-normal">Contact & enquiries paused</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigateTo('detail', property)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold transition-colors"
+                >
+                  View Info
+                </button>
+              </div>
+            ) : (
+              /* Available Property: Direct WhatsApp, Call, and Details */
+              <div className="flex items-center gap-2">
+                {/* Direct WhatsApp Button */}
+                <button
+                  type="button"
+                  onClick={() => openWhatsApp(property.ownerWhatsappNumber || property.ownerPhone, defaultMsg)}
+                  className="flex-1 bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] transition-transform"
+                >
+                  <MessageCircle className="w-4 h-4 fill-current" />
+                  <span>WhatsApp</span>
+                </button>
 
-              {/* Direct Call Button */}
-              <button
-                type="button"
-                onClick={() => dialPhone(property.ownerPhone)}
-                className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>Call</span>
-              </button>
+                {/* Direct Call Button */}
+                <button
+                  type="button"
+                  onClick={() => dialPhone(property.ownerPhone)}
+                  className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>Call</span>
+                </button>
 
-              {/* View Details Button */}
-              <button
-                type="button"
-                onClick={() => navigateTo('detail', property)}
-                className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                title="View full details"
-              >
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
+                {/* View Details Button */}
+                <button
+                  type="button"
+                  onClick={() => navigateTo('detail', property)}
+                  className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                  title="View full details"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            )
           )}
         </div>
       </div>

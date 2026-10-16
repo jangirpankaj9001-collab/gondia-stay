@@ -17,6 +17,15 @@ export function formatWhatsAppNumber(rawPhone: string): string {
 }
 
 /**
+ * Returns effective WhatsApp number, falling back to regular phone if not explicitly set.
+ */
+export function getEffectiveWhatsAppNumber(whatsapp?: string, phone?: string): string {
+  const primary = (whatsapp || '').trim();
+  if (primary) return primary;
+  return (phone || '').trim();
+}
+
+/**
  * Clean visual display format e.g. "+91 98230 12345"
  */
 export function formatDisplayPhone(rawPhone: string): string {
@@ -37,7 +46,7 @@ export function formatDisplayPhone(rawPhone: string): string {
 export function openWhatsApp(rawPhone: string, message: string): void {
   const cleanNumber = formatWhatsAppNumber(rawPhone);
   if (!cleanNumber) {
-    alert('Contact number not available');
+    alert('WhatsApp number not available');
     return;
   }
   const encodedMsg = encodeURIComponent(message);
