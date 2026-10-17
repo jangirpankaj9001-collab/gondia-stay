@@ -237,6 +237,29 @@ export const getStorageInstance = (): FirebaseStorage => {
   );
 };
 
+/**
+ * Updates the active storage instance and stores the verified working bucket.
+ * This avoids redundant bucket switching on subsequent uploads.
+ */
+export const updateActiveStorageInstance = (newStorage: FirebaseStorage, bucketName?: string): void => {
+  storage = newStorage;
+  if (bucketName) {
+    if (config) {
+      config.storageBucket = bucketName;
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        parsed.storageBucket = bucketName;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      }
+    } catch (e) {
+      console.warn('[GondiaStay] Unable to persist updated storage bucket in localStorage:', e);
+    }
+  }
+};
+
 export { app, db, auth, storage };
 export const isFirebaseConfigured = (): boolean => db !== null;
 export const isStorageConfigured = (): boolean => {

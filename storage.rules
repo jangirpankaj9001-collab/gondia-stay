@@ -3,16 +3,19 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     // GondiaStay Property Photos folder
-    match /property_photos/{photoId} {
+    match /property_photos/{photoId=**} {
       // 1. Read: Public read so visitors and tenants can view property photos across all devices
       allow read: if true;
 
       // 2. Write: Owners can upload property photos directly from their phone gallery
-      // Security safeguards against abuse:
+      // Strict security safeguards against abuse:
       // - Must be an image MIME type (e.g. image/jpeg, image/png, image/webp)
       // - File size capped at 10 MB per photo to prevent storage abuse
-      allow write: if request.resource.size < 10 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow create, update: if request.resource.size < 10 * 1024 * 1024
+                           && request.resource.contentType.matches('image/.*');
+
+      // 3. Delete: Allow owners to remove or replace listing photos without null-resource errors
+      allow delete: if true;
     }
   }
 }

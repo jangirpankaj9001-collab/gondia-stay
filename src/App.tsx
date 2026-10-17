@@ -552,10 +552,35 @@ export const App: React.FC = () => {
         }
         
         try {
-          // Upload in parallel with concurrency 3 and 20s timeout
-          const uploadedUrls = await uploadMultiplePropertyPhotos(filesToUpload, (info) => {
-            setUploadProgress(info);
-          }, 3);
+          // Upload with controlled concurrency 2 and resumable chunking for mobile/slow networks
+          const uploadedUrls = await uploadMultiplePropertyPhotos(
+            filesToUpload,
+            (info) => {
+              setUploadProgress(info);
+            },
+            2,
+            (completedFile, cloudUrl) => {
+              // Immediately mark finished photo as existing so it is never restarted on network retry
+              const fp = getFileFingerprint(completedFile);
+              setSelectedPhotos(current =>
+                current.map(p => {
+                  if (
+                    p.fingerprint === fp ||
+                    (p.file && p.file.name === completedFile.name && p.file.size === completedFile.size)
+                  ) {
+                    return {
+                      ...p,
+                      url: cloudUrl,
+                      isExisting: true,
+                      file: undefined,
+                      isOptimizing: false
+                    };
+                  }
+                  return p;
+                })
+              );
+            }
+          );
           
           let uploadIdx = 0;
           for (const item of selectedPhotos) {
@@ -567,7 +592,7 @@ export const App: React.FC = () => {
           }
         } catch (uploadErr: any) {
           console.error('Firebase Storage upload failed:', uploadErr);
-          const errorMsg = `Photo upload: ${uploadErr.message || 'Check Firebase Storage connection and rules'}`;
+          const errorMsg = uploadErr.message || 'Check Firebase Storage connection and rules';
           setPhotoUploadError(errorMsg);
           throw new Error(errorMsg);
         } finally {
