@@ -18,6 +18,7 @@ import {
   saveFirebaseWebConfig, 
   resetFirebaseWebConfig, 
   getActiveFirebaseConfig,
+  normalizeStorageBucket,
   FirebaseConfigParams 
 } from '../firebase/config';
 
@@ -68,7 +69,11 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
         setApiKey(parsed.apiKey);
         setProjectId(parsed.projectId);
         setAuthDomain(parsed.authDomain || `${parsed.projectId}.firebaseapp.com`);
-        setStorageBucket(parsed.storageBucket || `${parsed.projectId}.appspot.com`);
+        setStorageBucket(
+          parsed.storageBucket
+            ? normalizeStorageBucket(parsed.storageBucket, parsed.projectId)
+            : normalizeStorageBucket(undefined, parsed.projectId)
+        );
         setMessagingSenderId(parsed.messagingSenderId || '');
         setAppId(parsed.appId || '');
         setActiveSubTab('manual');
@@ -91,7 +96,7 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
       apiKey: apiKey.trim(),
       projectId: projectId.trim(),
       authDomain: authDomain.trim() || `${projectId.trim()}.firebaseapp.com`,
-      storageBucket: storageBucket.trim() || `${projectId.trim()}.appspot.com`,
+      storageBucket: normalizeStorageBucket(storageBucket.trim(), projectId.trim()),
       messagingSenderId: messagingSenderId.trim(),
       appId: appId.trim()
     };
@@ -303,9 +308,12 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                   type="text"
                   value={storageBucket}
                   onChange={(e) => setStorageBucket(e.target.value)}
-                  placeholder="project-id.appspot.com"
+                  placeholder="e.g. project-id.firebasestorage.app or project-id.appspot.com"
                   className="w-full text-xs p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 font-mono"
                 />
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  Usually &lt;projectId&gt;.firebasestorage.app (standard) or &lt;projectId&gt;.appspot.com (legacy)
+                </span>
               </div>
 
               <div>

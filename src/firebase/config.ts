@@ -169,6 +169,11 @@ if (config && config.apiKey && config.projectId) {
       }
     }
 
+    if (storage) {
+      storage.maxUploadRetryTime = 15000;
+      storage.maxOperationRetryTime = 15000;
+    }
+
     console.log('[GondiaStay] Connected to Firebase Project:', config.projectId, 'Storage bucket:', bucket || '(default)');
   } catch (error) {
     console.error('[GondiaStay] Firebase initialization error:', error);
@@ -204,24 +209,19 @@ export const getStorageInstance = (): FirebaseStorage => {
       (activeApp.options as any).storageBucket = bucket;
     }
 
+    let initializedStorage: FirebaseStorage;
     try {
-      const initializedStorage = bucket 
+      initializedStorage = bucket 
         ? getStorage(activeApp, `gs://${bucket}`) 
         : getStorage(activeApp);
-      storage = initializedStorage;
-      return initializedStorage;
     } catch (e1) {
       try {
-        const initializedStorage = bucket 
+        initializedStorage = bucket 
           ? getStorage(activeApp, bucket) 
           : getStorage(activeApp);
-        storage = initializedStorage;
-        return initializedStorage;
       } catch (e2) {
         try {
-          const fallback = getStorage(activeApp);
-          storage = fallback;
-          return fallback;
+          initializedStorage = getStorage(activeApp);
         } catch (e3: any) {
           throw new Error(
             `Firebase Storage initialization failed for project "${activeCfg.projectId}": ${e3.message || 'Storage bucket not accessible'}. ` +
@@ -230,6 +230,11 @@ export const getStorageInstance = (): FirebaseStorage => {
         }
       }
     }
+
+    initializedStorage.maxUploadRetryTime = 15000;
+    initializedStorage.maxOperationRetryTime = 15000;
+    storage = initializedStorage;
+    return initializedStorage;
   }
 
   throw new Error(
@@ -242,6 +247,8 @@ export const getStorageInstance = (): FirebaseStorage => {
  * This avoids redundant bucket switching on subsequent uploads.
  */
 export const updateActiveStorageInstance = (newStorage: FirebaseStorage, bucketName?: string): void => {
+  newStorage.maxUploadRetryTime = 15000;
+  newStorage.maxOperationRetryTime = 15000;
   storage = newStorage;
   if (bucketName) {
     if (config) {

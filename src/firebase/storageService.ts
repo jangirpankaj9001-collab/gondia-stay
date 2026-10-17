@@ -1,6 +1,5 @@
 import { 
   ref, 
-  uploadBytesResumable, 
   uploadBytes, 
   getDownloadURL, 
   getStorage, 
@@ -34,10 +33,6 @@ export interface UploadProgressInfo {
 }
 
 const MAX_ORIGINAL_FILE_SIZE_BYTES = 25 * 1024 * 1024; // Up to 25 MB before compression
-// Generous 120-second safety ceiling to reliably handle slow mobile/broadband networks
-const MAX_UPLOAD_TIMEOUT_MS = 120000;
-// Inactivity timeout: 45 seconds without any bytes transferred or progress updates
-const INACTIVITY_TIMEOUT_MS = 45000;
 
 /**
  * Safely extracts the active bucket name from the FirebaseStorage instance or active config.
@@ -53,6 +48,58 @@ export const getStorageBucketName = (
     cfg?.storageBucket ||
     ''
   );
+};
+
+/**
+ * Unpacks and formats raw Firebase errors to surface the actual root cause directly to users.
+ * Never masks Firebase server, rule, or bucket rejections with misleading network messages.
+ */
+export const formatStorageError = (error: any, bucketName: string, fileName: string): string => {
+  const code = error?.code || '';
+  const message = error?.message || 'Upload failed.';
+  const serverResponse = error?.customData?.serverResponse || error?.serverResponse || '';
+  const status = error?.status_ ? ` (HTTP ${error.status_})` : '';
+
+  let actionableHelp = '';
+  if (
+    code === 'storage/bucket-not-found' || 
+    message.includes('bucket-not-found') || 
+    serverResponse.includes('NoSuchBucket') ||
+    error?.status_ === 404
+  ) {
+    actionableHelp = `Firebase Storage bucket "${bucketName}" was not found (HTTP 404). Please ensure Firebase Storage is enabled in Firebase Console (Build > Storage) and check the bucket name in Settings.`;
+  } else if (
+    code === 'storage/unauthorized' || 
+    message.includes('unauthorized') || 
+    serverResponse.includes('AccessDenied') ||
+    error?.status_ === 403
+  ) {
+    actionableHelp = `Permission denied by Firebase Storage security rules for "${fileName}" (HTTP 403). Check storage.rules in Firebase Console to ensure write access is allowed for /property_photos/.`;
+  } else if (code === 'storage/quota-exceeded') {
+    actionableHelp = `Firebase Storage quota exceeded. Please check your Firebase billing plan and storage usage in the Firebase Console.`;
+  } else if (code === 'storage/unauthenticated') {
+    actionableHelp = `User is unauthenticated. Please verify Firebase Authentication is initialized and check storage.rules.`;
+  } else if (code === 'storage/retry-limit-exceeded') {
+    actionableHelp = `Firebase connection to bucket "${bucketName}" timed out after retry limit. Please check if Firebase Storage is enabled in Firebase Console.`;
+  } else if (code === 'storage/invalid-checksum') {
+    actionableHelp = `Checksum mismatch during transfer of "${fileName}".`;
+  } else if (code === 'storage/canceled') {
+    actionableHelp = `Photo upload was canceled.`;
+  } else if (code === 'storage/unknown') {
+    if (serverResponse) {
+      actionableHelp = `Server response: ${serverResponse}`;
+    } else {
+      actionableHelp = `Firebase Storage returned an unknown error connecting to bucket "${bucketName}". Please ensure Firebase Storage is enabled in Firebase Console (Build > Storage).`;
+    }
+  }
+
+  const prefix = code ? `[${code}]${status} ` : '';
+  const serverInfo = serverResponse && !actionableHelp.includes(serverResponse) ? ` [Server: ${serverResponse}]` : '';
+
+  if (actionableHelp) {
+    return `${prefix}${actionableHelp}${serverInfo}`;
+  }
+  return `${prefix}${message}${serverInfo}`;
 };
 
 /**
@@ -84,9 +131,9 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
 };
 
 /**
- * Uploads a single property photo to Firebase Storage with resumable chunked upload.
+ * Uploads a single property photo to Firebase Storage with fast direct upload.
  * Automatically compresses to ~150-250 KB prior to sending, checks persistent duplicate cache,
- * streams real-time byte progress, and accommodates slow networks with an activity-based watchdog timer.
+ * enforces sensible 15s max retry times so errors fail fast, and reports real Firebase errors.
  */
 export const uploadPropertyPhoto = async (
   file: File,
@@ -101,9 +148,13 @@ export const uploadPropertyPhoto = async (
   const storageInstance = getStorageInstance();
   if (!storageInstance) {
     throw new Error(
-      'Firebase Storage is not initialized. Please verify your Firebase project configuration.'
+      'Firebase Storage is not initialized because Firebase is not connected. Please open Settings and configure your Firebase project credentials.'
     );
   }
+
+  // Ensure reasonable retry limits so errors fail fast (15s) rather than hanging 10 minutes
+  storageInstance.maxUploadRetryTime = 15000;
+  storageInstance.maxOperationRetryTime = 15000;
 
   // 1. Check persistent duplicate upload cache (0ms instant return, avoids redundant network)
   const fingerprint = getFileFingerprint(file);
@@ -141,172 +192,77 @@ export const uploadPropertyPhoto = async (
   const metadata = {
     contentType: uploadableFile.type || 'image/jpeg',
     customMetadata: {
-      source: 'GondiaStay Resumable Upload',
+      source: 'GondiaStay Fast Upload',
       originalName: file.name,
       uploadedAt: new Date().toISOString(),
       optimizedSize: `${Math.round(uploadableFile.size / 1024)}KB`
     }
   };
 
-  const executeResumableUpload = (inst: FirebaseStorage, isRetry = false): Promise<string> => {
-    return new Promise<string>((resolve, reject) => {
-      const fileRef = ref(inst, storagePath);
-      let isFinalized = false;
-      let inactivityTimer: any = null;
-      let maxTimeoutTimer: any = null;
+  const executeUpload = async (inst: FirebaseStorage, isRetry = false): Promise<string> => {
+    inst.maxUploadRetryTime = 15000;
+    inst.maxOperationRetryTime = 15000;
+    const fileRef = ref(inst, storagePath);
+    const activeBucket = getStorageBucketName(inst, getActiveFirebaseConfig());
 
-      const clearAllTimers = () => {
-        if (inactivityTimer) {
-          clearTimeout(inactivityTimer);
-          inactivityTimer = null;
-        }
-        if (maxTimeoutTimer) {
-          clearTimeout(maxTimeoutTimer);
-          maxTimeoutTimer = null;
-        }
-      };
+    try {
+      if (onProgress) onProgress(50);
 
-      const resetInactivityWatchdog = () => {
-        if (isFinalized) return;
-        if (inactivityTimer) clearTimeout(inactivityTimer);
-        inactivityTimer = setTimeout(() => {
-          if (isFinalized) return;
-          console.warn(
-            `[GondiaStay] Photo upload for "${file.name}" stalled with no network progress for ${INACTIVITY_TIMEOUT_MS / 1000}s`
-          );
-          try {
-            uploadTask.cancel();
-          } catch {}
-          clearAllTimers();
-          reject(
-            new Error(
-              `Upload stalled for "${file.name}" after ${INACTIVITY_TIMEOUT_MS / 1000}s of network inactivity. Please check your internet connection.`
-            )
-          );
-        }, INACTIVITY_TIMEOUT_MS);
-      };
+      // Direct uploadBytes: sends data directly in a single request.
+      // Avoids browser resumable session CORS issues (Location header) and completes in milliseconds for 150-250KB images.
+      const result = await uploadBytes(fileRef, uploadableFile, metadata);
 
-      // Maximum safety ceiling timer (120s) to prevent endless hang
-      maxTimeoutTimer = setTimeout(() => {
-        if (isFinalized) return;
-        try {
-          uploadTask.cancel();
-        } catch {}
-        clearAllTimers();
-        reject(
-          new Error(
-            `Upload timed out for "${file.name}" after ${MAX_UPLOAD_TIMEOUT_MS / 1000}s. Please check your network connection and Firebase Storage bucket.`
-          )
-        );
-      }, MAX_UPLOAD_TIMEOUT_MS);
+      if (onProgress) onProgress(85);
+      const downloadUrl = await getDownloadURL(result.ref);
 
-      if (onProgress) onProgress(35);
-      // Use uploadBytesResumable to enable chunked transfer, real-time byte tracking, and slow network resilience
-      const uploadTask = uploadBytesResumable(fileRef, uploadableFile, metadata);
+      if (onProgress) onProgress(100);
+      setCachedPhotoUrl(fingerprint, downloadUrl);
+      return downloadUrl;
+    } catch (error: any) {
+      console.error('[GondiaStay] Firebase Storage upload error:', {
+        code: error?.code,
+        message: error?.message,
+        serverResponse: error?.customData?.serverResponse || error?.serverResponse,
+        status: error?.status_,
+        bucket: activeBucket,
+        file: file.name
+      });
 
-      resetInactivityWatchdog();
+      // If bucket-not-found, automatically try alternate bucket (.appspot.com vs .firebasestorage.app)
+      const isBucketNotFound = 
+        error?.code === 'storage/bucket-not-found' ||
+        error?.message?.includes('bucket-not-found') ||
+        error?.customData?.serverResponse?.includes('NoSuchBucket') ||
+        error?.status_ === 404;
 
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          if (isFinalized) return;
-          // Every time bytes are transferred, reset the inactivity watchdog so slow uploads don't abort
-          resetInactivityWatchdog();
+      if (!isRetry && isBucketNotFound) {
+        const cfg = getActiveFirebaseConfig();
+        if (cfg?.projectId && app) {
+          const altBucket = activeBucket.includes('firebasestorage.app')
+            ? `${cfg.projectId}.appspot.com`
+            : `${cfg.projectId}.firebasestorage.app`;
 
-          const transferred = snapshot.bytesTransferred;
-          const total = snapshot.totalBytes;
-          const progressRatio = total > 0 ? transferred / total : 0;
-
-          // Granular smooth progress mapped from 35% to 88%
-          const currentPercent = Math.round(35 + progressRatio * 53);
-          if (onProgress) {
-            onProgress(Math.min(88, Math.max(35, currentPercent)));
-          }
-        },
-        async (error: any) => {
-          if (isFinalized) return;
-          clearAllTimers();
-          console.error('[GondiaStay] Firebase Storage upload error details:', {
-            code: error?.code,
-            message: error?.message,
-            serverResponse: error?.customData?.serverResponse || error?.serverResponse,
-            file: file.name
-          });
-
-          // If bucket-not-found, automatically try alternate bucket (.appspot.com vs .firebasestorage.app)
-          if (!isRetry && (error?.code === 'storage/bucket-not-found' || error?.message?.includes('bucket-not-found'))) {
-            const cfg = getActiveFirebaseConfig();
-            if (cfg?.projectId && app) {
-              const currentBucket = getStorageBucketName(inst, cfg);
-              const altBucket = currentBucket.includes('firebasestorage.app')
-                ? `${cfg.projectId}.appspot.com`
-                : `${cfg.projectId}.firebasestorage.app`;
-
-              if (altBucket !== currentBucket) {
-                console.log(`[GondiaStay] Retrying photo upload with alternative bucket "${altBucket}"...`);
-                try {
-                  const altStorage = getStorage(app, `gs://${altBucket}`);
-                  const res = await executeResumableUpload(altStorage, true);
-                  // Update active storage instance so future uploads use the working bucket directly
-                  updateActiveStorageInstance(altStorage, altBucket);
-                  resolve(res);
-                  return;
-                } catch (altErr) {
-                  console.warn('[GondiaStay] Alternative bucket switch failed:', altErr);
-                }
-              }
+          if (altBucket !== activeBucket) {
+            console.log(`[GondiaStay] Retrying photo upload with alternative bucket "${altBucket}"...`);
+            try {
+              const altStorage = getStorage(app, `gs://${altBucket}`);
+              const res = await executeUpload(altStorage, true);
+              updateActiveStorageInstance(altStorage, altBucket);
+              return res;
+            } catch (altErr) {
+              console.warn('[GondiaStay] Alternative bucket switch failed:', altErr);
             }
           }
-
-          let errorMsg = `Failed to upload "${file.name}".`;
-          if (error?.code === 'storage/unauthorized') {
-            errorMsg = `Permission denied by Firebase Storage security rules for "${file.name}". Please verify storage.rules allows uploads to /property_photos/ in Firebase Console.`;
-          } else if (error?.code === 'storage/bucket-not-found') {
-            const bucketName = getStorageBucketName(inst, getActiveFirebaseConfig());
-            errorMsg = `Firebase Storage bucket "${bucketName || 'default'}" not found. Please enable Firebase Storage in Firebase Console (Build > Storage).`;
-          } else if (error?.code === 'storage/quota-exceeded') {
-            errorMsg = `Firebase Storage quota exceeded for "${file.name}". Please check your Firebase plan and usage limits.`;
-          } else if (error?.code === 'storage/canceled') {
-            errorMsg = `Upload of "${file.name}" was canceled.`;
-          } else if (error?.code === 'storage/retry-limit-exceeded') {
-            errorMsg = `Upload timed out for "${file.name}" due to unstable network connection. Please check your internet connection.`;
-          } else if (error?.message) {
-            const serverResponse = error.customData?.serverResponse || error.serverResponse;
-            if (serverResponse && typeof serverResponse === 'string') {
-              errorMsg = `${error.message} (${serverResponse})`;
-            } else {
-              errorMsg = error.message;
-            }
-          }
-          reject(new Error(errorMsg));
-        },
-        async () => {
-          if (isFinalized) return;
-          isFinalized = true;
-          clearAllTimers();
-          if (onProgress) onProgress(90);
-
-          try {
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            if (onProgress) onProgress(100);
-
-            // Persist in cache to prevent duplicate uploads in future edits/submissions
-            setCachedPhotoUrl(fingerprint, downloadUrl);
-            resolve(downloadUrl);
-          } catch (urlErr: any) {
-            console.error('[GondiaStay] Failed to retrieve download URL:', urlErr);
-            reject(
-              new Error(
-                `Photo uploaded successfully but failed to retrieve public URL: ${urlErr?.message || 'Check storage.rules read permission'}`
-              )
-            );
-          }
         }
-      );
-    });
+      }
+
+      // Format the REAL Firebase error directly without misleading network messages
+      const formatted = formatStorageError(error, activeBucket, file.name);
+      throw new Error(formatted);
+    }
   };
 
-  return executeResumableUpload(storageInstance);
+  return executeUpload(storageInstance);
 };
 
 /**
@@ -350,7 +306,7 @@ export const uploadMultiplePropertyPhotos = async (
     });
   };
 
-  // Run with controlled concurrency (default 2 to prevent cellular uplink congestion)
+  // Run with controlled concurrency (default: 2 to prevent mobile uplink congestion)
   let nextIndex = 0;
 
   const runWorker = async () => {
