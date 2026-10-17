@@ -2107,6 +2107,8 @@ export const App: React.FC = () => {
                         </label>
                       ))}
                     </div>
+                  </div>
+
                   {/* Requirement 1 & 3: Actual Landlord Contact Information */}
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
@@ -2494,40 +2496,76 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Key Specs Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <Bed className="w-5 h-5 text-blue-600 mb-1" />
-                    <span className="text-xs text-slate-500 block">Bedrooms</span>
-                    <span className="text-sm font-extrabold text-slate-900">
-                      {selectedProperty.bedrooms === 0 ? 'Single Room / Studio' : `${selectedProperty.bedrooms} BHK`}
+                {/* Key Specs Grid (Requirement 3: Accommodation Specs) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <Bed className="w-4 h-4 text-blue-600 mb-1" />
+                    <span className="text-[11px] text-slate-500 block">Space</span>
+                    <span className="text-xs font-extrabold text-slate-900">
+                      {selectedProperty.accommodationType === 'ROOM' 
+                        ? `${selectedProperty.bedrooms} Separate Room${selectedProperty.bedrooms > 1 ? 's' : ''}`
+                        : selectedProperty.bedrooms === 0 ? 'Single Room' : `${selectedProperty.bedrooms} BHK Flat`}
                     </span>
                   </div>
 
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <Bath className="w-5 h-5 text-blue-600 mb-1" />
-                    <span className="text-xs text-slate-500 block">Bathrooms</span>
-                    <span className="text-sm font-extrabold text-slate-900">
-                      {selectedProperty.bathrooms} Washroom
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <Bath className="w-4 h-4 text-blue-600 mb-1" />
+                    <span className="text-[11px] text-slate-500 block">Washrooms</span>
+                    <span className="text-xs font-extrabold text-slate-900">
+                      {selectedProperty.bathrooms} Dedicated
                     </span>
                   </div>
 
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <Sofa className="w-5 h-5 text-blue-600 mb-1" />
-                    <span className="text-xs text-slate-500 block">Furnishing</span>
-                    <span className="text-sm font-extrabold text-slate-900">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <Sofa className="w-4 h-4 text-blue-600 mb-1" />
+                    <span className="text-[11px] text-slate-500 block">Furnishing</span>
+                    <span className="text-xs font-extrabold text-slate-900 truncate block">
                       {selectedProperty.furnishing.replace('_', ' ')}
                     </span>
                   </div>
 
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <Clock className="w-5 h-5 text-blue-600 mb-1" />
-                    <span className="text-xs text-slate-500 block">Available From</span>
-                    <span className="text-sm font-extrabold text-slate-900">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <Utensils className="w-4 h-4 text-blue-600 mb-1" />
+                    <span className="text-[11px] text-slate-500 block">Kitchen</span>
+                    <span className="text-xs font-extrabold text-slate-900 truncate block">
+                      {selectedProperty.kitchenAvailable === 'PRIVATE' 
+                        ? 'Private Kitchen' 
+                        : selectedProperty.kitchenAvailable === 'SHARED' 
+                          ? 'Shared Kitchen' 
+                          : 'No Kitchen'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <Building2 className="w-4 h-4 text-blue-600 mb-1" />
+                    <span className="text-[11px] text-slate-500 block">Living Hall</span>
+                    <span className="text-xs font-extrabold text-slate-900 truncate block">
+                      {selectedProperty.hallAvailable !== false ? 'Hall Included' : 'Rooms Only'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <Clock className="w-4 h-4 text-blue-600 mb-1" />
+                    <span className="text-[11px] text-slate-500 block">Available From</span>
+                    <span className="text-xs font-extrabold text-slate-900 truncate block">
                       {selectedProperty.availableFrom}
                     </span>
                   </div>
                 </div>
+
+                {/* Suitable Tenants Badge */}
+                {selectedProperty.suitableTenants && selectedProperty.suitableTenants.length > 0 && (
+                  <div className="flex items-center gap-2 p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs">
+                    <span className="font-bold text-blue-900">Suitable For:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedProperty.suitableTenants.map(st => (
+                        <span key={st} className="px-2 py-0.5 bg-white border border-blue-200 text-blue-800 text-[11px] font-bold rounded-lg shadow-2xs">
+                          {st === 'ALL' ? 'All Tenants Welcome' : st === 'STUDENTS' ? 'Students' : st === 'WORKING_PROFESSIONALS' ? 'Working Professionals' : 'Families'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Amenities */}
                 <div>
@@ -2542,51 +2580,121 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Direct Landlord Contact Section */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                      {selectedProperty.ownerName[0]}
+                {/* Requirement 5: Rental Occupancy Management & Landlord Contact Privacy */}
+                {isOccupied(selectedProperty.occupancyStatus) ? (
+                  <div className="bg-rose-50 border-2 border-rose-200 rounded-3xl p-6 sm:p-7 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                          <Home className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="bg-rose-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                              OCCUPIED / RENTED
+                            </span>
+                            <span className="text-xs text-rose-800 font-bold">In Gondia</span>
+                          </div>
+                          <h4 className="text-base font-extrabold text-slate-900 mt-1">
+                            This Property Is Currently Rented / Occupied
+                          </h4>
+                        </div>
+                      </div>
+
+                      {/* Owner or Admin Can Mark Available Again */}
+                      {(currentOwner.id === selectedProperty.ownerId || isAdminAuthenticated) && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await updatePropertyOccupancy(selectedProperty.id, 'AVAILABLE');
+                            showToast('Property marked as Available Again!');
+                          }}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer shrink-0"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Mark as Available Again</span>
+                        </button>
+                      )}
                     </div>
-                    <div>
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        Verified Landlord
-                      </span>
-                      <h4 className="text-base font-bold text-slate-900 mt-0.5">{selectedProperty.ownerName}</h4>
-                      <p className="text-xs text-slate-500">Contact: {formatDisplayPhone(selectedProperty.ownerPhone)}</p>
+
+                    <p className="text-xs text-rose-900 leading-relaxed bg-white/70 p-3.5 rounded-xl border border-rose-200/60">
+                      <strong>Privacy Protection Active:</strong> As per GondiaStay rental management rules, landlord phone number and direct WhatsApp buttons are hidden while this property is occupied. Rental enquiries are temporarily paused until the landlord marks it available again.
+                    </p>
+
+                    <div className="pt-1">
+                      <button
+                        onClick={() => openGoogleMaps(selectedProperty.latitude, selectedProperty.longitude, selectedProperty.title)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Navigation className="w-4 h-4" />
+                        <span>View Gondia Location on Map</span>
+                      </button>
                     </div>
                   </div>
+                ) : (
+                  /* Available Property: Direct Landlord Contact Section */
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-3xl p-6 sm:p-7 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
+                          {selectedProperty.ownerName[0]}
+                        </div>
+                        <div>
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            Verified Landlord
+                          </span>
+                          <h4 className="text-base font-bold text-slate-900 mt-0.5">{selectedProperty.ownerName}</h4>
+                          <p className="text-xs text-slate-500">Contact: {formatDisplayPhone(selectedProperty.ownerPhone)}</p>
+                        </div>
+                      </div>
 
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    Zero Brokerage guaranteed. Chat directly with the landlord on WhatsApp to schedule an in-person room visit in Gondia.
-                  </p>
+                      {/* Owner or Admin Can Mark as Occupied */}
+                      {(currentOwner.id === selectedProperty.ownerId || isAdminAuthenticated) && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await updatePropertyOccupancy(selectedProperty.id, 'OCCUPIED');
+                            showToast('Property marked as Rented / Occupied!');
+                          }}
+                          className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <Home className="w-3.5 h-3.5" />
+                          <span>Mark as Rented</span>
+                        </button>
+                      )}
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                    <button
-                      onClick={() => openWhatsApp(selectedProperty.ownerPhone, selectedProperty.title)}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95"
-                    >
-                      <MessageCircle className="w-4 h-4 fill-current" />
-                      <span>WhatsApp Chat</span>
-                    </button>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Zero Brokerage guaranteed. Chat directly with the landlord on WhatsApp or call to schedule an in-person room visit in Gondia.
+                    </p>
 
-                    <button
-                      onClick={() => dialPhone(selectedProperty.ownerPhone)}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95"
-                    >
-                      <Phone className="w-4 h-4" />
-                      <span>Call Landlord</span>
-                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                      <button
+                        onClick={() => openWhatsApp(selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone, selectedProperty.title)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        <MessageCircle className="w-4 h-4 fill-current" />
+                        <span>WhatsApp Chat</span>
+                      </button>
 
-                    <button
-                      onClick={() => openGoogleMaps(selectedProperty.latitude, selectedProperty.longitude, selectedProperty.title)}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95"
-                    >
-                      <Navigation className="w-4 h-4" />
-                      <span>Get Directions</span>
-                    </button>
+                      <button
+                        onClick={() => dialPhone(selectedProperty.ownerPhone)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Phone className="w-4 h-4" />
+                        <span>Call Landlord</span>
+                      </button>
+
+                      <button
+                        onClick={() => openGoogleMaps(selectedProperty.latitude, selectedProperty.longitude, selectedProperty.title)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Navigation className="w-4 h-4" />
+                        <span>Get Directions</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
               </div>
             </div>
