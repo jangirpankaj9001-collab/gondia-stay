@@ -8,7 +8,9 @@ import {
   RefreshCw, 
   Key, 
   ShieldCheck, 
-  Lock
+  Lock,
+  UploadCloud,
+  ImageIcon
 } from 'lucide-react';
 import { 
   isFirebaseConfigured, 
@@ -21,6 +23,10 @@ import {
   normalizeStorageBucket,
   FirebaseConfigParams 
 } from '../firebase/config';
+import { 
+  getCloudinaryConfig, 
+  saveCloudinaryConfig 
+} from '../services/cloudinaryService';
 
 interface FirebaseModalProps {
   isOpen: boolean;
@@ -48,8 +54,14 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
   const [messagingSenderId, setMessagingSenderId] = useState(existingConfig?.messagingSenderId || '');
   const [appId, setAppId] = useState(existingConfig?.appId || '');
 
+  // Cloudinary state (Free-tier photo storage without Blaze plan)
+  const initialCloudinary = getCloudinaryConfig();
+  const [cloudinaryCloudName, setCloudinaryCloudName] = useState(initialCloudinary.cloudName);
+  const [cloudinaryUploadPreset, setCloudinaryUploadPreset] = useState(initialCloudinary.uploadPreset);
+  const [cloudinarySaved, setCloudinarySaved] = useState(false);
+
   const [jsonInput, setJsonInput] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState<'status' | 'manual' | 'json'>('status');
+  const [activeSubTab, setActiveSubTab] = useState<'status' | 'manual' | 'cloudinary' | 'json'>('status');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -134,10 +146,10 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
         </div>
 
         {/* Sub-tabs */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-3 gap-2">
+        <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-3 gap-2 overflow-x-auto">
           <button
             onClick={() => setActiveSubTab('status')}
-            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
+            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 shrink-0 ${
               activeSubTab === 'status'
                 ? 'bg-white text-blue-700 border-blue-600 shadow-xs'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
@@ -146,24 +158,35 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
             Connection Status
           </button>
           <button
+            onClick={() => setActiveSubTab('cloudinary')}
+            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 shrink-0 flex items-center gap-1.5 ${
+              activeSubTab === 'cloudinary'
+                ? 'bg-white text-sky-700 border-sky-600 shadow-xs'
+                : 'text-slate-600 border-transparent hover:text-slate-900'
+            }`}
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-sky-600" />
+            Cloudinary Photos
+          </button>
+          <button
             onClick={() => setActiveSubTab('manual')}
-            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
+            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 shrink-0 ${
               activeSubTab === 'manual'
                 ? 'bg-white text-blue-700 border-blue-600 shadow-xs'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
             }`}
           >
-            Config Fields
+            Firebase Config
           </button>
           <button
             onClick={() => setActiveSubTab('json')}
-            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 ${
+            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 shrink-0 ${
               activeSubTab === 'json'
                 ? 'bg-white text-blue-700 border-blue-600 shadow-xs'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
             }`}
           >
-            Paste Firebase JSON
+            Paste JSON
           </button>
         </div>
 
@@ -188,12 +211,10 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                     <p><span className="font-semibold">Project ID:</span> {currentProjectId}</p>
                     <p><span className="font-semibold">Firestore Database:</span> Connected ({propertiesCount} properties synced)</p>
                     <p>
-                      <span className="font-semibold">Firebase Storage:</span>{' '}
-                      {isStorageConnected ? (
-                        <span className="text-emerald-800 font-semibold">Connected (Bucket: {activeStorageBucket})</span>
-                      ) : (
-                        <span className="text-amber-700">Connecting... ({activeStorageBucket})</span>
-                      )}
+                      <span className="font-semibold">Photo Storage:</span>{' '}
+                      <span className="text-emerald-800 font-semibold">
+                        Cloudinary CDN (Cloud: {cloudinaryCloudName}) — Free Tier Active
+                      </span>
                     </p>
                     <p><span className="font-semibold">Sync Mode:</span> Real-time Firestore onSnapshot</p>
                   </div>
@@ -335,6 +356,69 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                 <CheckCircle2 className="w-4 h-4" />
                 {isSaving ? 'Connecting...' : 'Save & Connect to Firebase'}
               </button>
+            </div>
+          )}
+
+          {activeSubTab === 'cloudinary' && (
+            <div className="space-y-4">
+              <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sky-900 font-bold text-sm">
+                  <UploadCloud className="w-5 h-5 text-sky-600" />
+                  Cloudinary Free Photo Storage
+                </div>
+                <p className="text-xs text-sky-800 leading-relaxed">
+                  Property photos are uploaded directly to Cloudinary's free-tier CDN, bypassing Firebase Storage Blaze billing requirements. The returned secure HTTPS URLs are automatically saved into your Cloud Firestore database records.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">Cloud Name</label>
+                  <input
+                    type="text"
+                    value={cloudinaryCloudName}
+                    onChange={(e) => setCloudinaryCloudName(e.target.value)}
+                    placeholder="e.g. basiw3sf"
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-sky-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">Unsigned Upload Preset</label>
+                  <input
+                    type="text"
+                    value={cloudinaryUploadPreset}
+                    onChange={(e) => setCloudinaryUploadPreset(e.target.value)}
+                    placeholder="e.g. gondiastay_upload"
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-sky-500 font-mono"
+                  />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    Preset MUST be set to <strong>Unsigned</strong> mode in Cloudinary Console (Settings &gt; Upload &gt; Upload Presets).
+                  </span>
+                </div>
+
+                {cloudinarySaved && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-1.5 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Cloudinary settings saved! Photos will upload to cloud "{cloudinaryCloudName}".
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    saveCloudinaryConfig({
+                      cloudName: cloudinaryCloudName.trim(),
+                      uploadPreset: cloudinaryUploadPreset.trim()
+                    });
+                    setCloudinarySaved(true);
+                    setTimeout(() => setCloudinarySaved(false), 3000);
+                  }}
+                  className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Save Cloudinary Settings
+                </button>
+              </div>
             </div>
           )}
 

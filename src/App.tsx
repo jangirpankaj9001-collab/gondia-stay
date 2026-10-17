@@ -513,7 +513,7 @@ export const App: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // 1. Process and upload any new pending photos to Firebase Storage
+      // 1. Process and upload any new pending photos to Cloudinary CDN
       let finalPhotoUrls: string[] = [];
 
       const newPhotosToUpload = selectedPhotos.filter(p => !p.isExisting && p.file);
@@ -552,7 +552,7 @@ export const App: React.FC = () => {
         }
         
         try {
-          // Upload with controlled concurrency 2 and resumable chunking for mobile/slow networks
+          // Upload to Cloudinary with controlled concurrency 2 and resumable compression
           const uploadedUrls = await uploadMultiplePropertyPhotos(
             filesToUpload,
             (info) => {
@@ -591,8 +591,8 @@ export const App: React.FC = () => {
             }
           }
         } catch (uploadErr: any) {
-          console.error('Firebase Storage upload failed:', uploadErr);
-          const errorMsg = uploadErr.message || 'Check Firebase Storage connection and rules';
+          console.error('Cloudinary photo upload failed:', uploadErr);
+          const errorMsg = uploadErr.message || 'Check Cloudinary connection and upload preset';
           setPhotoUploadError(errorMsg);
           throw new Error(errorMsg);
         } finally {
@@ -1842,7 +1842,7 @@ export const App: React.FC = () => {
                             <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                             {uploadProgress.phase === 'optimizing'
                               ? 'Optimizing and preparing photos (target 200–400 KB)...'
-                              : `Uploading to Firebase Storage: ${uploadProgress.fileName}`}
+                              : `Uploading photo to Cloudinary: ${uploadProgress.fileName}`}
                           </span>
                           <span>{uploadProgress.percent}% ({Math.min(uploadProgress.total, uploadProgress.completed + 1)} of {uploadProgress.total})</span>
                         </div>

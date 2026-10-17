@@ -27,6 +27,36 @@ export interface OptimizedImageResult {
 
 const CACHE_PREFIX = 'gondia_photo_url_';
 
+const MAX_ORIGINAL_FILE_SIZE_BYTES = 25 * 1024 * 1024; // Up to 25 MB before compression
+
+/**
+ * Validates that the selected file is an image and is within acceptable initial limits.
+ */
+export const validateImageFile = (file: File): { valid: boolean; error?: string } => {
+  if (!file) {
+    return { valid: false, error: 'No file selected.' };
+  }
+
+  // Must be an image MIME type
+  if (!file.type || !file.type.startsWith('image/')) {
+    return {
+      valid: false,
+      error: `"${file.name}" is not a recognized image. Please select JPG, PNG, or WebP photos.`
+    };
+  }
+
+  // Initial raw size check before compression
+  if (file.size > MAX_ORIGINAL_FILE_SIZE_BYTES) {
+    const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      valid: false,
+      error: `"${file.name}" is too large (${sizeInMb} MB). Maximum allowed size before optimization is 25 MB.`
+    };
+  }
+
+  return { valid: true };
+};
+
 /**
  * Format raw byte count into human-readable string (KB / MB).
  */
