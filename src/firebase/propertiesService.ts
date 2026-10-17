@@ -8,7 +8,7 @@ import {
   onSnapshot, 
   Unsubscribe 
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './config';
+import { db, auth, isFirebaseConfigured } from './config';
 import { PropertyListing, OwnerProfile } from '../types';
 
 export const PROPERTIES_COLLECTION = 'properties';
@@ -95,7 +95,8 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: Array.isArray(property.photos) && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: property.ownerId || 'owner_gondia_primary',
+      ownerId: property.ownerId || auth?.currentUser?.uid || 'owner_gondia_primary',
+      ...(property.ownerEmail || auth?.currentUser?.email ? { ownerEmail: property.ownerEmail || auth?.currentUser?.email } : {}),
       ownerName: property.ownerName?.trim() || 'Property Owner',
       ownerPhone: property.ownerPhone?.trim() || '+91 98230 12345',
       ownerWhatsappNumber: (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || '+91 98230 12345',
@@ -111,10 +112,19 @@ export const savePropertyToFirestore = async (
       return property.id;
     } catch (err: any) {
       console.error('[GondiaStay] Error updating property listing in Firestore:', err);
+      if (err.code === 'permission-denied') {
+        const currentUser = auth?.currentUser;
+        const msg = !currentUser
+          ? 'Missing or insufficient permissions: Please sign in as a verified landlord to edit listing details and photos.'
+          : `Missing or insufficient permissions: Signed in as ${currentUser.email || currentUser.uid}, but this listing belongs to ownerId "${property.ownerId || 'unknown'}", or your deployed Firestore rules require deployment.`;
+        throw new Error(msg);
+      }
       throw err;
     }
   } else {
     // New submission: strictly set status to 'pending'
+    const authenticatedUid = auth?.currentUser?.uid;
+    const authenticatedEmail = auth?.currentUser?.email;
     const newDocData: Omit<PropertyListing, 'id'> = {
       title: property.title.trim(),
       address: property.address.trim(),
@@ -133,7 +143,8 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: property.photos && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: property.ownerId || 'owner_gondia',
+      ownerId: authenticatedUid || property.ownerId || 'owner_gondia_primary',
+      ...(authenticatedEmail || property.ownerEmail ? { ownerEmail: authenticatedEmail || property.ownerEmail } : {}),
       ownerName: property.ownerName || 'Property Owner',
       ownerPhone: property.ownerPhone?.trim() || '+91 98230 12345',
       ownerWhatsappNumber: (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || '+91 98230 12345',

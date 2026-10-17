@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { 
   signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
   User 
@@ -51,6 +52,8 @@ interface AppContextType {
   adminUser: User | null;
   isAdminLoading: boolean;
   isFirebaseModalOpen: boolean;
+  authUser: User | null;
+  isOwnerAuthenticated: boolean;
 
   setSearchQuery: (query: string) => void;
   setSelectedLocality: (locality: string) => void;
@@ -71,6 +74,9 @@ interface AppContextType {
   resetFilters: () => void;
   loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   logoutAdmin: () => Promise<void>;
+  loginOwnerWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  registerOwnerWithEmailPassword: (email: string, pass: string, name?: string, phone?: string) => Promise<{ success: boolean; error?: string }>;
+  logoutOwner: () => Promise<void>;
   verifyAdminPasscode: (passcode: string) => boolean;
   setIsFirebaseModalOpen: (open: boolean) => void;
 }
@@ -94,10 +100,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured());
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState<boolean>(false);
 
-  // Firebase Authentication Admin state
+  // Firebase Authentication states
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [isAdminLoading, setIsAdminLoading] = useState<boolean>(true);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [isOwnerAuthenticated, setIsOwnerAuthenticated] = useState<boolean>(false);
 
   const [tiffinServices, setTiffinServices] = useState<TiffinService[]>(() => {
     try {
@@ -142,7 +150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 3500);
   }, []);
 
-  // Real-time Firebase Authentication listener for Admin
+  // Real-time Firebase Authentication listener for Admin and Landlords
   useEffect(() => {
     if (!auth) {
       setIsAdminLoading(false);
@@ -150,9 +158,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      setIsOwnerAuthenticated(!!user);
+
+      const isUserAdmin = !!user && (
+        user.email === 'jangirpankaj901@gmail.com' || 
+        Boolean(user.email && user.email.toLowerCase().includes('admin'))
+      );
       setAdminUser(user);
-      setIsAdminAuthenticated(!!user);
+      setIsAdminAuthenticated(isUserAdmin);
       setIsAdminLoading(false);
+
+      if (user) {
+        setCurrentOwner(prev => {
+          const updated: OwnerProfile = {
+            ...prev,
+            id: user.uid,
+            email: user.email || prev.email,
+            name: user.displayName || (prev.email === user.email ? prev.name : user.email?.split('@')[0] || prev.name)
+          };
+          localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updated));
+          return updated;
+        });
+      }
     });
 
     return () => unsubscribe();
@@ -440,7 +468,105 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setAdminUser(null);
     setIsAdminAuthenticated(false);
+    setAuthUser(null);
+    setIsOwnerAuthenticated(false);
     showToast("Logged out of Admin Portal.");
+  };
+
+  /**
+   * Secure Owner / Landlord Authentication using Firebase Auth
+   */
+  const loginOwnerWithEmailPassword = async (
+    email: string,
+    pass: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!auth) {
+      const msg = 'Firebase is not initialized. Please configure Firebase in Settings.';
+      showToast(msg);
+      return { success: false, error: msg };
+    }
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+      const user = userCredential.user;
+      setAuthUser(user);
+      setIsOwnerAuthenticated(true);
+      showToast(`Welcome! Signed in as ${user.email}`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Landlord Login Error:', err);
+      let errorMsg = 'Invalid email or password.';
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errorMsg = 'Invalid landlord credentials. Please check your email and password.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMsg = 'Please enter a valid email address.';
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      showToast(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  const registerOwnerWithEmailPassword = async (
+    email: string,
+    pass: string,
+    name?: string,
+    phone?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!auth) {
+      const msg = 'Firebase is not initialized. Please configure Firebase in Settings.';
+      showToast(msg);
+      return { success: false, error: msg };
+    }
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      const user = userCredential.user;
+      setAuthUser(user);
+      setIsOwnerAuthenticated(true);
+      const updatedProfile: OwnerProfile = {
+        id: user.uid,
+        name: name?.trim() || 'Property Owner',
+        phone: phone?.trim() || '+91 98230 12345',
+        whatsappNumber: phone?.trim() || '+91 98230 12345',
+        email: email.trim()
+      };
+      setCurrentOwner(updatedProfile);
+      localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updatedProfile));
+      if (isFirebaseConfigured()) {
+        await saveOwnerProfileToFirestore(updatedProfile);
+      }
+      showToast(`Landlord account created! Welcome, ${name || email}`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Landlord Registration Error:', err);
+      let errorMsg = 'Registration failed.';
+      if (err.code === 'auth/email-already-in-use') {
+        errorMsg = 'An account with this email already exists. Please sign in instead.';
+      } else if (err.code === 'auth/weak-password') {
+        errorMsg = 'Password should be at least 6 characters.';
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      showToast(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  const logoutOwner = async (): Promise<void> => {
+    if (auth) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error('Sign-out error:', err);
+      }
+    }
+    setAuthUser(null);
+    setIsOwnerAuthenticated(false);
+    setIsAdminAuthenticated(false);
+    setAdminUser(null);
+    showToast("Signed out of Landlord Console.");
   };
 
   // Deprecated passcode fallback helper
@@ -486,6 +612,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       adminUser,
       isAdminLoading,
       isFirebaseModalOpen,
+      authUser,
+      isOwnerAuthenticated,
       setSearchQuery,
       setSelectedLocality,
       setSelectedType,
@@ -505,6 +633,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       resetFilters,
       loginAdminWithEmailPassword,
       logoutAdmin,
+      loginOwnerWithEmailPassword,
+      registerOwnerWithEmailPassword,
+      logoutOwner,
       verifyAdminPasscode,
       setIsFirebaseModalOpen
     }}>

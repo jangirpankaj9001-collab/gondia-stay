@@ -22,7 +22,7 @@ service cloud.firestore {
       // 1. Read: Public read allows real-time listener on public URL
       allow read: if true;
 
-      // 2. Create: Owners can submit new listings without logging in.
+      // 2. Create: Anyone can submit new listings, strictly enforced as 'pending'
       // Strictly enforced server-side:
       // - Status MUST be 'pending' (no public submission can self-approve)
       // - Title must be non-empty string <= 150 chars
@@ -45,36 +45,21 @@ service cloud.firestore {
                     && request.resource.data.ownerPhone.size() >= 5
                     && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
 
-      // Helper function to check if the caller is the authorized listing owner
-      // Safely checks existing document fields to prevent runtime exceptions on missing properties
-      function isListingOwner() {
-        return (
-          // 1. Authenticated user matching the listing's ownerId, email, or phone
-          (request.auth != null && (
-            ('ownerId' in resource.data && request.auth.uid == resource.data.ownerId)
-            || (request.auth.token.email != null && (
-              ('ownerEmail' in resource.data && request.auth.token.email == resource.data.ownerEmail)
-              || ('email' in resource.data && request.auth.token.email == resource.data.email)
-            ))
-            || (request.auth.token.phone_number != null && (
-              ('ownerPhone' in resource.data && request.auth.token.phone_number == resource.data.ownerPhone)
-              || ('phone' in resource.data && request.auth.token.phone_number == resource.data.phone)
-            ))
+      // Helper function to verify that the updater is the cryptographically authenticated owner
+      // Uses Firebase Auth token UID and verified email instead of trusting spoofable name/phone fields
+      function isAuthorizedOwner() {
+        return request.auth != null && (
+          // 1. Document ownerId matches authenticated user's Firebase Auth UID
+          (('ownerId' in resource.data) && resource.data.ownerId == request.auth.uid)
+          // 2. Document ownerEmail matches authenticated user's verified email
+          || (request.auth.token.email != null && (
+            (('ownerEmail' in resource.data) && resource.data.ownerEmail == request.auth.token.email)
+            || (('email' in resource.data) && resource.data.email == request.auth.token.email)
+            // 3. Known default landlord email matches primary seed owner IDs
+            || (('ownerId' in resource.data) && resource.data.ownerId in ['owner_gondia_primary', 'owner_gondia'] && request.auth.token.email == 'rajesh.sharma@gondiastay.com')
           ))
-          // 2. Client owner verification:
-          // Checks matching ownerId, matching ownerPhone, matching ownerName, or legacy documents
-          || (
-            request.auth == null && (
-              // Match existing ownerId if set on document
-              ('ownerId' in resource.data && 'ownerId' in request.resource.data && request.resource.data.ownerId == resource.data.ownerId)
-              // Or match existing ownerPhone if set on document
-              || ('ownerPhone' in resource.data && 'ownerPhone' in request.resource.data && request.resource.data.ownerPhone == resource.data.ownerPhone)
-              // Or match existing ownerName if set on document
-              || ('ownerName' in resource.data && 'ownerName' in request.resource.data && request.resource.data.ownerName == resource.data.ownerName)
-              // Or unassigned legacy document without ownerId set
-              || (!('ownerId' in resource.data))
-            )
-          )
+          // 4. Legacy listing without assigned ownerId: authenticated user can bind ownership
+          || (!('ownerId' in resource.data) || resource.data.ownerId == '' || resource.data.ownerId == null)
         );
       }
 
@@ -103,6 +88,7 @@ service cloud.firestore {
           'ownerPhone',
           'ownerWhatsappNumber',
           'ownerPreferredContact',
+          'ownerEmail',
           'latitude',
           'longitude',
           'occupancyStatus',
@@ -111,14 +97,15 @@ service cloud.firestore {
         ]);
       }
 
-      // Validation for permitted owner update (including photos and fields)
-      // Uses safe existence checks to prevent runtime evaluation errors on legacy documents
-      function isValidListingUpdate() {
+      // Validation for permitted owner update (including Cloudinary photo URLs and listing fields)
+      function isValidOwnerUpdate() {
         return hasOnlyPermittedListingUpdateKeys()
           // Listing approval status cannot be self-approved by owner
           && (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'PENDING'] || ('status' in resource.data && request.resource.data.status == resource.data.status))
-          // Listing ownerId cannot be stolen or transferred to a different owner
-          && (!('ownerId' in resource.data) || !('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId || ('ownerPhone' in resource.data && request.resource.data.ownerPhone == resource.data.ownerPhone))
+          // Owner cannot set featured flag to true
+          && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false || ('isFeatured' in resource.data && request.resource.data.isFeatured == resource.data.isFeatured))
+          // Ownership integrity: Listing ownerId cannot be stolen or reassigned to another UID
+          && (!('ownerId' in resource.data) || !('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId || request.resource.data.ownerId == request.auth.uid)
           // Creation timestamp cannot be tampered with
           && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
           // Photo URLs validation (supports Cloudinary secure URLs and existing paths)
@@ -145,7 +132,7 @@ service cloud.firestore {
             && request.resource.data.monthlyRent >= 0
             && request.resource.data.monthlyRent <= 5000000
           ))
-          // Owner phone validation
+          // Contact phone validation
           && (!('ownerPhone' in request.resource.data) || (
             request.resource.data.ownerPhone is string
             && request.resource.data.ownerPhone.size() >= 5
@@ -157,19 +144,19 @@ service cloud.firestore {
       }
 
       // 3. Update:
-      // - Admin has full update privileges (approval, rejection, edits, occupancy).
-      // - Authorized owner can update permitted listing fields (including photo URLs) or occupancy status.
-      // - Rules are strictly non-public: requires owner authorization and permitted field validation.
+      // - Admin has full update privileges (approval, rejection, edits, occupancy, featured).
+      // - Authenticated Owner can update permitted listing fields (including Cloudinary photo URLs) or occupancy status.
+      // - Cryptographically verifies request.auth.uid or verified ownerEmail without trusting unauthenticated ownerName/ownerPhone.
       allow update: if isAdmin() || (
-        isListingOwner() && (
+        isAuthorizedOwner() && (
           // Fast path for occupancy status toggle
           (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
             && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
             && (!('status' in resource.data) || request.resource.data.status == resource.data.status)
           )
-          // Full listing update with permitted fields (including photo URLs)
-          || isValidListingUpdate()
+          // Full listing update with permitted fields (including Cloudinary photo URLs)
+          || isValidOwnerUpdate()
         )
       );
 
@@ -180,8 +167,7 @@ service cloud.firestore {
     // Owners collection for real owner profile data
     match /owners/{ownerId} {
       allow read: if true;
-      allow write: if request.resource.data.name is string 
-                   && request.resource.data.phone is string;
+      allow write: if isAdmin() || (request.auth != null && request.auth.uid == ownerId);
     }
 
     // Admins Collection (optional document-based admin registry)

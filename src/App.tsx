@@ -41,6 +41,7 @@ import {
   Zap,
   Home,
   UserCheck,
+  LogOut,
   X
 } from 'lucide-react';
 import { 
@@ -59,6 +60,7 @@ import { PropertyCard } from './components/PropertyCard';
 import { TiffinCard } from './components/TiffinCard';
 import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
+import { OwnerAuthModal } from './components/OwnerAuthModal';
 import { GondiaMap } from './components/GondiaMap';
 import { 
   PropertyListing, 
@@ -118,10 +120,14 @@ export const App: React.FC = () => {
     loginAdminWithEmailPassword,
     logoutAdmin,
     adminUser,
+    authUser,
+    isOwnerAuthenticated,
+    logoutOwner,
     setIsFirebaseModalOpen
   } = useApp();
 
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showOwnerAuthModal, setShowOwnerAuthModal] = useState(false);
   const [ownerSubTab, setOwnerSubTab] = useState<'listings' | 'new' | 'moderation'>('listings');
   const [editingProperty, setEditingProperty] = useState<PropertyListing | null>(null);
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
@@ -483,8 +489,17 @@ export const App: React.FC = () => {
 
   // Owner properties (can see their own listings regardless of status)
   const myProperties = useMemo(() => {
+    if (isAdminAuthenticated) return properties;
+    if (authUser) {
+      return properties.filter(p => 
+        p.ownerId === authUser.uid ||
+        (p.ownerEmail && p.ownerEmail.toLowerCase() === authUser.email?.toLowerCase()) ||
+        (p.ownerId === 'owner_gondia_primary' && authUser.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com') ||
+        p.ownerId === currentOwner.id
+      );
+    }
     return properties.filter(p => p.ownerId === currentOwner.id);
-  }, [properties, currentOwner]);
+  }, [properties, currentOwner, authUser, isAdminAuthenticated]);
 
   // Pending properties for Moderation Workflow
   // Requirement 4: Real-time listener automatically updates admin dashboard when new owner submits
@@ -508,6 +523,13 @@ export const App: React.FC = () => {
 
     if (!formData.ownerName.trim() || !formData.ownerPhone.trim()) {
       showToast('Please provide landlord name and contact phone number');
+      return;
+    }
+
+    if (editingProperty && !isOwnerAuthenticated && !isAdminAuthenticated) {
+      setShowOwnerAuthModal(true);
+      showToast('Landlord authentication required to update listing details and photos.');
+      setSubmissionError('Authentication Required: Please sign in to your landlord account to verify ownership before saving updates to Cloud Firestore.');
       return;
     }
 
@@ -628,7 +650,8 @@ export const App: React.FC = () => {
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
-          ownerId: editingProperty.ownerId || currentOwner.id,
+          ownerId: editingProperty.ownerId || authUser?.uid || currentOwner.id,
+          ownerEmail: editingProperty.ownerEmail || authUser?.email || currentOwner.email,
           ownerName: formData.ownerName || currentOwner.name,
           ownerPhone: formData.ownerPhone || currentOwner.phone,
           ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || currentOwner.phone,
@@ -660,7 +683,8 @@ export const App: React.FC = () => {
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
-          ownerId: currentOwner.id,
+          ownerId: authUser?.uid || currentOwner.id,
+          ownerEmail: authUser?.email || currentOwner.email,
           ownerName: formData.ownerName || currentOwner.name,
           ownerPhone: formData.ownerPhone || currentOwner.phone,
           ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || currentOwner.phone,
@@ -718,6 +742,11 @@ export const App: React.FC = () => {
   };
 
   const handleEditClick = (property: PropertyListing) => {
+    if (!isOwnerAuthenticated && !isAdminAuthenticated) {
+      showToast('Please sign in as the verified landlord to edit this listing.');
+      setShowOwnerAuthModal(true);
+      return;
+    }
     setEditingProperty(property);
     setSubmissionError(null);
     setPhotoUploadError(null);
@@ -1205,6 +1234,27 @@ export const App: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {isOwnerAuthenticated || isAdminAuthenticated ? (
+                    <button
+                      type="button"
+                      onClick={logoutOwner}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 shadow-xs transition-colors cursor-pointer"
+                      title="Sign Out of Landlord Session"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Sign Out</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowOwnerAuthModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                      title="Authenticate with Firebase to edit listings"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-200" />
+                      <span>Landlord Sign In</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setIsEditingOwnerProfile(!isEditingOwnerProfile)}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border border-slate-700 shadow-xs transition-colors cursor-pointer"
@@ -1225,6 +1275,43 @@ export const App: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Landlord Authentication Notice / Status Banner */}
+              {!isOwnerAuthenticated && !isAdminAuthenticated ? (
+                <div className="bg-blue-950/70 border border-blue-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5 text-blue-200">
+                    <ShieldCheck className="w-5 h-5 text-blue-400 shrink-0" />
+                    <div>
+                      <strong className="text-white block font-bold">Landlord Sign-In Required for Listing Edits</strong>
+                      <span className="text-slate-300">
+                        To protect landlords against unauthorized modifications, Cloud Firestore rules cryptographically require authentication to update property details, photos, or occupancy.
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowOwnerAuthModal(true)}
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-xs cursor-pointer text-xs flex items-center gap-1.5"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>Sign In / 1-Click Demo</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-emerald-300">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      Cryptographically Authenticated Landlord: <strong className="text-white font-mono">{authUser?.email || adminUser?.email}</strong> (UID: {authUser?.uid?.slice(0, 10) || adminUser?.uid?.slice(0, 10)}...)
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0">
+                    Authorized to Edit Listings & Photos
+                  </span>
+                </div>
+              )}
 
               {/* Requirement 1: Owner contact number, WhatsApp number, and working WhatsApp contact button */}
               <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2764,6 +2851,15 @@ export const App: React.FC = () => {
         isOpen={isFirebaseModalOpen}
         onClose={() => setIsFirebaseModalOpen(false)}
         propertiesCount={properties.length}
+      />
+
+      {/* Landlord Authentication Modal */}
+      <OwnerAuthModal
+        isOpen={showOwnerAuthModal}
+        onClose={() => setShowOwnerAuthModal(false)}
+        onSuccess={() => {
+          showToast('Signed in successfully! You can now edit listings and upload photos.');
+        }}
       />
 
       {/* Global Toast Notification */}

@@ -68,6 +68,7 @@ export interface PropertyListing {
   ownerId: string;
   ownerName: string;
   ownerPhone: string;
+  ownerEmail?: string;
   ownerWhatsappNumber?: string;
   ownerPreferredContact: ContactMethod;
   status: ListingStatus;
