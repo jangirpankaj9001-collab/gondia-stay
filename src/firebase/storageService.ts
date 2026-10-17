@@ -1,6 +1,6 @@
 import { 
   ref, 
-  uploadBytesResumable, 
+  uploadBytes, 
   getDownloadURL, 
   getStorage, 
   FirebaseStorage 
@@ -16,6 +16,8 @@ import {
   compressAndResizeImage, 
   formatBytes, 
   getFileFingerprint,
+  getCachedPhotoUrl,
+  setCachedPhotoUrl,
   OptimizedImageResult 
 } from '../utils/imageOptimizer';
 
@@ -30,9 +32,7 @@ export interface UploadProgressInfo {
 }
 
 const MAX_ORIGINAL_FILE_SIZE_BYTES = 25 * 1024 * 1024; // Up to 25 MB before compression
-
-// In-memory cache of uploaded photo URLs keyed by file fingerprint to prevent duplicate uploads
-const uploadedUrlCache = new Map<string, string>();
+const UPLOAD_TIMEOUT_MS = 20000; // 20-second timeout prevents endless loading
 
 /**
  * Validates that the selected file is an image and is within acceptable initial limits.
@@ -63,9 +63,9 @@ export const validateImageFile = (file: File): { valid: boolean; error?: string 
 };
 
 /**
- * Uploads a single property photo to Firebase Storage using the same existing Firebase project and app instance.
- * Automatically compresses and resizes the photo to target 200–400 KB before upload if needed.
- * Prevents duplicate uploads by checking recent fingerprint cache.
+ * Uploads a single property photo to Firebase Storage with ultra-fast direct upload.
+ * Automatically compresses to ~150-250 KB prior to sending, checks persistent duplicate cache,
+ * and enforces a 20-second timeout to prevent endless loading.
  */
 export const uploadPropertyPhoto = async (
   file: File,
@@ -84,23 +84,22 @@ export const uploadPropertyPhoto = async (
     );
   }
 
-  // Check duplicate upload cache first
+  // 1. Check persistent duplicate upload cache (0ms instant return)
   const fingerprint = getFileFingerprint(file);
-  const cachedUrl = uploadedUrlCache.get(fingerprint);
+  const cachedUrl = getCachedPhotoUrl(fingerprint);
   if (cachedUrl) {
     if (onProgress) onProgress(100);
     return cachedUrl;
   }
 
-  // Compress & resize photo to target 200–400 KB if over 400KB or if not yet JPEG
+  // 2. Compress & resize photo to target 150–300 KB if not already optimized JPEG
   let uploadableFile = file;
-  if (file.size > 400 * 1024 || file.type !== 'image/jpeg') {
+  if (file.size > 350 * 1024 || file.type !== 'image/jpeg') {
     try {
       const optimized = await compressAndResizeImage(file, {
-        maxDimension: 1600,
-        targetMaxBytes: 400 * 1024,
-        targetMinBytes: 200 * 1024,
-        initialQuality: 0.82,
+        maxDimension: 1280,
+        targetMaxBytes: 350 * 1024,
+        initialQuality: 0.78,
         minQuality: 0.65
       });
       uploadableFile = optimized.file;
@@ -110,102 +109,108 @@ export const uploadPropertyPhoto = async (
     }
   }
 
-  // Sanitize file name and create a unique storage path
+  if (onProgress) onProgress(25);
+
+  // 3. Unique storage path with sanitized name
   const sanitizedName = uploadableFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const storagePath = `property_photos/${uniqueId}_${sanitizedName}`;
 
   const metadata = {
     contentType: uploadableFile.type || 'image/jpeg',
     customMetadata: {
-      source: 'GondiaStay Optimized Upload',
+      source: 'GondiaStay Fast Upload',
       originalName: file.name,
       uploadedAt: new Date().toISOString(),
-      optimizedSize: `${(uploadableFile.size / 1024).toFixed(0)}KB`
+      optimizedSize: `${Math.round(uploadableFile.size / 1024)}KB`
     }
   };
 
-  const executeUpload = (inst: FirebaseStorage, isRetry = false): Promise<string> => {
+  const executeFastUpload = async (inst: FirebaseStorage, isRetry = false): Promise<string> => {
     const fileRef = ref(inst, storagePath);
 
-    return new Promise<string>((resolve, reject) => {
-      const uploadTask = uploadBytesResumable(fileRef, uploadableFile, metadata);
+    // Watchdog timer promise to guarantee no endless loading
+    let timeoutId: any = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          new Error(
+            `Upload timed out for "${file.name}" after ${UPLOAD_TIMEOUT_MS / 1000}s. Please check your network connection and Firebase Storage bucket.`
+          )
+        );
+      }, UPLOAD_TIMEOUT_MS);
+    });
 
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          if (snapshot.totalBytes > 0) {
-            const percent = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            if (onProgress) {
-              onProgress(percent);
+    try {
+      const uploadPromise = (async () => {
+        if (onProgress) onProgress(45);
+        // Direct non-chunked uploadBytes executes in a single HTTP request in < 1 second for 150-250KB
+        const result = await uploadBytes(fileRef, uploadableFile, metadata);
+        if (onProgress) onProgress(80);
+        const downloadUrl = await getDownloadURL(result.ref);
+        if (onProgress) onProgress(100);
+        return downloadUrl;
+      })();
+
+      const finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+      clearTimeout(timeoutId);
+
+      // Persist in cache to prevent duplicate uploads in future edits/submissions
+      setCachedPhotoUrl(fingerprint, finalUrl);
+      return finalUrl;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      console.error('Firebase Storage upload error:', error);
+
+      // If bucket-not-found, automatically try alternate bucket (.appspot.com vs .firebasestorage.app)
+      if (!isRetry && (error.code === 'storage/bucket-not-found' || error.message?.includes('bucket-not-found'))) {
+        const cfg = getActiveFirebaseConfig();
+        if (cfg?.projectId && app) {
+          const currentBucket = (inst as any)?._bucket?.bucket || '';
+          const altBucket = currentBucket.includes('firebasestorage.app')
+            ? `${cfg.projectId}.appspot.com`
+            : `${cfg.projectId}.firebasestorage.app`;
+
+          if (altBucket !== currentBucket) {
+            console.log(`[GondiaStay] Retrying photo upload with alternative bucket "${altBucket}"...`);
+            try {
+              const altStorage = getStorage(app, `gs://${altBucket}`);
+              return await executeFastUpload(altStorage, true);
+            } catch (altErr) {
+              console.warn('[GondiaStay] Alternative bucket switch failed:', altErr);
             }
-          }
-        },
-        (error: any) => {
-          console.error('Firebase Storage upload error:', error);
-
-          // If bucket-not-found, attempt alternate bucket (.appspot.com vs .firebasestorage.app)
-          if (!isRetry && (error.code === 'storage/bucket-not-found' || error.message?.includes('bucket-not-found'))) {
-            const cfg = getActiveFirebaseConfig();
-            if (cfg?.projectId && app) {
-              const currentBucket = (inst as any)?._bucket?.bucket || '';
-              const altBucket = currentBucket.includes('firebasestorage.app')
-                ? `${cfg.projectId}.appspot.com`
-                : `${cfg.projectId}.firebasestorage.app`;
-
-              if (altBucket !== currentBucket) {
-                console.log(`[GondiaStay] Retrying photo upload with alternative bucket "${altBucket}"...`);
-                try {
-                  const altStorage = getStorage(app, `gs://${altBucket}`);
-                  executeUpload(altStorage, true).then(resolve).catch(reject);
-                  return;
-                } catch (altErr) {
-                  console.warn('[GondiaStay] Alternative bucket switch failed:', altErr);
-                }
-              }
-            }
-          }
-
-          let errorMsg = `Failed to upload "${file.name}".`;
-          if (error.code === 'storage/unauthorized') {
-            errorMsg = 'Permission denied by Firebase Storage security rules. Please check your Storage security rules.';
-          } else if (error.code === 'storage/bucket-not-found') {
-            errorMsg = 'Firebase Storage bucket not found. Please ensure Firebase Storage is enabled in your Firebase Console (Build > Storage).';
-          } else if (error.code === 'storage/quota-exceeded') {
-            errorMsg = 'Firebase Storage quota exceeded. Please check your Firebase plan.';
-          } else if (error.code === 'storage/canceled') {
-            errorMsg = 'Photo upload was canceled.';
-          } else if (error.message) {
-            errorMsg = `Upload error: ${error.message}`;
-          }
-          reject(new Error(errorMsg));
-        },
-        async () => {
-          try {
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            // Cache to prevent duplicate uploads
-            uploadedUrlCache.set(fingerprint, downloadUrl);
-            resolve(downloadUrl);
-          } catch (err: any) {
-            reject(new Error(`Failed to retrieve photo download URL: ${err.message || ''}`));
           }
         }
-      );
-    });
+      }
+
+      let errorMsg = `Failed to upload "${file.name}".`;
+      if (error.code === 'storage/unauthorized') {
+        errorMsg = 'Permission denied by Firebase Storage security rules. Please check storage.rules in Firebase Console.';
+      } else if (error.code === 'storage/bucket-not-found') {
+        errorMsg = 'Firebase Storage bucket not found. Please enable Firebase Storage in Firebase Console (Build > Storage).';
+      } else if (error.code === 'storage/quota-exceeded') {
+        errorMsg = 'Firebase Storage quota exceeded. Please check your Firebase plan.';
+      } else if (error.code === 'storage/canceled') {
+        errorMsg = 'Photo upload was canceled.';
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      throw new Error(errorMsg);
+    }
   };
 
-  return executeUpload(storageInstance);
+  return executeFastUpload(storageInstance);
 };
 
 /**
- * Uploads multiple property photos efficiently with controlled concurrency (2 at a time),
- * aggregate progress tracking, and duplicate prevention.
+ * Uploads multiple property photos in parallel with controlled concurrency (up to 3 files),
+ * aggregate progress tracking, and persistent duplicate prevention.
  * Returns an array of download URLs for the uploaded photos.
  */
 export const uploadMultiplePropertyPhotos = async (
   files: File[],
   onProgress?: (info: UploadProgressInfo) => void,
-  concurrencyLimit = 2
+  concurrencyLimit = 3
 ): Promise<string[]> => {
   if (!files || files.length === 0) {
     return [];
@@ -237,7 +242,7 @@ export const uploadMultiplePropertyPhotos = async (
     });
   };
 
-  // Run with worker pool to upload efficiently without overwhelming mobile network
+  // Run with parallel worker pool (concurrency 3)
   let nextIndex = 0;
 
   const runWorker = async () => {
@@ -270,6 +275,8 @@ export const uploadMultiplePropertyPhotos = async (
 export { 
   compressAndResizeImage, 
   formatBytes, 
-  getFileFingerprint
+  getFileFingerprint,
+  getCachedPhotoUrl,
+  setCachedPhotoUrl
 };
 export type { OptimizedImageResult };

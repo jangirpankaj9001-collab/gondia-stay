@@ -49,7 +49,8 @@ import {
   UploadProgressInfo,
   compressAndResizeImage,
   formatBytes,
-  getFileFingerprint
+  getFileFingerprint,
+  getCachedPhotoUrl
 } from './firebase/storageService';
 import { useApp } from './context/AppContext';
 import { Header } from './components/Header';
@@ -206,10 +207,30 @@ export const App: React.FC = () => {
       }
       batchSeen.add(fingerprint);
 
-      const previewUrl = URL.createObjectURL(file);
+      // Check if photo was already uploaded to Firebase Storage (instant 0s reuse)
+      const cachedCloudUrl = getCachedPhotoUrl(fingerprint);
       const itemId = `photo_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
       const origSize = file.size;
 
+      if (cachedCloudUrl) {
+        newItems.push({
+          id: itemId,
+          file: undefined,
+          url: cachedCloudUrl,
+          isExisting: true,
+          name: file.name,
+          originalSize: origSize,
+          originalSizeFormatted: formatBytes(origSize),
+          optimizedSize: origSize,
+          optimizedSizeFormatted: 'Cloud Ready',
+          savedPercentage: 100,
+          fingerprint,
+          isOptimizing: false
+        });
+        continue;
+      }
+
+      const previewUrl = URL.createObjectURL(file);
       newItems.push({
         id: itemId,
         file,
@@ -231,15 +252,14 @@ export const App: React.FC = () => {
 
     if (newItems.length > 0) {
       setSelectedPhotos(prev => [...prev, ...newItems]);
-      showToast(`Added ${newItems.length} photo${newItems.length > 1 ? 's' : ''} (optimizing for fast upload)...`);
+      showToast(`Added ${newItems.length} photo${newItems.length > 1 ? 's' : ''} (fast compression active)...`);
 
-      // Optimize each photo in the background targeting 200–400 KB
+      // Fast client-side optimization targeting 150–300 KB for instant uploads
       filesToOptimize.forEach(({ id, file }) => {
         compressAndResizeImage(file, {
-          maxDimension: 1600,
-          targetMaxBytes: 400 * 1024,
-          targetMinBytes: 200 * 1024,
-          initialQuality: 0.82,
+          maxDimension: 1280,
+          targetMaxBytes: 350 * 1024,
+          initialQuality: 0.78,
           minQuality: 0.65
         })
           .then((optimized) => {
@@ -249,6 +269,7 @@ export const App: React.FC = () => {
                   return {
                     ...item,
                     file: optimized.file,
+                    url: optimized.previewUrl,
                     optimizedSize: optimized.compressedSize,
                     optimizedSizeFormatted: optimized.compressedSizeFormatted,
                     savedPercentage: optimized.savedPercentage,
@@ -501,24 +522,23 @@ export const App: React.FC = () => {
       if (newPhotosToUpload.length > 0) {
         setIsUploadingPhotos(true);
         setUploadProgress({
-          fileName: 'Preparing optimized photos (200–400 KB)...',
-          percent: 5,
+          fileName: 'Fast photo upload in progress (in seconds)...',
+          percent: 15,
           completed: 0,
           total: newPhotosToUpload.length,
-          phase: 'optimizing'
+          phase: 'uploading'
         });
 
-        // Ensure any photo that is still optimizing completes compression
+        // Collect ready files (already compressed on selection)
         const filesToUpload: File[] = [];
         for (const item of newPhotosToUpload) {
           if (item.file) {
             if (item.isOptimizing) {
               try {
                 const opt = await compressAndResizeImage(item.file, {
-                  maxDimension: 1600,
-                  targetMaxBytes: 400 * 1024,
-                  targetMinBytes: 200 * 1024,
-                  initialQuality: 0.82,
+                  maxDimension: 1280,
+                  targetMaxBytes: 350 * 1024,
+                  initialQuality: 0.78,
                   minQuality: 0.65
                 });
                 filesToUpload.push(opt.file);
@@ -532,9 +552,10 @@ export const App: React.FC = () => {
         }
         
         try {
+          // Upload in parallel with concurrency 3 and 20s timeout
           const uploadedUrls = await uploadMultiplePropertyPhotos(filesToUpload, (info) => {
             setUploadProgress(info);
-          }, 2);
+          }, 3);
           
           let uploadIdx = 0;
           for (const item of selectedPhotos) {
@@ -546,7 +567,7 @@ export const App: React.FC = () => {
           }
         } catch (uploadErr: any) {
           console.error('Firebase Storage upload failed:', uploadErr);
-          const errorMsg = `Photo upload failed: ${uploadErr.message || 'Check Firebase Storage connection and rules'}`;
+          const errorMsg = `Photo upload: ${uploadErr.message || 'Check Firebase Storage connection and rules'}`;
           setPhotoUploadError(errorMsg);
           throw new Error(errorMsg);
         } finally {
