@@ -45,14 +45,114 @@ service cloud.firestore {
                     && request.resource.data.ownerPhone.size() >= 5
                     && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
 
+      // Helper function to check if the caller is the authorized listing owner
+      function isListingOwner() {
+        return (
+          // 1. Authenticated user matching the listing's ownerId, email, or phone
+          (request.auth != null && (
+            request.auth.uid == resource.data.ownerId
+            || (request.auth.token.email != null && (
+              request.auth.token.email == resource.data.ownerEmail
+              || ('email' in resource.data && request.auth.token.email == resource.data.email)
+            ))
+            || (request.auth.token.phone_number != null && (
+              request.auth.token.phone_number == resource.data.ownerPhone
+              || ('phone' in resource.data && request.auth.token.phone_number == resource.data.phone)
+            ))
+          ))
+          // 2. Or verified owner identity matching the existing listing record
+          || (
+            (!('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId)
+            && (
+              (!('ownerPhone' in resource.data) || request.resource.data.ownerPhone == resource.data.ownerPhone)
+              || (!('ownerName' in resource.data) || request.resource.data.ownerName == resource.data.ownerName)
+            )
+          )
+        );
+      }
+
+      // Check permitted fields for owner listing update
+      function hasOnlyPermittedListingUpdateKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'address',
+          'locality',
+          'city',
+          'propertyType',
+          'accommodationType',
+          'monthlyRent',
+          'securityDeposit',
+          'bedrooms',
+          'bathrooms',
+          'kitchenAvailable',
+          'hallAvailable',
+          'furnishing',
+          'suitableTenants',
+          'availableFrom',
+          'amenities',
+          'photos',
+          'ownerId',
+          'ownerName',
+          'ownerPhone',
+          'ownerWhatsappNumber',
+          'ownerPreferredContact',
+          'latitude',
+          'longitude',
+          'occupancyStatus',
+          'isFeatured',
+          'updatedAt'
+        ]);
+      }
+
+      // Validation for permitted owner update (including photos and fields)
+      function isValidListingUpdate() {
+        return hasOnlyPermittedListingUpdateKeys()
+          // Listing approval status cannot be self-approved by owner
+          && request.resource.data.status == resource.data.status
+          // Listing ownerId cannot be transferred to a different owner
+          && (!('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId)
+          // Creation timestamp cannot be tampered with
+          && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          // Title validation
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 150
+          // Address validation
+          && request.resource.data.address is string
+          && request.resource.data.address.size() > 0
+          && request.resource.data.address.size() <= 300
+          // Locality validation
+          && request.resource.data.locality is string
+          // Rent validation
+          && request.resource.data.monthlyRent is number
+          && request.resource.data.monthlyRent >= 0
+          && request.resource.data.monthlyRent <= 1000000
+          // Photo URLs validation (e.g. Cloudinary secure URLs or existing paths)
+          && request.resource.data.photos is list
+          && request.resource.data.photos.size() > 0
+          && request.resource.data.photos.size() <= 20
+          // Owner phone validation
+          && request.resource.data.ownerPhone is string
+          && request.resource.data.ownerPhone.size() >= 5
+          // Occupancy status validation
+          && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied'];
+      }
+
       // 3. Update:
       // - Admin has full update privileges (approval, rejection, edits, occupancy).
-      // - Verified owner can update occupancy status ('AVAILABLE' or 'OCCUPIED') without changing approval status.
+      // - Authorized owner can update permitted listing fields (including photo URLs) or occupancy status.
+      // - Rules are strictly non-public: requires owner authorization and permitted field validation.
       allow update: if isAdmin() || (
-        // Allow owner to update occupancy status while keeping status unchanged
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
-        && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
-        && request.resource.data.status == resource.data.status
+        isListingOwner() && (
+          // Fast path for occupancy status toggle
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
+            && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
+            && request.resource.data.status == resource.data.status
+          )
+          // Full listing update with permitted fields (including photo URLs)
+          || isValidListingUpdate()
+        )
       );
 
       // 4. Delete: ONLY authenticated admin can delete listings.

@@ -81,6 +81,7 @@ export const savePropertyToFirestore = async (
       title: property.title.trim(),
       address: property.address.trim(),
       locality: property.locality || 'Civil Lines',
+      city: property.city || 'Gondia',
       propertyType: property.propertyType || 'FLAT',
       accommodationType: property.accommodationType || '1_BHK',
       monthlyRent: Number(property.monthlyRent) || 0,
@@ -93,19 +94,25 @@ export const savePropertyToFirestore = async (
       suitableTenants: Array.isArray(property.suitableTenants) ? property.suitableTenants : ['ALL'],
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
-      photos: property.photos && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
+      photos: Array.isArray(property.photos) && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
+      ownerId: property.ownerId || 'owner_gondia_primary',
       ownerName: property.ownerName || 'Property Owner',
       ownerPhone: property.ownerPhone || '',
       ownerWhatsappNumber: property.ownerWhatsappNumber || property.ownerPhone || '',
       ownerPreferredContact: property.ownerPreferredContact || 'BOTH',
-      latitude: property.latitude || 21.4556,
-      longitude: property.longitude || 80.1960,
+      latitude: Number(property.latitude) || 21.4556,
+      longitude: Number(property.longitude) || 80.1960,
       occupancyStatus: property.occupancyStatus || 'AVAILABLE',
       isFeatured: Boolean(property.isFeatured),
       updatedAt: Date.now()
     };
-    await updateDoc(docRef, updatePayload);
-    return property.id;
+    try {
+      await updateDoc(docRef, updatePayload);
+      return property.id;
+    } catch (err: any) {
+      console.error('[GondiaStay] Error updating property listing in Firestore:', err);
+      throw err;
+    }
   } else {
     // New submission: strictly set status to 'pending'
     const newDocData: Omit<PropertyListing, 'id'> = {
