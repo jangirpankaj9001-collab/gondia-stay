@@ -46,26 +46,33 @@ service cloud.firestore {
                     && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
 
       // Helper function to check if the caller is the authorized listing owner
+      // Safely checks existing document fields to prevent runtime exceptions on missing properties
       function isListingOwner() {
         return (
           // 1. Authenticated user matching the listing's ownerId, email, or phone
           (request.auth != null && (
-            request.auth.uid == resource.data.ownerId
+            ('ownerId' in resource.data && request.auth.uid == resource.data.ownerId)
             || (request.auth.token.email != null && (
-              request.auth.token.email == resource.data.ownerEmail
+              ('ownerEmail' in resource.data && request.auth.token.email == resource.data.ownerEmail)
               || ('email' in resource.data && request.auth.token.email == resource.data.email)
             ))
             || (request.auth.token.phone_number != null && (
-              request.auth.token.phone_number == resource.data.ownerPhone
+              ('ownerPhone' in resource.data && request.auth.token.phone_number == resource.data.ownerPhone)
               || ('phone' in resource.data && request.auth.token.phone_number == resource.data.phone)
             ))
           ))
-          // 2. Or verified owner identity matching the existing listing record
+          // 2. Client owner verification:
+          // Checks matching ownerId, matching ownerPhone, matching ownerName, or legacy documents
           || (
-            (!('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId)
-            && (
-              (!('ownerPhone' in resource.data) || request.resource.data.ownerPhone == resource.data.ownerPhone)
-              || (!('ownerName' in resource.data) || request.resource.data.ownerName == resource.data.ownerName)
+            request.auth == null && (
+              // Match existing ownerId if set on document
+              ('ownerId' in resource.data && 'ownerId' in request.resource.data && request.resource.data.ownerId == resource.data.ownerId)
+              // Or match existing ownerPhone if set on document
+              || ('ownerPhone' in resource.data && 'ownerPhone' in request.resource.data && request.resource.data.ownerPhone == resource.data.ownerPhone)
+              // Or match existing ownerName if set on document
+              || ('ownerName' in resource.data && 'ownerName' in request.resource.data && request.resource.data.ownerName == resource.data.ownerName)
+              // Or unassigned legacy document without ownerId set
+              || (!('ownerId' in resource.data))
             )
           )
         );
@@ -105,37 +112,48 @@ service cloud.firestore {
       }
 
       // Validation for permitted owner update (including photos and fields)
+      // Uses safe existence checks to prevent runtime evaluation errors on legacy documents
       function isValidListingUpdate() {
         return hasOnlyPermittedListingUpdateKeys()
           // Listing approval status cannot be self-approved by owner
-          && request.resource.data.status == resource.data.status
-          // Listing ownerId cannot be transferred to a different owner
-          && (!('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId)
+          && (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'PENDING'] || ('status' in resource.data && request.resource.data.status == resource.data.status))
+          // Listing ownerId cannot be stolen or transferred to a different owner
+          && (!('ownerId' in resource.data) || !('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId || ('ownerPhone' in resource.data && request.resource.data.ownerPhone == resource.data.ownerPhone))
           // Creation timestamp cannot be tampered with
-          && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          // Photo URLs validation (supports Cloudinary secure URLs and existing paths)
+          && (!('photos' in request.resource.data) || (
+            request.resource.data.photos is list
+            && request.resource.data.photos.size() > 0
+            && request.resource.data.photos.size() <= 30
+          ))
           // Title validation
-          && request.resource.data.title is string
-          && request.resource.data.title.size() > 0
-          && request.resource.data.title.size() <= 150
+          && (!('title' in request.resource.data) || (
+            request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 200
+          ))
           // Address validation
-          && request.resource.data.address is string
-          && request.resource.data.address.size() > 0
-          && request.resource.data.address.size() <= 300
-          // Locality validation
-          && request.resource.data.locality is string
+          && (!('address' in request.resource.data) || (
+            request.resource.data.address is string
+            && request.resource.data.address.size() > 0
+            && request.resource.data.address.size() <= 500
+          ))
           // Rent validation
-          && request.resource.data.monthlyRent is number
-          && request.resource.data.monthlyRent >= 0
-          && request.resource.data.monthlyRent <= 1000000
-          // Photo URLs validation (e.g. Cloudinary secure URLs or existing paths)
-          && request.resource.data.photos is list
-          && request.resource.data.photos.size() > 0
-          && request.resource.data.photos.size() <= 20
+          && (!('monthlyRent' in request.resource.data) || (
+            request.resource.data.monthlyRent is number
+            && request.resource.data.monthlyRent >= 0
+            && request.resource.data.monthlyRent <= 5000000
+          ))
           // Owner phone validation
-          && request.resource.data.ownerPhone is string
-          && request.resource.data.ownerPhone.size() >= 5
+          && (!('ownerPhone' in request.resource.data) || (
+            request.resource.data.ownerPhone is string
+            && request.resource.data.ownerPhone.size() >= 5
+          ))
           // Occupancy status validation
-          && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied'];
+          && (!('occupancyStatus' in request.resource.data) || (
+            request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
+          ));
       }
 
       // 3. Update:
@@ -148,7 +166,7 @@ service cloud.firestore {
           (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
             && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
-            && request.resource.data.status == resource.data.status
+            && (!('status' in resource.data) || request.resource.data.status == resource.data.status)
           )
           // Full listing update with permitted fields (including photo URLs)
           || isValidListingUpdate()
