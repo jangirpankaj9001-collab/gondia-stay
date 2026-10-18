@@ -33,6 +33,7 @@ service cloud.firestore {
       // - Address must be non-empty string <= 300 chars
       // - Monthly rent must be a non-negative number <= 1,000,000
       // - Owner phone must be valid string (at least 5 characters)
+      // - Must atomically provision property_secrets for this property with a valid unguessable edit token
       allow create: if request.resource.data.status in ['pending', 'PENDING']
                     && request.resource.data.title is string
                     && request.resource.data.title.size() > 0
@@ -46,7 +47,11 @@ service cloud.firestore {
                     && request.resource.data.monthlyRent <= 1000000
                     && request.resource.data.ownerPhone is string
                     && request.resource.data.ownerPhone.size() >= 5
-                    && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
+                    && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false)
+                    && existsAfter(/databases/$(database)/documents/property_secrets/$(propertyId))
+                    && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.propertyId == propertyId
+                    && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken is string
+                    && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken.size() >= 24;
 
       // Helper function to check permitted fields for owner listing update
       function hasOnlyPermittedListingUpdateKeys() {
@@ -150,13 +155,38 @@ service cloud.firestore {
       // Strictly forbidden from public reads! Only admin can read.
       allow read: if isAdmin();
 
-      // Created atomically when the property listing is submitted
-      allow create: if request.resource.data.editToken is string
-                    && request.resource.data.editToken.size() >= 24;
+      // Zero-login submission: Can ONLY be created atomically when a brand new property is submitted.
+      // Strictly prevents public users from creating arbitrary/standalone secrets or hijacking existing properties:
+      allow create: if isAdmin() || (
+        // The property must NOT exist prior to this transaction
+        !exists(/databases/$(database)/documents/properties/$(propertyId))
+        // The secret must NOT already exist
+        && !exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+        // The property must be created in this very same atomic batch with 'pending' status
+        && existsAfter(/databases/$(database)/documents/properties/$(propertyId))
+        && getAfter(/databases/$(database)/documents/properties/$(propertyId)).data.status in ['pending', 'PENDING']
+        // Validate secret document payload strictly
+        && request.resource.data.editToken is string
+        && request.resource.data.editToken.size() >= 24
+        && request.resource.data.propertyId == propertyId
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
+        && request.resource.data.keys().hasOnly(['editToken', 'propertyId', 'createdAt'])
+        // Must bind with property_edit_tokens in the same batch
+        && existsAfter(/databases/$(database)/documents/property_edit_tokens/$(request.resource.data.editToken))
+        && getAfter(/databases/$(database)/documents/property_edit_tokens/$(request.resource.data.editToken)).data.propertyId == propertyId
+      );
 
-      // Update requires providing the exact secret editToken in verifiedToken
-      allow update: if request.resource.data.verifiedToken == resource.data.editToken
-                    && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken);
+      // Updates:
+      // - Public users CANNOT change editToken, propertyId, or createdAt
+      // - Can ONLY be updated when providing the matching secret editToken in verifiedToken
+      // - Can ONLY touch verifiedToken, lastEditedAt, editNonce
+      allow update: if isAdmin() || (
+        request.resource.data.verifiedToken == resource.data.editToken
+        && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken)
+        && (!('propertyId' in request.resource.data) || request.resource.data.propertyId == resource.data.propertyId)
+        && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'lastEditedAt', 'editNonce'])
+      );
 
       // Only admin can delete
       allow delete: if isAdmin();
@@ -171,11 +201,32 @@ service cloud.firestore {
       // Unguessable token direct lookup: only someone who already possesses the exact token can fetch it
       allow get: if true;
 
-      // Created atomically when listing is submitted
-      allow create: if request.resource.data.propertyId is string
-                    && token.size() >= 24;
+      // Created atomically when listing is submitted.
+      // Strictly prevents public users from forging edit-token mappings:
+      // - Property must be brand new (does not exist before this transaction)
+      // - Token document cannot overwrite an existing token
+      // - Property and secret must be created in this same batch
+      // - The token in the path MUST match the secret's editToken in property_secrets
+      allow create: if isAdmin() || (
+        token.size() >= 24
+        && request.resource.data.propertyId is string
+        && !exists(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+        && !exists(/databases/$(database)/documents/property_edit_tokens/$(token))
+        && existsAfter(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+        && existsAfter(/databases/$(database)/documents/property_secrets/$(request.resource.data.propertyId))
+        && getAfter(/databases/$(database)/documents/property_secrets/$(request.resource.data.propertyId)).data.editToken == token
+      );
 
-      allow update: if isAdmin() || (resource.data.propertyId == request.resource.data.propertyId);
+      // Updates:
+      // - Public users CANNOT change propertyId (forging mapping to a different property is strictly prevented)
+      // - Token must match the trusted secret in property_secrets
+      // - Can only update draft propertyData and updatedAt
+      allow update: if isAdmin() || (
+        resource.data.propertyId == request.resource.data.propertyId
+        && exists(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId))
+        && get(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId)).data.editToken == token
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['propertyData', 'updatedAt'])
+      );
 
       allow delete: if isAdmin();
     }
