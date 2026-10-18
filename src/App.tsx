@@ -450,13 +450,32 @@ export const App: React.FC = () => {
       }
 
       // Locality
-      if (selectedLocality !== 'All' && p.locality !== selectedLocality) {
-        return false;
+      if (selectedLocality !== 'All') {
+        if (!searchQuery.trim()) {
+          if (p.locality !== selectedLocality) return false;
+        } else {
+          // If searching, check if query specifies any known locality
+          const qLower = searchQuery.toLowerCase();
+          const mentionsLocality = GONDIA_LOCALITIES.some(
+            loc => loc !== 'All' && qLower.includes(loc.toLowerCase())
+          );
+          if (!mentionsLocality && p.locality !== selectedLocality) {
+            return false;
+          }
+        }
       }
 
       // Property Type
-      if (selectedType !== 'ALL' && p.propertyType !== selectedType) {
-        return false;
+      if (selectedType !== 'ALL') {
+        if (!searchQuery.trim()) {
+          if (p.propertyType !== selectedType) return false;
+        } else {
+          const qLower = searchQuery.toLowerCase();
+          const mentionsType = ['flat', 'house', 'room', 'pg', 'apartment', 'villa', '1bhk', '2bhk', '3bhk'].some(t => qLower.includes(t));
+          if (!mentionsType && p.propertyType !== selectedType) {
+            return false;
+          }
+        }
       }
 
       // Rent
@@ -474,41 +493,92 @@ export const App: React.FC = () => {
         return false;
       }
 
-      // Requirement 6: Enhanced Explore Search
+      // Requirement 6: Enhanced Explore Search across Gondia localities & available properties
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const tokens = q.split(/\s+/).filter(Boolean);
+        const rawQ = searchQuery.toLowerCase().trim();
+        const stopWords = new Set(['in', 'at', 'near', 'for', 'with', 'the', 'of', 'and', 'or', 'a', 'an']);
+        const allTokens = rawQ
+          .replace(/[,;:]/g, ' ')
+          .split(/\s+/)
+          .filter(Boolean);
+
+        const meaningfulTokens = allTokens.filter(t => !stopWords.has(t));
+        const tokens = meaningfulTokens.length > 0 ? meaningfulTokens : allTokens;
 
         // Every token in query must match some property attribute
         const matchesAllTokens = tokens.every(token => {
-          // Check rent search (e.g. "8000" or "under 10000")
+          const tokenClean = token.replace(/[^a-z0-9]/g, '');
+
+          // 1. Rent / Price matching (e.g. 8000, 10000, 5000)
           const cleanNum = parseInt(token.replace(/[^0-9]/g, ''), 10);
-          const matchesRent = !isNaN(cleanNum) && cleanNum > 500 && (
-            Math.abs(p.monthlyRent - cleanNum) <= 1500 || p.monthlyRent <= cleanNum
+          const matchesRent = !isNaN(cleanNum) && cleanNum >= 500 && (
+            Math.abs(p.monthlyRent - cleanNum) <= 2000 || p.monthlyRent <= cleanNum
           );
 
+          // 2. Direct string matching on Title, Address, Locality, City
           const matchesTitle = p.title?.toLowerCase().includes(token);
           const matchesAddress = p.address?.toLowerCase().includes(token);
-          const matchesLocality = p.locality?.toLowerCase().includes(token);
-          const matchesType = p.propertyType?.toLowerCase().includes(token);
+          const matchesLocality = p.locality?.toLowerCase().includes(token) ||
+                                  p.locality?.toLowerCase().replace(/\s+/g, '').includes(tokenClean);
+          const matchesCity = (p.city || 'Gondia').toLowerCase().includes(token);
 
-          // Accommodation type search (e.g. "1bhk", "1 bhk", "2bhk", "room", "flat", "pg")
+          // 3. Property Type & Synonyms (flat, apartment, house, room, pg, hostel)
+          const propTypeStr = (p.propertyType || '').toLowerCase().replace(/_/g, ' ');
+          const propTypeClean = (p.propertyType || '').toLowerCase().replace(/_/g, '');
+          const matchesType = propTypeStr.includes(token) || 
+                             propTypeClean.includes(tokenClean) ||
+                             (token === 'flat' && p.propertyType === 'FLAT') ||
+                             (token === 'flats' && p.propertyType === 'FLAT') ||
+                             (token === 'apartment' && p.propertyType === 'FLAT') ||
+                             (token === 'apartments' && p.propertyType === 'FLAT') ||
+                             (token === 'house' && p.propertyType === 'INDEPENDENT_HOUSE') ||
+                             (token === 'villa' && p.propertyType === 'INDEPENDENT_HOUSE') ||
+                             (token === 'pg' && p.propertyType === 'PG') ||
+                             (token === 'hostel' && p.propertyType === 'PG') ||
+                             (token === 'room' && (p.propertyType === 'ROOM' || p.accommodationType === 'ROOM' || p.bedrooms === 1)) ||
+                             (token === 'rooms' && (p.propertyType === 'ROOM' || p.accommodationType === 'ROOM' || p.bedrooms > 0));
+
+          // 4. Accommodation Type (1bhk, 2bhk, 3bhk, 4bhk, 1rk, room, bhk)
           const accStr = (p.accommodationType || '').toLowerCase().replace(/_/g, ' ');
           const accClean = (p.accommodationType || '').toLowerCase().replace(/_/g, '');
           const matchesAcc = accStr.includes(token) || 
-                             accClean.includes(token) ||
-                             (token === '1bhk' && p.accommodationType === '1_BHK') ||
-                             (token === '2bhk' && p.accommodationType === '2_BHK') ||
-                             (token === '3bhk' && p.accommodationType === '3_BHK') ||
-                             (token === 'room' && (p.accommodationType === 'ROOM' || p.bedrooms === 1)) ||
+                             accClean.includes(tokenClean) ||
+                             (tokenClean === '1bhk' && p.accommodationType === '1_BHK') ||
+                             (tokenClean === '2bhk' && p.accommodationType === '2_BHK') ||
+                             (tokenClean === '3bhk' && p.accommodationType === '3_BHK') ||
+                             (tokenClean === '4bhk' && (p.accommodationType === '4_PLUS_BHK' || p.bedrooms >= 4)) ||
+                             (tokenClean === '1rk' && (p.accommodationType === 'ROOM' || p.accommodationType === '1_BHK')) ||
+                             (token === '1' && (p.accommodationType === '1_BHK' || p.bedrooms === 1)) ||
+                             (token === '2' && (p.accommodationType === '2_BHK' || p.bedrooms === 2)) ||
+                             (token === '3' && (p.accommodationType === '3_BHK' || p.bedrooms === 3)) ||
                              (token === 'bhk' && p.bedrooms > 0);
 
-          const matchesFurnishing = p.furnishing?.toLowerCase().replace(/_/g, ' ').includes(token);
-          const matchesAmenities = (p.amenities || []).some(a => a.toLowerCase().includes(token));
-          const matchesSuitable = (p.suitableTenants || []).some(s => s.toLowerCase().replace(/_/g, ' ').includes(token));
+          // 5. Furnishing
+          const matchesFurnishing = p.furnishing?.toLowerCase().replace(/_/g, ' ').includes(token) ||
+                                    (token === 'furnished' && (p.furnishing === 'FURNISHED' || p.furnishing === 'SEMI_FURNISHED')) ||
+                                    (token === 'unfurnished' && p.furnishing === 'UNFURNISHED');
 
-          return matchesTitle || matchesAddress || matchesLocality || matchesType || 
-                 matchesAcc || matchesFurnishing || matchesAmenities || matchesSuitable || matchesRent;
+          // 6. Amenities
+          const matchesAmenities = (p.amenities || []).some(a => 
+            a.toLowerCase().includes(token) || a.toLowerCase().replace(/[^a-z0-9]/g, '').includes(tokenClean)
+          );
+
+          // 7. Suitable Tenants
+          const matchesSuitable = (p.suitableTenants || []).some(s => 
+            s.toLowerCase().replace(/_/g, ' ').includes(token)
+          ) || (token === 'bachelor' && (p.suitableTenants?.includes('WORKING_PROFESSIONALS') || p.suitableTenants?.includes('STUDENTS') || p.suitableTenants?.includes('ALL'))) ||
+               (token === 'family' && (p.suitableTenants?.includes('FAMILIES') || p.suitableTenants?.includes('ALL'))) ||
+               (token === 'student' && (p.suitableTenants?.includes('STUDENTS') || p.suitableTenants?.includes('ALL')));
+
+          // 8. Availability / Occupancy status
+          const matchesOccupancy = (token === 'available' || token === 'vacant') 
+            ? !isOccupied(p.occupancyStatus)
+            : (token === 'rented' || token === 'occupied') 
+              ? isOccupied(p.occupancyStatus) 
+              : false;
+
+          return matchesTitle || matchesAddress || matchesLocality || matchesCity || matchesType || 
+                 matchesAcc || matchesFurnishing || matchesAmenities || matchesSuitable || matchesRent || matchesOccupancy;
         });
 
         if (!matchesAllTokens) return false;
@@ -897,6 +967,40 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSearchSubmit = (customQuery?: string) => {
+    const q = (customQuery !== undefined ? customQuery : searchQuery).trim();
+    if (!q) {
+      showToast('Please type a locality, flat, 1BHK, 2BHK, room, or price to search.');
+      return;
+    }
+    if (customQuery !== undefined) {
+      setSearchQuery(customQuery);
+    }
+
+    // Check if query directly specifies a known Gondia locality
+    const matchedLocality = GONDIA_LOCALITIES.find(
+      loc => loc !== 'All' && q.toLowerCase().includes(loc.toLowerCase())
+    );
+    if (matchedLocality) {
+      setSelectedLocality(matchedLocality);
+    } else {
+      setSelectedLocality('All');
+    }
+
+    // Reset type filter so user searches broadly across all stays
+    setSelectedType('ALL');
+
+    // Scroll smoothly to properties results
+    setTimeout(() => {
+      const resultsEl = document.getElementById('properties-results');
+      if (resultsEl) {
+        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+
+    showToast(`Searching for "${q}" across Gondia stays...`);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 md:pb-12">
       {/* Top Header */}
@@ -970,22 +1074,22 @@ export const App: React.FC = () => {
                   Connect directly with verified local property owners in Civil Lines, Ram Nagar, Kudwa Naka, and Rail Toly. Real-time Cloud Firestore synchronization across mobile & desktop.
                 </p>
 
-                {/* Functional Explore Search Bar (Requirement 6) */}
+                {/* Functional Explore Search Bar */}
                 <form 
                   onSubmit={(e) => {
                     e.preventDefault();
-                    // Keyboard Enter / Search submit action
+                    handleSearchSubmit();
                   }}
                   className="pt-2 flex flex-col sm:flex-row gap-2 max-w-xl"
                 >
                   <div className="relative flex-1">
                     <button
                       type="submit"
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
-                      title="Search properties in Gondia"
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                      title="Search properties across Gondia"
                       aria-label="Search"
                     >
-                      <Search className="w-4 h-4" />
+                      <Search className="w-4 h-4 stroke-[2.5]" />
                     </button>
                     <input 
                       type="text"
@@ -995,6 +1099,7 @@ export const App: React.FC = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
+                          handleSearchSubmit();
                         }
                       }}
                       className="w-full pl-10 pr-9 py-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-400 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-blue-400 shadow-md"
@@ -1002,7 +1107,10 @@ export const App: React.FC = () => {
                     {searchQuery.trim() && (
                       <button
                         type="button"
-                        onClick={() => setSearchQuery('')}
+                        onClick={() => {
+                          setSearchQuery('');
+                          showToast('Search cleared');
+                        }}
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                         title="Clear search"
                         aria-label="Clear search"
@@ -1011,15 +1119,54 @@ export const App: React.FC = () => {
                       </button>
                     )}
                   </div>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
+                    title="Search across all Gondia localities and available properties"
+                  >
+                    <Search className="w-4 h-4 stroke-[2.5]" />
+                    <span>Search</span>
+                  </button>
                   <button 
                     type="button"
                     onClick={() => setShowFilterModal(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all shadow-md active:scale-95 cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
                   >
                     <SlidersHorizontal className="w-4 h-4" />
                     <span>Filters</span>
                   </button>
                 </form>
+
+                {/* Popular Quick Search Tags */}
+                <div className="pt-2 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-blue-200 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-300" />
+                    Quick Search:
+                  </span>
+                  {[
+                    { label: '1 BHK', query: '1bhk' },
+                    { label: '2 BHK', query: '2bhk' },
+                    { label: 'Flats', query: 'flat' },
+                    { label: 'Civil Lines', query: 'Civil Lines' },
+                    { label: 'Ram Nagar', query: 'Ram Nagar' },
+                    { label: 'Kudwa Naka', query: 'Kudwa Naka' },
+                    { label: 'Rooms / PG', query: 'room' },
+                    { label: 'Under ₹8,000', query: '8000' }
+                  ].map(tag => (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      onClick={() => handleSearchSubmit(tag.query)}
+                      className={`text-[11px] px-2.5 py-1 rounded-full font-bold transition-all cursor-pointer backdrop-blur-xs ${
+                        searchQuery.toLowerCase() === tag.query.toLowerCase()
+                          ? 'bg-amber-400 text-slate-900 shadow-xs'
+                          : 'bg-white/15 text-white hover:bg-white/25 border border-white/20'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1077,8 +1224,39 @@ export const App: React.FC = () => {
               </div>
             </div>
 
+            {/* Active Search Results Banner */}
+            {searchQuery.trim() && (
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5 text-blue-900 font-medium">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Search className="w-4 h-4 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <span className="text-slate-600 block text-[11px]">Searching across all Gondia localities:</span>
+                    <span className="font-extrabold text-blue-950 text-sm">
+                      "{searchQuery}"
+                    </span>
+                    <span className="text-blue-700 font-bold ml-1.5">
+                      ({filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'} found)
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    showToast('Search cleared. Showing all verified properties.');
+                  }}
+                  className="px-3 py-1.5 bg-white hover:bg-blue-100 text-blue-700 font-bold rounded-xl border border-blue-200 transition-colors shrink-0 flex items-center gap-1.5 shadow-xs cursor-pointer text-xs"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Clear Search</span>
+                </button>
+              </div>
+            )}
+
             {/* Listings Grid Header */}
-            <div className="flex items-center justify-between">
+            <div id="properties-results" className="flex items-center justify-between scroll-mt-20">
               <div>
                 <h2 className="text-lg font-extrabold text-slate-900">
                   {selectedLocality === 'All' ? 'All Verified Properties' : `Properties in ${selectedLocality}`}
@@ -1133,7 +1311,10 @@ export const App: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                   {searchQuery.trim() && (
                     <button
-                      onClick={() => setSearchQuery('')}
+                      onClick={() => {
+                        setSearchQuery('');
+                        showToast('Search cleared. Showing all verified properties.');
+                      }}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -1159,6 +1340,22 @@ export const App: React.FC = () => {
                     Post New Property Listing
                   </button>
                 </div>
+
+                {searchQuery.trim() && (
+                  <div className="pt-2 flex flex-wrap items-center justify-center gap-1.5 max-w-md mx-auto">
+                    <span className="text-xs text-slate-400 font-semibold w-full block">Try searching popular Gondia categories:</span>
+                    {['Civil Lines', 'Ram Nagar', '1 BHK', '2 BHK', 'Flat', 'Room'].map(alt => (
+                      <button
+                        key={alt}
+                        type="button"
+                        onClick={() => handleSearchSubmit(alt)}
+                        className="text-xs px-3 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 rounded-lg font-bold transition-colors cursor-pointer"
+                      >
+                        {alt}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
