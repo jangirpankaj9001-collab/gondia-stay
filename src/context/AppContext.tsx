@@ -374,6 +374,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.editToken) {
         saveListingToken(result.propertyId, result.editToken);
       }
+
+      // Ensure newly submitted listing is immediately in properties state with status 'pending'
+      // so it appears in the Admin Panel's Pending Review tab and Owner listings
+      const savedListing: PropertyListing = {
+        ...property,
+        id: result.propertyId,
+        status: isEdit ? (property.status || 'pending') : 'pending',
+        occupancyStatus: property.occupancyStatus || 'AVAILABLE',
+        createdAt: property.createdAt || Date.now(),
+        updatedAt: Date.now()
+      };
+
+      setProperties(prev => {
+        const existingIdx = prev.findIndex(p => p.id === result.propertyId);
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = { ...updated[existingIdx], ...savedListing };
+          return updated;
+        }
+        return [savedListing, ...prev];
+      });
+
       if (isEdit) {
         showToast("Listing updated securely in Cloud Firestore!");
       } else {
@@ -398,6 +420,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       await deletePropertyFromFirestore(propertyId);
+      setProperties(prev => prev.filter(p => p.id !== propertyId));
       showToast("Listing removed from Cloud Firestore.");
     } catch (err: any) {
       showToast("Error deleting listing: " + (err.message || ''));
@@ -446,6 +469,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approve, 
         moderatorId
       );
+      // Immediately reflect approval/rejection in local state
+      setProperties(prev => prev.map(p => 
+        p.id === propertyId 
+          ? { ...p, status: approve ? 'approved' : 'rejected', updatedAt: Date.now() }
+          : p
+      ));
       showToast(approve ? "Listing approved in Cloud Firestore! Live for all visitors." : "Listing rejected.");
       return true;
     } catch (err: any) {
@@ -476,6 +505,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true };
     } catch (err: any) {
       console.error('Firebase Admin Login Error:', err);
+      // Auto-provision verified admin user account in Firebase Auth if not yet created
+      if (
+        (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') &&
+        email.trim().toLowerCase() === 'jangirpankaj901@gmail.com'
+      ) {
+        try {
+          const newCredential = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+          setAdminUser(newCredential.user);
+          setIsAdminAuthenticated(true);
+          showToast(`Admin account initialized! Welcome, ${newCredential.user.email}`);
+          return { success: true };
+        } catch (createErr: any) {
+          console.warn('Admin user auto-creation fallback failed:', createErr);
+        }
+      }
+
       let errorMsg = 'Invalid email or password.';
       if (
         err.code === 'auth/user-not-found' || 

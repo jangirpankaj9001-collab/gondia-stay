@@ -143,7 +143,7 @@ export const App: React.FC = () => {
   const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
-  const [adminEmail, setAdminEmail] = useState('');
+  const [adminEmail, setAdminEmail] = useState('jangirpankaj901@gmail.com');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
@@ -1539,7 +1539,7 @@ export const App: React.FC = () => {
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Admin Moderation</span>
+                  <span>Admin Panel</span>
                   {pendingProperties.length > 0 && (
                     <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
                       {pendingProperties.length}
@@ -2427,7 +2427,7 @@ export const App: React.FC = () => {
                           required
                           value={adminEmail}
                           onChange={(e) => setAdminEmail(e.target.value)}
-                          placeholder="e.g. admin@gondiastay.com"
+                          placeholder="jangirpankaj901@gmail.com"
                           className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
                         />
                       </div>
