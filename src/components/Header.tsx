@@ -12,7 +12,8 @@ import {
   Menu,
   X,
   Database,
-  MessageCircle
+  MessageCircle,
+  Plus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp } from '../utils/contact';
@@ -229,44 +230,16 @@ export const Header: React.FC = () => {
                       <span>WhatsApp Chat</span>
                     </button>
 
-                    {isOwnerAuthenticated && authUser ? (
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px] space-y-1">
-                        <div className="text-slate-500 font-semibold">Active Landlord Session:</div>
-                        <div className="font-mono font-bold text-slate-800 truncate">{authUser.email}</div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            logoutOwner();
-                            setShowOwnerMenu(false);
-                          }}
-                          className="w-full mt-1.5 py-1.5 px-3 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-bold text-center transition-colors cursor-pointer"
-                        >
-                          Sign Out
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigateTo('owner');
-                          setShowOwnerMenu(false);
-                        }}
-                        className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold text-center shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 text-blue-200" />
-                        <span>Sign In as Landlord</span>
-                      </button>
-                    )}
-
                     <button
                       type="button"
                       onClick={() => {
                         navigateTo('owner');
                         setShowOwnerMenu(false);
                       }}
-                      className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold text-center shadow-xs transition-colors cursor-pointer"
+                      className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold text-center shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
-                      Open Landlord Hub & Listings
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Post Listing / Owner Hub</span>
                     </button>
                   </div>
                 </>
