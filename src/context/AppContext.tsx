@@ -27,7 +27,8 @@ import {
   deletePropertyFromFirestore,
   updatePropertyOccupancyInFirestore,
   saveOwnerProfileToFirestore,
-  subscribeToOwnerProfile
+  subscribeToOwnerProfile,
+  SavePropertyResult
 } from '../firebase/propertiesService';
 
 interface AppContextType {
@@ -64,8 +65,11 @@ interface AppContextType {
   switchOwner: (ownerId: string) => void;
   updateOwnerPhone: (newPhone: string) => void;
   updateOwnerProfile: (updates: Partial<OwnerProfile>) => Promise<void>;
-  updatePropertyOccupancy: (propertyId: string, occupancyStatus: 'AVAILABLE' | 'OCCUPIED') => Promise<void>;
-  saveProperty: (property: PropertyListing, isEdit: boolean) => Promise<boolean>;
+  updatePropertyOccupancy: (propertyId: string, occupancyStatus: 'AVAILABLE' | 'OCCUPIED', editToken?: string) => Promise<void>;
+  saveProperty: (property: PropertyListing, isEdit: boolean, editToken?: string) => Promise<SavePropertyResult>;
+  myListingTokens: Record<string, string>;
+  saveListingToken: (propertyId: string, token: string) => void;
+  getListingToken: (propertyId: string) => string | undefined;
   deleteProperty: (propertyId: string) => Promise<void>;
   toggleFeatured: (propertyId: string) => void;
   approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
@@ -133,6 +137,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return DEFAULT_OWNER_PROFILE;
     }
   });
+
+  // Local storage mapping for private edit link tokens (propertyId -> token)
+  const [myListingTokens, setMyListingTokens] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('gondia_stay_listing_tokens');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const saveListingToken = useCallback((propertyId: string, token: string) => {
+    setMyListingTokens(prev => {
+      const updated = { ...prev, [propertyId]: token };
+      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const getListingToken = useCallback((propertyId: string): string | undefined => {
+    return myListingTokens[propertyId];
+  }, [myListingTokens]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
@@ -223,13 +249,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsFirestoreLoading(false);
         setFirestoreError(error.message || 'Error connecting to Cloud Firestore');
         showToast('Firestore error: ' + (error.message || 'Check database permissions'));
-      }
+      },
+      isAdminAuthenticated
     );
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [showToast]);
+  }, [isAdminAuthenticated, showToast]);
 
   useEffect(() => {
     localStorage.setItem('gondia_stay_tiffins', JSON.stringify(tiffinServices));
@@ -304,7 +331,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    */
   const updatePropertyOccupancy = async (
     propertyId: string, 
-    occupancyStatus: 'AVAILABLE' | 'OCCUPIED'
+    occupancyStatus: 'AVAILABLE' | 'OCCUPIED',
+    editToken?: string
   ): Promise<void> => {
     if (!isFirebaseConfigured()) {
       showToast("Firebase is not connected.");
@@ -312,7 +340,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     try {
-      await updatePropertyOccupancyInFirestore(propertyId, occupancyStatus);
+      const tokenToUse = editToken || myListingTokens[propertyId];
+      await updatePropertyOccupancyInFirestore(propertyId, occupancyStatus, tokenToUse);
       showToast(occupancyStatus === 'OCCUPIED' 
         ? "Property marked as Occupied / Rented!" 
         : "Property marked as Available Again!");
@@ -325,10 +354,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /**
    * Saves a property listing directly to Cloud Firestore.
-   * Requirement 1 & 2: Connect the owner listing submission form to Cloud Firestore and save immediately.
-   * Requirement 3: Set every new listing's status to "pending".
+   * Requirement 1: Allow owners to submit properties without login, email, password, or OTP.
+   * Returns SavePropertyResult with unique unguessable private editToken & editUrl.
    */
-  const saveProperty = async (property: PropertyListing, isEdit: boolean): Promise<boolean> => {
+  const saveProperty = async (
+    property: PropertyListing, 
+    isEdit: boolean,
+    editToken?: string
+  ): Promise<SavePropertyResult> => {
     if (!isFirebaseConfigured()) {
       const err = new Error('Firebase Cloud Firestore is not configured. Please add your Firebase credentials in Settings.');
       showToast(err.message);
@@ -336,13 +369,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     try {
-      await savePropertyToFirestore(property, isEdit);
-      if (isEdit) {
-        showToast("Listing updated in Cloud Firestore!");
-      } else {
-        showToast("Listing submitted to Firestore! Status: pending approval.");
+      const tokenToUse = editToken || myListingTokens[property.id];
+      const result = await savePropertyToFirestore(property, isEdit, tokenToUse);
+      if (result.editToken) {
+        saveListingToken(result.propertyId, result.editToken);
       }
-      return true;
+      if (isEdit) {
+        showToast("Listing updated securely in Cloud Firestore!");
+      } else {
+        showToast("Listing submitted for review! Private edit link generated.");
+      }
+      return result;
     } catch (error: any) {
       console.error('Error saving property to Firestore:', error);
       showToast('Error saving: ' + (error.message || 'Check database connection'));
@@ -625,6 +662,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateOwnerProfile,
       updatePropertyOccupancy,
       saveProperty,
+      myListingTokens,
+      saveListingToken,
+      getListingToken,
       deleteProperty,
       toggleFeatured,
       approveProperty,

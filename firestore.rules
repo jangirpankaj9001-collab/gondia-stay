@@ -19,17 +19,20 @@ service cloud.firestore {
 
     // Properties Collection: Gondia Stay listings
     match /properties/{propertyId} {
-      // 1. Read: Public read allows real-time listener on public URL
-      allow read: if true;
+      // 1. Read:
+      // Approved listings are publicly visible to all visitors.
+      // Pending and rejected listings are strictly hidden from public reads, accessible only to verified admin.
+      allow read: if isAdmin() || (resource.data.status in ['approved', 'APPROVED']);
 
-      // 2. Create: Anyone can submit new listings, strictly enforced as 'pending'
+      // 2. Create:
+      // Zero-login submission: Any owner can submit a new property without login, password, or OTP.
       // Strictly enforced server-side:
       // - Status MUST be 'pending' (no public submission can self-approve)
+      // - Cannot set isFeatured: true on create
       // - Title must be non-empty string <= 150 chars
       // - Address must be non-empty string <= 300 chars
       // - Monthly rent must be a non-negative number <= 1,000,000
       // - Owner phone must be valid string (at least 5 characters)
-      // - Cannot set isFeatured: true on create
       allow create: if request.resource.data.status in ['pending', 'PENDING']
                     && request.resource.data.title is string
                     && request.resource.data.title.size() > 0
@@ -45,25 +48,7 @@ service cloud.firestore {
                     && request.resource.data.ownerPhone.size() >= 5
                     && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false);
 
-      // Helper function to verify that the updater is the cryptographically authenticated owner
-      // Uses Firebase Auth token UID and verified email instead of trusting spoofable name/phone fields
-      function isAuthorizedOwner() {
-        return request.auth != null && (
-          // 1. Document ownerId matches authenticated user's Firebase Auth UID
-          (('ownerId' in resource.data) && resource.data.ownerId == request.auth.uid)
-          // 2. Document ownerEmail matches authenticated user's verified email
-          || (request.auth.token.email != null && (
-            (('ownerEmail' in resource.data) && resource.data.ownerEmail == request.auth.token.email)
-            || (('email' in resource.data) && resource.data.email == request.auth.token.email)
-            // 3. Known default landlord email matches primary seed owner IDs
-            || (('ownerId' in resource.data) && resource.data.ownerId in ['owner_gondia_primary', 'owner_gondia'] && request.auth.token.email == 'rajesh.sharma@gondiastay.com')
-          ))
-          // 4. Legacy listing without assigned ownerId: authenticated user can bind ownership
-          || (!('ownerId' in resource.data) || resource.data.ownerId == '' || resource.data.ownerId == null)
-        );
-      }
-
-      // Check permitted fields for owner listing update
+      // Helper function to check permitted fields for owner listing update
       function hasOnlyPermittedListingUpdateKeys() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'title',
@@ -97,80 +82,111 @@ service cloud.firestore {
         ]);
       }
 
-      // Validation for permitted owner update (including Cloudinary photo URLs and listing fields)
+      // Validation for permitted owner update:
+      // - Cannot self-approve listing (approval is admin-only)
+      // - Cannot self-feature listing
+      // - Cannot tamper with creation timestamp
+      // - Validates photos list and field types
       function isValidOwnerUpdate() {
         return hasOnlyPermittedListingUpdateKeys()
-          // Listing approval status cannot be self-approved by owner
           && (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'PENDING'] || ('status' in resource.data && request.resource.data.status == resource.data.status))
-          // Owner cannot set featured flag to true
           && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false || ('isFeatured' in resource.data && request.resource.data.isFeatured == resource.data.isFeatured))
-          // Ownership integrity: Listing ownerId cannot be stolen or reassigned to another UID
-          && (!('ownerId' in resource.data) || !('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId || request.resource.data.ownerId == request.auth.uid)
-          // Creation timestamp cannot be tampered with
           && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
-          // Photo URLs validation (supports Cloudinary secure URLs and existing paths)
           && (!('photos' in request.resource.data) || (
             request.resource.data.photos is list
             && request.resource.data.photos.size() > 0
             && request.resource.data.photos.size() <= 30
           ))
-          // Title validation
           && (!('title' in request.resource.data) || (
             request.resource.data.title is string
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 200
           ))
-          // Address validation
           && (!('address' in request.resource.data) || (
             request.resource.data.address is string
             && request.resource.data.address.size() > 0
             && request.resource.data.address.size() <= 500
           ))
-          // Rent validation
           && (!('monthlyRent' in request.resource.data) || (
             request.resource.data.monthlyRent is number
             && request.resource.data.monthlyRent >= 0
             && request.resource.data.monthlyRent <= 5000000
           ))
-          // Contact phone validation
           && (!('ownerPhone' in request.resource.data) || (
             request.resource.data.ownerPhone is string
             && request.resource.data.ownerPhone.size() >= 5
           ))
-          // Occupancy status validation
           && (!('occupancyStatus' in request.resource.data) || (
             request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
           ));
       }
 
       // 3. Update:
-      // - Admin has full update privileges (approval, rejection, edits, occupancy, featured).
-      // - Authenticated Owner can update permitted listing fields (including Cloudinary photo URLs) or occupancy status.
-      // - Cryptographically verifies request.auth.uid or verified ownerEmail without trusting unauthenticated ownerName/ownerPhone.
+      // - Verified Admin has full update privileges (approval, rejection, edits, occupancy, featured).
+      // - Owner with unguessable private edit link can update permitted listing fields via atomic batch matching verifiedToken in property_secrets.
+      // - Never exposes edit tokens in the public property document.
       allow update: if isAdmin() || (
-        isAuthorizedOwner() && (
+        exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+        && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
+        && (
           // Fast path for occupancy status toggle
           (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
             && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
             && (!('status' in resource.data) || request.resource.data.status == resource.data.status)
           )
-          // Full listing update with permitted fields (including Cloudinary photo URLs)
+          // Full listing update with permitted fields (including Cloudinary photos)
           || isValidOwnerUpdate()
         )
       );
 
-      // 4. Delete: ONLY authenticated admin can delete listings.
+      // 4. Delete: ONLY verified admin can delete listings.
       allow delete: if isAdmin();
     }
 
-    // Owners collection for real owner profile data
+    // Property Secrets: Stores the unguessable private edit token for each property
+    // NEVER exposed in public property documents or readable by the public.
+    match /property_secrets/{propertyId} {
+      // Strictly forbidden from public reads! Only admin can read.
+      allow read: if isAdmin();
+
+      // Created atomically when the property listing is submitted
+      allow create: if request.resource.data.editToken is string
+                    && request.resource.data.editToken.size() >= 24;
+
+      // Update requires providing the exact secret editToken in verifiedToken
+      allow update: if request.resource.data.verifiedToken == resource.data.editToken
+                    && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken);
+
+      // Only admin can delete
+      allow delete: if isAdmin();
+    }
+
+    // Property Edit Tokens: Document ID is the unguessable token itself.
+    // Enables the private edit link to resolve to the property ID without exposing tokens.
+    match /property_edit_tokens/{token} {
+      // Disallow list queries (nobody can enumerate or scan all tokens)
+      allow list: if isAdmin();
+
+      // Unguessable token direct lookup: only someone who already possesses the exact token can fetch it
+      allow get: if true;
+
+      // Created atomically when listing is submitted
+      allow create: if request.resource.data.propertyId is string
+                    && token.size() >= 24;
+
+      allow update: if isAdmin() || (resource.data.propertyId == request.resource.data.propertyId);
+
+      allow delete: if isAdmin();
+    }
+
+    // Owners collection for profile data
     match /owners/{ownerId} {
       allow read: if true;
       allow write: if isAdmin() || (request.auth != null && request.auth.uid == ownerId);
     }
 
-    // Admins Collection (optional document-based admin registry)
+    // Admins Collection
     match /admins/{adminId} {
       allow read: if request.auth != null;
       allow write: if false;

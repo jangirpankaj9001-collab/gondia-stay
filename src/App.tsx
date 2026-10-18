@@ -42,6 +42,9 @@ import {
   Home,
   UserCheck,
   LogOut,
+  Copy,
+  ExternalLink,
+  Link as LinkIcon,
   X
 } from 'lucide-react';
 import { 
@@ -53,6 +56,7 @@ import {
   getFileFingerprint,
   getCachedPhotoUrl
 } from './firebase/storageService';
+import { fetchPropertyDirect } from './firebase/propertiesService';
 import { useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
@@ -123,13 +127,22 @@ export const App: React.FC = () => {
     authUser,
     isOwnerAuthenticated,
     logoutOwner,
-    setIsFirebaseModalOpen
+    setIsFirebaseModalOpen,
+    myListingTokens,
+    saveListingToken,
+    getListingToken
   } = useApp();
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showOwnerAuthModal, setShowOwnerAuthModal] = useState(false);
   const [ownerSubTab, setOwnerSubTab] = useState<'listings' | 'new' | 'moderation'>('listings');
   const [editingProperty, setEditingProperty] = useState<PropertyListing | null>(null);
+  const [currentEditToken, setCurrentEditToken] = useState<string | null>(null);
+  const [newlyCreatedLinkInfo, setNewlyCreatedLinkInfo] = useState<{ propertyId: string; editToken: string; editUrl: string; title: string } | null>(null);
+  const [showPrivateLinkModal, setShowPrivateLinkModal] = useState<boolean>(false);
+  const [linkCopied, setLinkCopied] = useState<boolean>(false);
+  const [copiedPropId, setCopiedPropId] = useState<string | null>(null);
+  const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState('');
@@ -139,6 +152,36 @@ export const App: React.FC = () => {
   const [moderatingPropId, setModeratingPropId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  // Check URL parameters for private edit link (?edit=<id>&token=<token> or #edit=...)
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash);
+      const editPropId = searchParams.get('edit') || hashParams.get('edit');
+      const token = searchParams.get('token') || hashParams.get('token');
+
+      if (editPropId && token) {
+        saveListingToken(editPropId, token);
+        setCurrentEditToken(token);
+
+        fetchPropertyDirect(editPropId, token).then((prop) => {
+          if (prop) {
+            handleEditClick(prop, token);
+            navigateTo('owner');
+            setOwnerSubTab('new');
+            showToast('Private edit link verified! You can update your listing.');
+          } else {
+            showToast('Listing not found or invalid private edit link.');
+          }
+        }).catch(err => {
+          console.error('Error fetching property via edit link:', err);
+        });
+      }
+    } catch (e) {
+      console.warn('URL token parse notice:', e);
+    }
+  }, []);
 
   // Selected photos for property listing (supports multiple photos, gallery picker, reordering, duplicate prevention, and compression)
   const [selectedPhotos, setSelectedPhotos] = useState<Array<{
@@ -490,21 +533,29 @@ export const App: React.FC = () => {
   // Owner properties (can see their own listings regardless of status)
   const myProperties = useMemo(() => {
     if (isAdminAuthenticated) return properties;
-    if (authUser) {
-      return properties.filter(p => 
+    return properties.filter(p => 
+      // Matched by private edit link token saved in localStorage
+      Boolean(myListingTokens[p.id]) ||
+      (authUser && (
         p.ownerId === authUser.uid ||
         (p.ownerEmail && p.ownerEmail.toLowerCase() === authUser.email?.toLowerCase()) ||
-        (p.ownerId === 'owner_gondia_primary' && authUser.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com') ||
-        p.ownerId === currentOwner.id
-      );
-    }
-    return properties.filter(p => p.ownerId === currentOwner.id);
-  }, [properties, currentOwner, authUser, isAdminAuthenticated]);
+        (p.ownerId === 'owner_gondia_primary' && authUser.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com')
+      )) ||
+      p.ownerId === currentOwner.id
+    );
+  }, [properties, currentOwner, authUser, isAdminAuthenticated, myListingTokens]);
 
-  // Pending properties for Moderation Workflow
-  // Requirement 4: Real-time listener automatically updates admin dashboard when new owner submits
+  // Properties grouped for Admin Moderation Workflow
   const pendingProperties = useMemo(() => {
     return properties.filter(p => isPending(p.status));
+  }, [properties]);
+
+  const approvedProperties = useMemo(() => {
+    return properties.filter(p => isApproved(p.status));
+  }, [properties]);
+
+  const rejectedProperties = useMemo(() => {
+    return properties.filter(p => (p.status || '').toLowerCase() === 'rejected');
   }, [properties]);
 
   // Handle Form Submission
@@ -526,11 +577,13 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (editingProperty && !isOwnerAuthenticated && !isAdminAuthenticated) {
-      setShowOwnerAuthModal(true);
-      showToast('Landlord authentication required to update listing details and photos.');
-      setSubmissionError('Authentication Required: Please sign in to your landlord account to verify ownership before saving updates to Cloud Firestore.');
-      return;
+    if (editingProperty) {
+      const tokenToUse = currentEditToken || myListingTokens[editingProperty.id];
+      if (!tokenToUse && !isAdminAuthenticated) {
+        setSubmissionError('Private edit link token required. Please use your private edit link to modify this property.');
+        showToast('Private edit link required to edit listing.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -659,13 +712,15 @@ export const App: React.FC = () => {
           latitude: Number(formData.latitude) || 21.4602,
           longitude: Number(formData.longitude) || 80.1945,
         };
-        await saveProperty(updated, true);
+        const tokenToUse = currentEditToken || myListingTokens[editingProperty.id];
+        await saveProperty(updated, true, tokenToUse);
         setEditingProperty(null);
+        setCurrentEditToken(null);
+        setOwnerSubTab('listings');
       } else {
-        // Requirement 3 & 4: Save directly to Firestore with status "pending"
-        // Requirement 2: Real owner-selected map location coordinates
+        // Zero-login submission: Generates private edit link
         const newProp: PropertyListing = {
-          id: `prop_${Date.now()}`,
+          id: `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           title: formData.title.trim(),
           address: formData.address.trim(),
           locality: formData.locality,
@@ -683,11 +738,11 @@ export const App: React.FC = () => {
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
-          ownerId: authUser?.uid || currentOwner.id,
-          ownerEmail: authUser?.email || currentOwner.email,
-          ownerName: formData.ownerName || currentOwner.name,
-          ownerPhone: formData.ownerPhone || currentOwner.phone,
-          ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || currentOwner.phone,
+          ownerId: 'owner_unauthenticated',
+          ownerEmail: formData.ownerPhone ? `${formData.ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '',
+          ownerName: formData.ownerName || 'Property Owner',
+          ownerPhone: formData.ownerPhone || '+91 98230 12345',
+          ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || '+91 98230 12345',
           ownerPreferredContact: formData.ownerPreferredContact,
           status: 'pending', // Requirement 4: Set every new listing's status to "pending"
           occupancyStatus: 'AVAILABLE',
@@ -695,7 +750,14 @@ export const App: React.FC = () => {
           longitude: Number(formData.longitude) || 80.1945,
           createdAt: Date.now()
         };
-        await saveProperty(newProp, false);
+        const res = await saveProperty(newProp, false);
+        setNewlyCreatedLinkInfo({
+          propertyId: res.propertyId,
+          editToken: res.editToken,
+          editUrl: res.editUrl,
+          title: formData.title.trim()
+        });
+        setShowPrivateLinkModal(true);
       }
 
       // Cleanup preview URLs and reset
@@ -741,11 +803,29 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleEditClick = (property: PropertyListing) => {
-    if (!isOwnerAuthenticated && !isAdminAuthenticated) {
-      showToast('Please sign in as the verified landlord to edit this listing.');
-      setShowOwnerAuthModal(true);
-      return;
+  const handleEditClick = (property: PropertyListing, token?: string) => {
+    const tokenToUse = token || currentEditToken || myListingTokens[property.id];
+    if (!tokenToUse && !isAdminAuthenticated && !isOwnerAuthenticated) {
+      const manualToken = window.prompt("Enter your listing's private edit token (or paste your private edit link):");
+      if (manualToken && manualToken.trim()) {
+        let cleanToken = manualToken.trim();
+        if (cleanToken.includes('token=')) {
+          try {
+            const url = new URL(cleanToken);
+            cleanToken = url.searchParams.get('token') || cleanToken;
+          } catch {
+            const match = cleanToken.match(/token=([a-zA-Z0-9_-]+)/);
+            if (match) cleanToken = match[1];
+          }
+        }
+        saveListingToken(property.id, cleanToken);
+        setCurrentEditToken(cleanToken);
+      } else {
+        showToast('Private edit link or token required to edit this listing.');
+        return;
+      }
+    } else if (tokenToUse) {
+      setCurrentEditToken(tokenToUse);
     }
     setEditingProperty(property);
     setSubmissionError(null);
@@ -1602,34 +1682,65 @@ export const App: React.FC = () => {
                             </button>
                           )}
 
-                          <button
-                            onClick={() => toggleFeatured(property.id)}
-                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1"
-                            title="Toggle featured badge"
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span className="hidden md:inline">{property.isFeatured ? 'Featured' : 'Make Featured'}</span>
-                          </button>
+                          {myListingTokens[property.id] && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const link = `${window.location.origin}/?edit=${property.id}&token=${myListingTokens[property.id]}`;
+                                navigator.clipboard.writeText(link);
+                                setCopiedPropId(property.id);
+                                showToast('Private edit link copied! Save this link to edit your listing.');
+                                setTimeout(() => setCopiedPropId(null), 2500);
+                              }}
+                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Copy private unguessable edit link"
+                            >
+                              {copiedPropId === property.id ? (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <LinkIcon className="w-3.5 h-3.5" />
+                                  <span>Edit Link</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {isAdminAuthenticated && (
+                            <button
+                              onClick={() => toggleFeatured(property.id)}
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                              title="Toggle featured badge (Admin Only)"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span className="hidden md:inline">{property.isFeatured ? 'Featured' : 'Make Featured'}</span>
+                            </button>
+                          )}
 
                           <button
-                            onClick={() => handleEditClick(property)}
+                            onClick={() => handleEditClick(property, myListingTokens[property.id])}
                             className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             <span>Edit</span>
                           </button>
 
-                          <button
-                            onClick={() => {
-                              if (window.confirm('Delete this listing from Cloud Firestore?')) {
-                                deleteProperty(property.id);
-                              }
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isAdminAuthenticated && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Permanently delete "${property.title}" from Cloud Firestore?`)) {
+                                  deleteProperty(property.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete (Admin Only)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -2410,81 +2521,196 @@ export const App: React.FC = () => {
                       </button>
                     </div>
 
-                    {pendingProperties.length > 0 ? (
-                      <div className="space-y-3">
-                        {pendingProperties.map(prop => {
-                          const isOwnListing = prop.ownerId === currentOwner.id;
-                          return (
-                            <div key={prop.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                              <div className="flex items-center gap-3.5">
-                                <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                                  <img 
-                                    src={prop.photos[0] || '/hero_gondia_stays.jpg'} 
-                                    alt={prop.title}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
-                                  />
-                                  {prop.photos && prop.photos.length > 1 && (
-                                    <span className="absolute bottom-1 right-1 bg-black/75 text-white text-[9px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5">
-                                      <Camera className="w-2.5 h-2.5" /> {prop.photos.length}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                                      Pending Approval
-                                    </span>
-                                    <span className="text-xs font-bold text-slate-500">{prop.locality}</span>
-                                    {isOwnListing && (
-                                      <span className="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                                        Your Own Submission
+                    {/* Moderation Status Tabs */}
+                    <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setAdminModerationFilter('pending')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminModerationFilter === 'pending'
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Pending Review</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminModerationFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {pendingProperties.length}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminModerationFilter('approved')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminModerationFilter === 'approved'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Approved & Public</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminModerationFilter === 'approved' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {approvedProperties.length}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminModerationFilter('rejected')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminModerationFilter === 'rejected'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Rejected</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminModerationFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {rejectedProperties.length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const displayedList = adminModerationFilter === 'pending'
+                        ? pendingProperties
+                        : adminModerationFilter === 'approved'
+                          ? approvedProperties
+                          : rejectedProperties;
+
+                      if (displayedList.length === 0) {
+                        return (
+                          <div className="text-center py-12 bg-white rounded-3xl border border-slate-200">
+                            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-slate-800">
+                              {adminModerationFilter === 'pending'
+                                ? 'No pending submissions awaiting review.'
+                                : adminModerationFilter === 'approved'
+                                  ? 'No approved listings yet.'
+                                  : 'No rejected listings.'}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              All listings in Cloud Firestore are synchronized in real-time.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          {displayedList.map(prop => {
+                            const isOwnListing = prop.ownerId === currentOwner.id;
+                            return (
+                              <div key={prop.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3.5">
+                                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
+                                    <img 
+                                      src={prop.photos[0] || '/hero_gondia_stays.jpg'} 
+                                      alt={prop.title}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
+                                    />
+                                    {prop.photos && prop.photos.length > 1 && (
+                                      <span className="absolute bottom-1 right-1 bg-black/75 text-white text-[9px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5">
+                                        <Camera className="w-2.5 h-2.5" /> {prop.photos.length}
                                       </span>
                                     )}
                                   </div>
-                                  <h4 className="text-sm font-bold text-slate-900">{prop.title}</h4>
-                                  <p className="text-xs text-slate-500">{prop.address}</p>
-                                  <div className="text-xs text-slate-600 font-medium pt-0.5">
-                                    Owner: <span className="font-bold">{prop.ownerName}</span> ({formatDisplayPhone(prop.ownerPhone)}) • Rent: <span className="font-extrabold text-blue-700">₹{prop.monthlyRent}/mo</span>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                        isApproved(prop.status)
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : isPending(prop.status)
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-rose-100 text-rose-800'
+                                      }`}>
+                                        {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : 'Rejected'}
+                                      </span>
+                                      <span className="text-xs font-bold text-slate-500">{prop.locality}</span>
+                                      {isOwnListing && (
+                                        <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                                          Your Submission
+                                        </span>
+                                      )}
+                                      {prop.isFeatured && (
+                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                                          <Sparkles className="w-3 h-3 text-amber-600" /> Featured
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h4 className="text-sm font-bold text-slate-900">{prop.title}</h4>
+                                    <p className="text-xs text-slate-500">{prop.address}</p>
+                                    <div className="text-xs text-slate-600 font-medium pt-0.5">
+                                      Owner: <span className="font-bold">{prop.ownerName}</span> ({formatDisplayPhone(prop.ownerPhone)}) • Rent: <span className="font-extrabold text-blue-700">₹{prop.monthlyRent}/mo</span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="flex items-center gap-2 shrink-0">
-                                <button
-                                  onClick={() => handleModerate(prop.id, true)}
-                                  disabled={moderatingPropId === prop.id}
-                                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                  title="Approve property listing and publish to website"
-                                >
-                                  {moderatingPropId === prop.id ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                  ) : (
-                                    <CheckCircle2 className="w-4 h-4" />
+                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                  {adminModerationFilter !== 'approved' && (
+                                    <button
+                                      onClick={() => handleModerate(prop.id, true)}
+                                      disabled={moderatingPropId === prop.id}
+                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Approve property listing and make publicly visible"
+                                    >
+                                      {moderatingPropId === prop.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <CheckCircle2 className="w-4 h-4" />
+                                      )}
+                                      <span>Approve</span>
+                                    </button>
                                   )}
-                                  <span>Approve</span>
-                                </button>
-                                <button
-                                  onClick={() => handleModerate(prop.id, false)}
-                                  disabled={moderatingPropId === prop.id}
-                                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                  title="Reject property listing"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                  <span>Reject</span>
-                                </button>
+
+                                  {adminModerationFilter !== 'rejected' && (
+                                    <button
+                                      onClick={() => handleModerate(prop.id, false)}
+                                      disabled={moderatingPropId === prop.id}
+                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Reject property listing (hidden from public)"
+                                    >
+                                      <XCircle className="w-4 h-4" />
+                                      <span>Reject</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => handleEditClick(prop)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                    title="Admin Edit Listing"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm(`Permanently delete "${prop.title}" from Cloud Firestore?`)) {
+                                        deleteProperty(prop.id);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                    title="Permanently Delete Listing"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Delete</span>
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 bg-white rounded-3xl border border-slate-200">
-                        <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                        <p className="text-sm font-bold text-slate-800">All listings are reviewed!</p>
-                        <p className="text-xs text-slate-500">There are no pending submissions awaiting review in Cloud Firestore.</p>
-                      </div>
-                    )}
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -2861,6 +3087,101 @@ export const App: React.FC = () => {
           showToast('Signed in successfully! You can now edit listings and upload photos.');
         }}
       />
+
+      {/* Zero-Login Submission Private Edit Link Modal */}
+      {showPrivateLinkModal && newlyCreatedLinkInfo && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">
+                    Listing Submitted for Review!
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Zero-login submission • Private Edit Key Generated
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrivateLinkModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-1.5">
+              <div className="font-extrabold flex items-center gap-1.5 text-amber-800">
+                <Lock className="w-4 h-4 shrink-0" />
+                <span>Save Your Private Edit Link!</span>
+              </div>
+              <p className="leading-relaxed text-[11px] text-amber-800">
+                Because no account, password, or OTP was required to submit, this private link is your <strong>secret key</strong> to update your listing details, photos, and rental occupancy in the future.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-700 block">
+                Your Unguessable Private Edit Link
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={newlyCreatedLinkInfo.editUrl}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono text-slate-800 select-all"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(newlyCreatedLinkInfo.editUrl);
+                    setLinkCopied(true);
+                    showToast('Private edit link copied to clipboard!');
+                    setTimeout(() => setLinkCopied(false), 2500);
+                  }}
+                  className={`px-4 py-2.5 text-xs font-bold rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                    linkCopied
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
+                  }`}
+                >
+                  {linkCopied ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(newlyCreatedLinkInfo.editUrl);
+                  setShowPrivateLinkModal(false);
+                  showToast('Private edit link saved. Keep it safe!');
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs text-center cursor-pointer font-bold"
+              >
+                Copy Link & Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Toast Notification */}
       {toastMessage && (

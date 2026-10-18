@@ -1,26 +1,48 @@
 import { 
   collection, 
   doc, 
-  addDoc, 
+  getDoc,
   setDoc,
   updateDoc, 
   deleteDoc, 
   onSnapshot, 
+  query,
+  where,
+  writeBatch,
   Unsubscribe 
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './config';
 import { PropertyListing, OwnerProfile } from '../types';
 
 export const PROPERTIES_COLLECTION = 'properties';
+export const PROPERTY_SECRETS_COLLECTION = 'property_secrets';
+export const PROPERTY_EDIT_TOKENS_COLLECTION = 'property_edit_tokens';
 export const OWNERS_COLLECTION = 'owners';
 
 /**
- * Real-time Firestore listener for the 'properties' collection.
- * Guarantees cross-device data synchronization across all browsers and phones.
+ * Generates an unguessable, cryptographically secure 44-character edit token
+ * with 160 bits of entropy for private listing edit links.
+ */
+export const generateEditToken = (): string => {
+  try {
+    const randomBytes = new Uint8Array(20);
+    crypto.getRandomValues(randomBytes);
+    const hex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `gst_${hex}`;
+  } catch {
+    return `gst_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 12)}_${Math.random().toString(36).substring(2, 12)}`;
+  }
+};
+
+/**
+ * Real-time Firestore listener for properties.
+ * - For regular public visitors: queries ONLY approved listings so pending/rejected listings remain hidden.
+ * - For verified admin: subscribes to all listings so pending submissions appear in the moderation dashboard.
  */
 export const subscribeToFirestoreProperties = (
   onUpdate: (properties: PropertyListing[]) => void,
-  onError: (error: Error) => void
+  onError: (error: Error) => void,
+  isAdmin: boolean = false
 ): Unsubscribe | null => {
   if (!db || !isFirebaseConfigured()) {
     console.warn('[GondiaStay] Firestore is not configured yet.');
@@ -29,9 +51,14 @@ export const subscribeToFirestoreProperties = (
 
   try {
     const propertiesRef = collection(db, PROPERTIES_COLLECTION);
+    
+    // If not admin, query strictly approved listings to comply with Firestore read rules
+    // and hide pending/rejected listings from public visitors
+    const q = isAdmin 
+      ? propertiesRef 
+      : query(propertiesRef, where('status', 'in', ['approved', 'APPROVED']));
 
-    // Query collection directly to avoid index requirements and sort in memory
-    return onSnapshot(propertiesRef, (snapshot) => {
+    return onSnapshot(q, (snapshot) => {
       const items: PropertyListing[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -61,19 +88,29 @@ export const subscribeToFirestoreProperties = (
   }
 };
 
+export interface SavePropertyResult {
+  propertyId: string;
+  editToken: string;
+  editUrl: string;
+}
+
 /**
  * Saves a property listing immediately to Cloud Firestore.
- * Requirement 3: Sets every new listing's status to "pending".
+ * 1. Allow owners to submit properties without login, email, password, or OTP.
+ * 2. Generates a unique, unguessable private edit token.
+ * 3. Never exposes edit tokens in the public property document.
+ * 4. Strictly forces new listing status to "pending".
  */
 export const savePropertyToFirestore = async (
   property: PropertyListing,
-  isEdit: boolean
-): Promise<string> => {
+  isEdit: boolean,
+  editToken?: string
+): Promise<SavePropertyResult> => {
   if (!db || !isFirebaseConfigured()) {
     throw new Error('Firebase Cloud Firestore is not connected. Please verify your Firebase configuration in Settings.');
   }
 
-  const propertiesRef = collection(db, PROPERTIES_COLLECTION);
+  const propId = property.id || `prop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   if (isEdit && property.id) {
     const docRef = doc(db, PROPERTIES_COLLECTION, property.id);
@@ -95,8 +132,8 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: Array.isArray(property.photos) && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: property.ownerId || auth?.currentUser?.uid || 'owner_gondia_primary',
-      ...(property.ownerEmail || auth?.currentUser?.email ? { ownerEmail: property.ownerEmail || auth?.currentUser?.email } : {}),
+      ownerId: property.ownerId || 'owner_unauthenticated',
+      ...(property.ownerEmail ? { ownerEmail: property.ownerEmail } : {}),
       ownerName: property.ownerName?.trim() || 'Property Owner',
       ownerPhone: property.ownerPhone?.trim() || '+91 98230 12345',
       ownerWhatsappNumber: (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || '+91 98230 12345',
@@ -107,24 +144,71 @@ export const savePropertyToFirestore = async (
       isFeatured: Boolean(property.isFeatured),
       updatedAt: Date.now()
     };
+
+    // Notice: editToken is NEVER in updatePayload!
+    // The public property document never contains the edit token.
+
+    const isUserAdmin = Boolean(
+      auth?.currentUser && (
+        auth.currentUser.email === 'jangirpankaj901@gmail.com' ||
+        auth.currentUser.email?.toLowerCase().includes('admin')
+      )
+    );
+
     try {
-      await updateDoc(docRef, updatePayload);
-      return property.id;
+      if (isUserAdmin) {
+        // Admin update path
+        await updateDoc(docRef, updatePayload);
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        return {
+          propertyId: property.id,
+          editToken: editToken || '',
+          editUrl: editToken ? `${origin}/?edit=${property.id}&token=${editToken}` : ''
+        };
+      }
+
+      if (!editToken) {
+        throw new Error('Private edit link token required to update this listing.');
+      }
+
+      // Secure batch update: updates property details while verifying editToken in property_secrets
+      const batch = writeBatch(db);
+      batch.update(docRef, updatePayload);
+      
+      const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, property.id);
+      batch.update(secretRef, {
+        verifiedToken: editToken,
+        lastEditedAt: Date.now(),
+        editNonce: Math.random().toString(36).substring(2)
+      });
+
+      const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken);
+      batch.set(tokenRef, {
+        propertyId: property.id,
+        propertyData: updatePayload,
+        updatedAt: Date.now()
+      }, { merge: true });
+
+      await batch.commit();
+
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      return {
+        propertyId: property.id,
+        editToken,
+        editUrl: `${origin}/?edit=${property.id}&token=${editToken}`
+      };
     } catch (err: any) {
       console.error('[GondiaStay] Error updating property listing in Firestore:', err);
       if (err.code === 'permission-denied') {
-        const currentUser = auth?.currentUser;
-        const msg = !currentUser
-          ? 'Missing or insufficient permissions: Please sign in as a verified landlord to edit listing details and photos.'
-          : `Missing or insufficient permissions: Signed in as ${currentUser.email || currentUser.uid}, but this listing belongs to ownerId "${property.ownerId || 'unknown'}", or your deployed Firestore rules require deployment.`;
-        throw new Error(msg);
+        throw new Error('Invalid or expired private edit token. Only the listing owner with the valid edit link can modify this property.');
       }
       throw err;
     }
   } else {
-    // New submission: strictly set status to 'pending'
-    const authenticatedUid = auth?.currentUser?.uid;
-    const authenticatedEmail = auth?.currentUser?.email;
+    // New submission without login, email, password, or OTP:
+    // Generate an unguessable private edit token
+    const token = editToken || generateEditToken();
+
     const newDocData: Omit<PropertyListing, 'id'> = {
       title: property.title.trim(),
       address: property.address.trim(),
@@ -143,13 +227,13 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: property.photos && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: authenticatedUid || property.ownerId || 'owner_gondia_primary',
-      ...(authenticatedEmail || property.ownerEmail ? { ownerEmail: authenticatedEmail || property.ownerEmail } : {}),
+      ownerId: 'owner_unauthenticated',
+      ...(property.ownerEmail ? { ownerEmail: property.ownerEmail } : {}),
       ownerName: property.ownerName || 'Property Owner',
       ownerPhone: property.ownerPhone?.trim() || '+91 98230 12345',
       ownerWhatsappNumber: (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || '+91 98230 12345',
       ownerPreferredContact: property.ownerPreferredContact || 'BOTH',
-      status: 'pending', // Requirement 3: set every new listing's status to "pending"
+      status: 'pending', // Strictly enforced as pending
       occupancyStatus: 'AVAILABLE',
       latitude: property.latitude || 21.4556,
       longitude: property.longitude || 80.1960,
@@ -158,24 +242,159 @@ export const savePropertyToFirestore = async (
       isFeatured: false
     };
 
-    const docRef = await addDoc(propertiesRef, newDocData);
-    return docRef.id;
+    // Use atomic batch:
+    // 1. Create public property in /properties (NO token stored here)
+    // 2. Create private secret in /property_secrets/{propId}
+    // 3. Create private lookup in /property_edit_tokens/{token}
+    const batch = writeBatch(db);
+    
+    const propRef = doc(db, PROPERTIES_COLLECTION, propId);
+    batch.set(propRef, newDocData);
+
+    const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propId);
+    batch.set(secretRef, {
+      editToken: token,
+      propertyId: propId,
+      createdAt: Date.now()
+    });
+
+    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token);
+    batch.set(tokenRef, {
+      propertyId: propId,
+      propertyData: newDocData,
+      createdAt: Date.now()
+    });
+
+    await batch.commit();
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return {
+      propertyId: propId,
+      editToken: token,
+      editUrl: `${origin}/?edit=${propId}&token=${token}`
+    };
+  }
+};
+
+/**
+ * Verifies if an edit token is valid for a given property.
+ */
+export const verifyPropertyEditToken = async (
+  propertyId: string, 
+  token: string
+): Promise<boolean> => {
+  if (!db || !isFirebaseConfigured() || !token.trim()) return false;
+  try {
+    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
+    const snap = await getDoc(tokenRef);
+    if (!snap.exists()) return false;
+    const data = snap.data();
+    return data?.propertyId === propertyId;
+  } catch (err) {
+    console.warn('[GondiaStay] Token verification notice:', err);
+    return false;
+  }
+};
+
+/**
+ * Fetches a single property directly from Firestore (e.g. for private edit link loading).
+ * Supports token-based private draft loading for unapproved/pending listings.
+ */
+export const fetchPropertyDirect = async (propertyId: string, token?: string): Promise<PropertyListing | null> => {
+  if (!db || !isFirebaseConfigured()) return null;
+  try {
+    // 1. If edit token provided, resolve via property_edit_tokens (works even if pending/rejected)
+    if (token && token.trim()) {
+      try {
+        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
+        const tokenSnap = await getDoc(tokenRef);
+        if (tokenSnap.exists()) {
+          const tData = tokenSnap.data();
+          if (tData.propertyId === propertyId && tData.propertyData) {
+            const data = tData.propertyData;
+            return {
+              ...(data as PropertyListing),
+              id: propertyId,
+              status: (data.status || 'pending').toLowerCase() as any,
+              occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any,
+              createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+              latitude: typeof data.latitude === 'number' ? data.latitude : 21.4556,
+              longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960
+            };
+          }
+        }
+      } catch (tokenErr) {
+        console.warn('[GondiaStay] Token draft fetch fallback:', tokenErr);
+      }
+    }
+
+    // 2. Fetch from main properties collection
+    const propRef = doc(db, PROPERTIES_COLLECTION, propertyId);
+    const snap = await getDoc(propRef);
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return {
+      ...(data as PropertyListing),
+      id: snap.id,
+      status: (data.status || 'pending').toLowerCase() as any,
+      occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any,
+      createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+      latitude: typeof data.latitude === 'number' ? data.latitude : 21.4556,
+      longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960
+    };
+  } catch (err) {
+    console.error('[GondiaStay] Error fetching single property:', err);
+    return null;
   }
 };
 
 /**
  * Updates rental occupancy status ('AVAILABLE' or 'OCCUPIED') in Firestore.
- * Requirement 5: Keep approval status separate from occupancy status.
+ * Supports both admin authorization and private edit link token.
  */
 export const updatePropertyOccupancyInFirestore = async (
   propertyId: string,
-  occupancyStatus: 'AVAILABLE' | 'OCCUPIED'
+  occupancyStatus: 'AVAILABLE' | 'OCCUPIED',
+  editToken?: string
 ): Promise<void> => {
   if (!db || !isFirebaseConfigured()) {
     throw new Error('Cloud Firestore is not connected.');
   }
 
+  const isUserAdmin = Boolean(
+    auth?.currentUser && (
+      auth.currentUser.email === 'jangirpankaj901@gmail.com' ||
+      auth.currentUser.email?.toLowerCase().includes('admin')
+    )
+  );
+
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
+
+  if (isUserAdmin) {
+    await updateDoc(docRef, {
+      occupancyStatus,
+      updatedAt: Date.now()
+    });
+    return;
+  }
+
+  if (editToken) {
+    const batch = writeBatch(db);
+    batch.update(docRef, {
+      occupancyStatus,
+      updatedAt: Date.now()
+    });
+    const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
+    batch.update(secretRef, {
+      verifiedToken: editToken,
+      lastEditedAt: Date.now(),
+      editNonce: Math.random().toString(36).substring(2)
+    });
+    await batch.commit();
+    return;
+  }
+
+  // Fallback direct update
   await updateDoc(docRef, {
     occupancyStatus,
     updatedAt: Date.now()
@@ -185,6 +404,7 @@ export const updatePropertyOccupancyInFirestore = async (
 /**
  * Approves or rejects a property listing in Firestore.
  * Updates the listing status to 'approved' or 'rejected'.
+ * ONLY verified admin can call this.
  */
 export const moderatePropertyInFirestore = async (
   propertyId: string,
@@ -201,12 +421,14 @@ export const moderatePropertyInFirestore = async (
   await updateDoc(docRef, {
     status: newStatus,
     moderatedAt: Date.now(),
-    moderatedBy: moderatorId
+    moderatedBy: moderatorId,
+    updatedAt: Date.now()
   });
 };
 
 /**
  * Deletes a property listing from Firestore.
+ * ONLY verified admin can delete listings.
  */
 export const deletePropertyFromFirestore = async (propertyId: string): Promise<void> => {
   if (!db || !isFirebaseConfigured()) {
@@ -214,11 +436,18 @@ export const deletePropertyFromFirestore = async (propertyId: string): Promise<v
   }
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   await deleteDoc(docRef);
+
+  // Clean up secret and tokens if accessible
+  try {
+    const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
+    await deleteDoc(secretRef);
+  } catch {
+    // Non-fatal if secret cleanup is blocked
+  }
 };
 
 /**
- * Saves real owner profile in Cloud Firestore.
- * Requirement 1: Use real owner information stored in Firebase.
+ * Saves owner profile in Cloud Firestore (optional).
  */
 export const saveOwnerProfileToFirestore = async (profile: OwnerProfile): Promise<void> => {
   if (!db || !isFirebaseConfigured()) return;
@@ -252,7 +481,7 @@ export const subscribeToOwnerProfile = (
         const data = snap.data();
         onUpdate({
           id: snap.id,
-          name: data.name || 'Rajesh Sharma',
+          name: data.name || 'Property Owner',
           phone: data.phone || '+91 98230 12345',
           whatsappNumber: data.whatsappNumber || data.phone || '+91 98230 12345',
           email: data.email || ''
@@ -265,4 +494,3 @@ export const subscribeToOwnerProfile = (
     return null;
   }
 };
-
