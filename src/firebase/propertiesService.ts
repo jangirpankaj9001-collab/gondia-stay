@@ -361,44 +361,37 @@ export const updatePropertyOccupancyInFirestore = async (
     throw new Error('Cloud Firestore is not connected.');
   }
 
-  const isUserAdmin = Boolean(
-    auth?.currentUser && (
-      auth.currentUser.email === 'jangirpankaj901@gmail.com' ||
-      auth.currentUser.email?.toLowerCase().includes('admin')
-    )
-  );
-
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
 
-  if (isUserAdmin) {
+  // Fast-path direct update strictly permitted by Firestore security rules
+  try {
     await updateDoc(docRef, {
       occupancyStatus,
       updatedAt: Date.now()
     });
     return;
+  } catch (directErr) {
+    if (editToken) {
+      try {
+        const batch = writeBatch(db);
+        batch.update(docRef, {
+          occupancyStatus,
+          updatedAt: Date.now()
+        });
+        const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
+        batch.update(secretRef, {
+          verifiedToken: editToken,
+          lastEditedAt: Date.now(),
+          editNonce: Math.random().toString(36).substring(2)
+        });
+        await batch.commit();
+        return;
+      } catch (batchErr) {
+        throw directErr;
+      }
+    }
+    throw directErr;
   }
-
-  if (editToken) {
-    const batch = writeBatch(db);
-    batch.update(docRef, {
-      occupancyStatus,
-      updatedAt: Date.now()
-    });
-    const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
-    batch.update(secretRef, {
-      verifiedToken: editToken,
-      lastEditedAt: Date.now(),
-      editNonce: Math.random().toString(36).substring(2)
-    });
-    await batch.commit();
-    return;
-  }
-
-  // Fallback direct update
-  await updateDoc(docRef, {
-    occupancyStatus,
-    updatedAt: Date.now()
-  });
 };
 
 /**

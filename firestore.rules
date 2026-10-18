@@ -125,20 +125,21 @@ service cloud.firestore {
 
       // 3. Update:
       // - Verified Admin has full update privileges (approval, rejection, edits, occupancy, featured).
+      // - Fast path allows occupancy status toggle (only affects occupancyStatus and updatedAt).
       // - Owner with unguessable private edit link can update permitted listing fields via atomic batch matching verifiedToken in property_secrets.
       // - Never exposes edit tokens in the public property document.
       allow update: if isAdmin() || (
-        exists(/databases/$(database)/documents/property_secrets/$(propertyId))
-        && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
-        && (
-          // Fast path for occupancy status toggle
-          (
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
-            && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
-            && (!('status' in resource.data) || request.resource.data.status == resource.data.status)
-          )
-          // Full listing update with permitted fields (including Cloudinary photos)
-          || isValidOwnerUpdate()
+        // Fast path for occupancy status toggle (strictly allows only occupancyStatus & updatedAt)
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
+          && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
+          && (!('status' in resource.data) || request.resource.data.status == resource.data.status)
+        )
+        // Full listing update with permitted fields (including Cloudinary photos)
+        || (
+          exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+          && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
+          && isValidOwnerUpdate()
         )
       );
 

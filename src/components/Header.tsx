@@ -30,13 +30,14 @@ export const Header: React.FC = () => {
     setIsFirebaseModalOpen,
     isOwnerAuthenticated,
     authUser,
-    logoutOwner
+    logoutOwner,
+    openPostListing
   } = useApp();
 
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const pendingCount = properties.filter(p => p.status === 'PENDING').length;
+  const pendingCount = properties.filter(p => (p.status || '').toLowerCase() === 'pending').length;
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
@@ -143,9 +144,19 @@ export const Header: React.FC = () => {
             </button>
           </nav>
 
-          {/* Right Action: Firebase Sync & Owner Profile Switcher dropdown */}
+          {/* Right Action: Post Property, Firebase Sync & Owner Profile Switcher dropdown */}
           <div className="flex items-center gap-2">
             
+            {/* Direct Post Property Button with Plus Icon */}
+            <button
+              onClick={openPostListing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer"
+              title="Post a room, flat, or PG in Gondia (0% Brokerage)"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span className="hidden sm:inline">Post Property</span>
+            </button>
+
             {/* Cloud Firestore Status Button */}
             <button
               onClick={() => setIsFirebaseModalOpen(true)}
@@ -319,6 +330,13 @@ export const Header: React.FC = () => {
                 {pendingCount} Pending
               </span>
             )}
+          </button>
+          <button
+            onClick={() => { openPostListing(); setMobileMenuOpen(false); }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Post New Property Listing</span>
           </button>
         </div>
       )}
