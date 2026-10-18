@@ -7,11 +7,8 @@ service cloud.firestore {
       return request.auth != null && (
         // Firebase custom claim: admin == true
         request.auth.token.admin == true
-        // Or verified admin email match
-        || (request.auth.token.email != null && (
-          request.auth.token.email == 'jangirpankaj901@gmail.com'
-          || request.auth.token.email.matches('(?i).*admin.*')
-        ))
+        // Or verified exact admin email match
+        || request.auth.token.email == 'jangirpankaj901@gmail.com'
         // Or registered in Firestore admins collection
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
