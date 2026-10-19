@@ -31,7 +31,10 @@ export const Header: React.FC = () => {
     isOwnerAuthenticated,
     authUser,
     logoutOwner,
-    openPostListing
+    openPostListing,
+    isAdminAuthenticated,
+    ownerSubTab,
+    setOwnerSubTab
   } = useApp();
 
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
@@ -134,7 +137,7 @@ export const Header: React.FC = () => {
             <button
               onClick={() => navigateTo('owner')}
               className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-                activeTab === 'owner'
+                activeTab === 'owner' && ownerSubTab !== 'moderation'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
               }`}
@@ -142,6 +145,24 @@ export const Header: React.FC = () => {
               <UserCheck className="w-4 h-4" />
               <span>Owner Dashboard</span>
             </button>
+
+            {isAdminAuthenticated && (
+              <button
+                onClick={() => {
+                  navigateTo('owner');
+                  setOwnerSubTab('moderation');
+                }}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 ${
+                  activeTab === 'owner' && ownerSubTab === 'moderation'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
+                }`}
+                title="GondiaStay Admin Moderation Console"
+              >
+                <ShieldCheck className="w-4 h-4 text-amber-600" />
+                <span>Admin Console</span>
+              </button>
+            )}
           </nav>
 
           {/* Right Action: Post Property, Firebase Sync & Owner Profile Switcher dropdown */}
@@ -318,19 +339,41 @@ export const Header: React.FC = () => {
           <button
             onClick={() => { navigateTo('owner'); setMobileMenuOpen(false); }}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
-              activeTab === 'owner' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'
+              activeTab === 'owner' && ownerSubTab !== 'moderation' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'
             }`}
           >
             <div className="flex items-center gap-3">
               <UserCheck className="w-4 h-4" />
               Owner Dashboard
             </div>
-            {pendingCount > 0 && (
+            {pendingCount > 0 && !isAdminAuthenticated && (
               <span className="bg-amber-400 text-slate-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
                 {pendingCount} Pending
               </span>
             )}
           </button>
+          {isAdminAuthenticated && (
+            <button
+              onClick={() => { 
+                navigateTo('owner'); 
+                setOwnerSubTab('moderation'); 
+                setMobileMenuOpen(false); 
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
+                activeTab === 'owner' && ownerSubTab === 'moderation' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-900 border border-amber-200'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="w-4 h-4 text-amber-600" />
+                Admin Moderation Console
+              </div>
+              {pendingCount > 0 && (
+                <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {pendingCount} Pending
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={() => { openPostListing(); setMobileMenuOpen(false); }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs"

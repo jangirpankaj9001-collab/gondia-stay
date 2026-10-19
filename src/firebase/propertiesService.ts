@@ -150,8 +150,7 @@ export const savePropertyToFirestore = async (
 
     const isUserAdmin = Boolean(
       auth?.currentUser && (
-        auth.currentUser.email === 'jangirpankaj901@gmail.com' ||
-        auth.currentUser.email?.toLowerCase().includes('admin')
+        auth.currentUser.email?.toLowerCase() === 'jangirpankaj901@gmail.com'
       )
     );
 
@@ -408,6 +407,10 @@ export const moderatePropertyInFirestore = async (
     throw new Error('Cloud Firestore is not connected.');
   }
 
+  if (!auth?.currentUser || auth.currentUser.email?.toLowerCase() !== 'jangirpankaj901@gmail.com') {
+    throw new Error('Unauthorized: Only verified administrator jangirpankaj901@gmail.com can moderate listings.');
+  }
+
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   const newStatus = approve ? 'approved' : 'rejected';
   
@@ -427,6 +430,11 @@ export const deletePropertyFromFirestore = async (propertyId: string): Promise<v
   if (!db || !isFirebaseConfigured()) {
     throw new Error('Cloud Firestore is not connected.');
   }
+
+  if (!auth?.currentUser || auth.currentUser.email?.toLowerCase() !== 'jangirpankaj901@gmail.com') {
+    throw new Error('Unauthorized: Only verified administrator jangirpankaj901@gmail.com can delete listings.');
+  }
+
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   await deleteDoc(docRef);
 

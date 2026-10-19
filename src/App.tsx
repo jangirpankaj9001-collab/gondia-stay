@@ -45,6 +45,7 @@ import {
   Copy,
   ExternalLink,
   Link as LinkIcon,
+  ShieldAlert,
   X
 } from 'lucide-react';
 import { 
@@ -132,9 +133,7 @@ export const App: React.FC = () => {
     getListingToken,
     ownerSubTab,
     setOwnerSubTab,
-    openPostListing,
-    quickSignInAdmin,
-    setIsAdminAuthenticated
+    openPostListing
   } = useApp();
 
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -155,7 +154,7 @@ export const App: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  // Check URL parameters for private edit link (?edit=<id>&token=<token> or #edit=...)
+  // Check URL parameters for private edit link (?edit=<id>&token=<token>) or admin access (?admin=true, #admin, etc.)
   useEffect(() => {
     try {
       const searchParams = new URLSearchParams(window.location.search);
@@ -180,8 +179,22 @@ export const App: React.FC = () => {
           console.error('Error fetching property via edit link:', err);
         });
       }
+
+      // Secure direct URL routing to Admin Moderation Panel
+      const isAdminRoute = 
+        searchParams.get('admin') === 'true' || 
+        searchParams.get('admin') === '1' || 
+        searchParams.get('tab') === 'admin' || 
+        searchParams.get('subtab') === 'moderation' || 
+        window.location.hash === '#admin' || 
+        window.location.hash === '#moderation';
+
+      if (isAdminRoute) {
+        navigateTo('owner');
+        setOwnerSubTab('moderation');
+      }
     } catch (e) {
-      console.warn('URL token parse notice:', e);
+      console.warn('URL parameter parse notice:', e);
     }
   }, []);
 
@@ -945,16 +958,26 @@ export const App: React.FC = () => {
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminAuthError(null);
+
+    const emailTrimmed = adminEmail.trim().toLowerCase();
+    if (emailTrimmed !== 'jangirpankaj901@gmail.com') {
+      setAdminAuthError('Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj901@gmail.com) can access this console.');
+      return;
+    }
+
+    if (!adminPassword.trim()) {
+      setAdminAuthError('Please enter your administrator password.');
+      return;
+    }
+
     setAdminAuthSubmitting(true);
-    const passToUse = adminPassword.trim() || 'gondia_admin_2026';
-    const res = await loginAdminWithEmailPassword(adminEmail, passToUse);
+    const res = await loginAdminWithEmailPassword(emailTrimmed, adminPassword.trim());
     setAdminAuthSubmitting(false);
     if (res.success) {
       setAdminPassword('');
+      setAdminAuthError(null);
     } else {
-      // Local clearance if network/offline
-      setIsAdminAuthenticated(true);
-      showToast('Admin session authorized for ' + adminEmail);
+      setAdminAuthError(res.error || 'Authentication failed. Please verify your credentials.');
     }
   };
 
@@ -2593,105 +2616,121 @@ export const App: React.FC = () => {
                 
                 {/* Admin Authentication Barrier */}
                 {!isAdminAuthenticated ? (
-                  <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4 max-w-lg mx-auto">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-                      <Lock className="w-6 h-6" />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <h3 className="text-base font-extrabold text-slate-900">Secure Admin Authentication</h3>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        Sign in with your verified Firebase Admin credentials. Only authenticated administrators can review, approve, reject, edit, or delete property listings.
-                      </p>
-                    </div>
-
-                    {/* 1-Click Fast Admin Sign-In for Verified Admin */}
-                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                          Verified Admin Portal
+                  authUser && authUser.email?.toLowerCase() !== 'jangirpankaj901@gmail.com' ? (
+                    /* 403 Forbidden Access Barrier for Non-Admin Logged In Users */
+                    <div className="bg-white rounded-3xl border border-rose-200 p-6 sm:p-8 shadow-sm space-y-4 max-w-lg mx-auto text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+                        <ShieldAlert className="w-7 h-7" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                          403 Forbidden • Access Denied
                         </span>
-                        <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full font-mono font-bold">
-                          jangirpankaj901@gmail.com
-                        </span>
+                        <h3 className="text-base font-extrabold text-slate-900 pt-1">Administrator Privileges Required</h3>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          You are currently signed in as <strong className="text-slate-900 font-semibold">{authUser.email}</strong>. This account is not authorized to access or manage the GondiaStay admin console.
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Administrative access is strictly restricted to <span className="font-mono font-bold text-slate-800">jangirpankaj901@gmail.com</span>.
+                        </p>
                       </div>
-                      <p className="text-[11px] text-emerald-800 leading-snug">
-                        One-click access to review all pending submissions, approve or reject listings, edit details, or permanently delete properties.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setAdminAuthSubmitting(true);
-                          await quickSignInAdmin();
-                          setAdminAuthSubmitting(false);
-                        }}
-                        disabled={adminAuthSubmitting}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-extrabold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {adminAuthSubmitting ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        ) : (
-                          <Key className="w-4 h-4 text-amber-300" />
-                        )}
-                        <span>1-Click Admin Sign-In & Open Panel</span>
-                      </button>
+
+                      <div className="pt-2 flex flex-col sm:flex-row gap-2.5 justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setOwnerSubTab('listings')}
+                          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                        >
+                          Return to My Properties
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await logoutAdmin();
+                          }}
+                          className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          <span>Sign Out & Switch Account</span>
+                        </button>
+                      </div>
                     </div>
-
-                    <div className="relative flex py-1 items-center">
-                      <div className="flex-grow border-t border-slate-200"></div>
-                      <span className="flex-shrink mx-3 text-slate-400 text-[10px] font-bold uppercase tracking-wider">or sign in with password</span>
-                      <div className="flex-grow border-t border-slate-200"></div>
-                    </div>
-
-                    <form onSubmit={handleAdminLogin} className="space-y-3 pt-1">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Admin Email
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={adminEmail}
-                          onChange={(e) => setAdminEmail(e.target.value)}
-                          placeholder="jangirpankaj901@gmail.com"
-                          className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
-                        />
+                  ) : (
+                    /* Secure Admin Login Barrier for Unauthenticated Access */
+                    <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5 max-w-lg mx-auto">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto shadow-xs">
+                        <Lock className="w-6 h-6 text-amber-400" />
                       </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Admin Password (default: gondia_admin_2026)
-                        </label>
-                        <input
-                          type="password"
-                          value={adminPassword}
-                          onChange={(e) => setAdminPassword(e.target.value)}
-                          placeholder="gondia_admin_2026"
-                          className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-mono"
-                        />
-                      </div>
-
-                      {adminAuthError && (
-                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4 shrink-0" />
-                          <span>{adminAuthError}</span>
+                      <div className="text-center space-y-1">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-700 mb-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                          GondiaStay Admin Panel
                         </div>
-                      )}
+                        <h3 className="text-base font-extrabold text-slate-900">Administrator Sign-In</h3>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          Authorized admin access only. Sign in with the registered administrator credentials to review pending submissions, approve or reject listings, and manage properties.
+                        </p>
+                      </div>
 
-                      <button
-                        type="submit"
-                        disabled={adminAuthSubmitting}
-                        className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {adminAuthSubmitting ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        ) : (
-                          <Key className="w-4 h-4 text-amber-400" />
+                      <form onSubmit={handleAdminLogin} className="space-y-3.5 pt-1">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            Admin Account Email
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            value={adminEmail}
+                            onChange={(e) => setAdminEmail(e.target.value)}
+                            placeholder="jangirpankaj901@gmail.com"
+                            className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">
+                            Only authorized account: jangirpankaj901@gmail.com
+                          </span>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            Admin Password
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            value={adminPassword}
+                            onChange={(e) => setAdminPassword(e.target.value)}
+                            placeholder="Enter your administrator password"
+                            className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-mono"
+                          />
+                        </div>
+
+                        {adminAuthError && (
+                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{adminAuthError}</span>
+                          </div>
                         )}
-                        <span>{adminAuthSubmitting ? 'Authenticating...' : 'Sign In to Admin Portal'}</span>
-                      </button>
-                    </form>
-                  </div>
+
+                        <button
+                          type="submit"
+                          disabled={adminAuthSubmitting}
+                          className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          {adminAuthSubmitting ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          ) : (
+                            <Key className="w-4 h-4 text-amber-400" />
+                          )}
+                          <span>{adminAuthSubmitting ? 'Authenticating...' : 'Sign In to Admin Portal'}</span>
+                        </button>
+                      </form>
+
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-500 text-center">
+                        <Lock className="w-3.5 h-3.5 inline mr-1 text-slate-400" />
+                        All administrative actions are authenticated and validated directly through Firebase security rules.
+                      </div>
+                    </div>
+                  )
                 ) : (
                   <div className="space-y-4">
                     {/* Admin Status Header */}

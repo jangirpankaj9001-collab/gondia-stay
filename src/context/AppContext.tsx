@@ -86,8 +86,6 @@ interface AppContextType {
   ownerSubTab: 'listings' | 'new' | 'moderation';
   setOwnerSubTab: React.Dispatch<React.SetStateAction<'listings' | 'new' | 'moderation'>>;
   openPostListing: () => void;
-  quickSignInAdmin: () => Promise<boolean>;
-  setIsAdminAuthenticated: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const defaultFilterCriteria: FilterCriteria = {
@@ -192,11 +190,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuthUser(user);
       setIsOwnerAuthenticated(!!user);
 
-      const isUserAdmin = !!user && (
-        user.email === 'jangirpankaj901@gmail.com' || 
-        Boolean(user.email && user.email.toLowerCase().includes('admin'))
+      const isUserAdmin = Boolean(
+        user && user.email && user.email.toLowerCase() === 'jangirpankaj901@gmail.com'
       );
-      setAdminUser(user);
+      setAdminUser(isUserAdmin ? user : null);
       setIsAdminAuthenticated(isUserAdmin);
       setIsAdminLoading(false);
 
@@ -499,21 +496,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: msg };
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
+    const authorizedAdminEmail = 'jangirpankaj901@gmail.com';
+
+    // Strictly enforce that only the authorized administrator email can attempt admin login
+    if (trimmedEmail !== authorizedAdminEmail) {
+      const errorMsg = 'Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj901@gmail.com) can access the Admin Panel.';
+      showToast(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+
+    if (!pass || pass.trim().length === 0) {
+      const errorMsg = 'Please enter your administrator password.';
+      showToast(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
-      setAdminUser(userCredential.user);
+      const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, pass);
+      const user = userCredential.user;
+
+      if (!user.email || user.email.toLowerCase() !== authorizedAdminEmail) {
+        await signOut(auth);
+        setAdminUser(null);
+        setIsAdminAuthenticated(false);
+        const errorMsg = 'Access Denied: This account is not authorized as an administrator.';
+        showToast(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+
+      setAdminUser(user);
       setIsAdminAuthenticated(true);
-      showToast(`Welcome! Admin signed in as ${userCredential.user.email}`);
+      showToast(`Welcome! Admin signed in as ${user.email}`);
       return { success: true };
     } catch (err: any) {
       console.error('Firebase Admin Login Error:', err);
       // Auto-provision verified admin user account in Firebase Auth if not yet created
       if (
         (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') &&
-        email.trim().toLowerCase() === 'jangirpankaj901@gmail.com'
+        trimmedEmail === authorizedAdminEmail
       ) {
         try {
-          const newCredential = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+          const newCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, pass);
           setAdminUser(newCredential.user);
           setIsAdminAuthenticated(true);
           showToast(`Admin account initialized! Welcome, ${newCredential.user.email}`);
@@ -529,7 +553,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         err.code === 'auth/wrong-password' || 
         err.code === 'auth/invalid-credential'
       ) {
-        errorMsg = 'Invalid admin credentials. Please check your email and password.';
+        errorMsg = 'Invalid administrator credentials. Access restricted to authorized admin.';
       } else if (err.code === 'auth/invalid-email') {
         errorMsg = 'Please enter a valid email address.';
       } else if (err.code === 'auth/too-many-requests') {
@@ -674,17 +698,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  const quickSignInAdmin = useCallback(async (): Promise<boolean> => {
-    const res = await loginAdminWithEmailPassword('jangirpankaj901@gmail.com', 'gondia_admin_2026');
-    if (!res.success) {
-      // Direct local clearance if Firebase Auth is offline or network error
-      setIsAdminAuthenticated(true);
-      showToast('Admin session authorized for jangirpankaj901@gmail.com');
-      return true;
-    }
-    return res.success;
-  }, [loginAdminWithEmailPassword, showToast]);
-
   const resetFilters = () => {
     setSearchQuery('');
     setSelectedLocality('All');
@@ -720,8 +733,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ownerSubTab,
       setOwnerSubTab,
       openPostListing,
-      quickSignInAdmin,
-      setIsAdminAuthenticated,
       setSearchQuery,
       setSelectedLocality,
       setSelectedType,
