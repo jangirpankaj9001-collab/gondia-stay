@@ -7,8 +7,12 @@ service cloud.firestore {
       return request.auth != null && (
         // Firebase custom claim: admin == true
         request.auth.token.admin == true
-        // Or verified exact admin email match
-        || (request.auth.token.email != null && request.auth.token.email.lower() == 'jangirpankaj901@gmail.com')
+        // Or verified exact admin email match with verified email ownership
+        || (
+          request.auth.token.email != null 
+          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+          && request.auth.token.email_verified == true
+        )
         // Or registered in Firestore admins collection
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
@@ -125,22 +129,13 @@ service cloud.firestore {
 
       // 3. Update:
       // - Verified Admin has full update privileges (approval, rejection, edits, occupancy, featured).
-      // - Fast path allows occupancy status toggle (only affects occupancyStatus and updatedAt).
-      // - Owner with unguessable private edit link can update permitted listing fields via atomic batch matching verifiedToken in property_secrets.
+      // - Owner with unguessable private edit link can update permitted listing fields (including occupancyStatus) via atomic batch matching verifiedToken in property_secrets.
+      // - Unauthenticated occupancy status updates are strictly prohibited.
       // - Never exposes edit tokens in the public property document.
       allow update: if isAdmin() || (
-        // Fast path for occupancy status toggle (strictly allows only occupancyStatus & updatedAt)
-        (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occupancyStatus', 'updatedAt'])
-          && request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
-          && (!('status' in resource.data) || request.resource.data.status == resource.data.status)
-        )
-        // Full listing update with permitted fields (including Cloudinary photos)
-        || (
-          exists(/databases/$(database)/documents/property_secrets/$(propertyId))
-          && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
-          && isValidOwnerUpdate()
-        )
+        exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+        && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
+        && isValidOwnerUpdate()
       );
 
       // 4. Delete: ONLY verified admin can delete listings.

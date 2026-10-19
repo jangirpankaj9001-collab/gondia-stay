@@ -150,7 +150,8 @@ export const savePropertyToFirestore = async (
 
     const isUserAdmin = Boolean(
       auth?.currentUser && (
-        auth.currentUser.email?.toLowerCase() === 'jangirpankaj901@gmail.com'
+        auth.currentUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
+        auth.currentUser.emailVerified
       )
     );
 
@@ -360,37 +361,40 @@ export const updatePropertyOccupancyInFirestore = async (
     throw new Error('Cloud Firestore is not connected.');
   }
 
+  const isUserAdmin = Boolean(
+    auth?.currentUser &&
+    auth.currentUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
+    auth.currentUser.emailVerified
+  );
+
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
 
-  // Fast-path direct update strictly permitted by Firestore security rules
-  try {
+  // If verified administrator is signed in, update directly
+  if (isUserAdmin) {
     await updateDoc(docRef, {
       occupancyStatus,
       updatedAt: Date.now()
     });
     return;
-  } catch (directErr) {
-    if (editToken) {
-      try {
-        const batch = writeBatch(db);
-        batch.update(docRef, {
-          occupancyStatus,
-          updatedAt: Date.now()
-        });
-        const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
-        batch.update(secretRef, {
-          verifiedToken: editToken,
-          lastEditedAt: Date.now(),
-          editNonce: Math.random().toString(36).substring(2)
-        });
-        await batch.commit();
-        return;
-      } catch (batchErr) {
-        throw directErr;
-      }
-    }
-    throw directErr;
   }
+
+  // If not admin, require private edit link token and commit verified batch
+  if (!editToken) {
+    throw new Error('Unauthorized: Occupancy updates require verified administrator access or the listing\'s private edit key.');
+  }
+
+  const batch = writeBatch(db);
+  batch.update(docRef, {
+    occupancyStatus,
+    updatedAt: Date.now()
+  });
+  const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
+  batch.update(secretRef, {
+    verifiedToken: editToken,
+    lastEditedAt: Date.now(),
+    editNonce: Math.random().toString(36).substring(2)
+  });
+  await batch.commit();
 };
 
 /**
@@ -407,8 +411,12 @@ export const moderatePropertyInFirestore = async (
     throw new Error('Cloud Firestore is not connected.');
   }
 
-  if (!auth?.currentUser || auth.currentUser.email?.toLowerCase() !== 'jangirpankaj901@gmail.com') {
-    throw new Error('Unauthorized: Only verified administrator jangirpankaj901@gmail.com can moderate listings.');
+  if (
+    !auth?.currentUser ||
+    auth.currentUser.email?.toLowerCase() !== 'jangirpankaj9001@gmail.com' ||
+    !auth.currentUser.emailVerified
+  ) {
+    throw new Error('Unauthorized: Only verified administrator jangirpankaj9001@gmail.com with verified email can moderate listings.');
   }
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
@@ -431,8 +439,12 @@ export const deletePropertyFromFirestore = async (propertyId: string): Promise<v
     throw new Error('Cloud Firestore is not connected.');
   }
 
-  if (!auth?.currentUser || auth.currentUser.email?.toLowerCase() !== 'jangirpankaj901@gmail.com') {
-    throw new Error('Unauthorized: Only verified administrator jangirpankaj901@gmail.com can delete listings.');
+  if (
+    !auth?.currentUser ||
+    auth.currentUser.email?.toLowerCase() !== 'jangirpankaj9001@gmail.com' ||
+    !auth.currentUser.emailVerified
+  ) {
+    throw new Error('Unauthorized: Only verified administrator jangirpankaj9001@gmail.com with verified email can delete listings.');
   }
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);

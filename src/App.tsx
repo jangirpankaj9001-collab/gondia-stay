@@ -46,6 +46,7 @@ import {
   ExternalLink,
   Link as LinkIcon,
   ShieldAlert,
+  Mail,
   X
 } from 'lucide-react';
 import { 
@@ -122,6 +123,8 @@ export const App: React.FC = () => {
     showToast,
     resetFilters,
     loginAdminWithEmailPassword,
+    sendAdminVerificationEmail,
+    checkAdminVerificationStatus,
     logoutAdmin,
     adminUser,
     authUser,
@@ -146,7 +149,7 @@ export const App: React.FC = () => {
   const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
-  const [adminEmail, setAdminEmail] = useState('jangirpankaj901@gmail.com');
+  const [adminEmail, setAdminEmail] = useState('jangirpankaj9001@gmail.com');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
@@ -960,8 +963,8 @@ export const App: React.FC = () => {
     setAdminAuthError(null);
 
     const emailTrimmed = adminEmail.trim().toLowerCase();
-    if (emailTrimmed !== 'jangirpankaj901@gmail.com') {
-      setAdminAuthError('Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj901@gmail.com) can access this console.');
+    if (emailTrimmed !== 'jangirpankaj9001@gmail.com') {
+      setAdminAuthError('Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj9001@gmail.com) can access this console.');
       return;
     }
 
@@ -2616,7 +2619,7 @@ export const App: React.FC = () => {
                 
                 {/* Admin Authentication Barrier */}
                 {!isAdminAuthenticated ? (
-                  authUser && authUser.email?.toLowerCase() !== 'jangirpankaj901@gmail.com' ? (
+                  authUser && authUser.email?.toLowerCase() !== 'jangirpankaj9001@gmail.com' ? (
                     /* 403 Forbidden Access Barrier for Non-Admin Logged In Users */
                     <div className="bg-white rounded-3xl border border-rose-200 p-6 sm:p-8 shadow-sm space-y-4 max-w-lg mx-auto text-center">
                       <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
@@ -2631,7 +2634,7 @@ export const App: React.FC = () => {
                           You are currently signed in as <strong className="text-slate-900 font-semibold">{authUser.email}</strong>. This account is not authorized to access or manage the GondiaStay admin console.
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          Administrative access is strictly restricted to <span className="font-mono font-bold text-slate-800">jangirpankaj901@gmail.com</span>.
+                          Administrative access is strictly restricted to <span className="font-mono font-bold text-slate-800">jangirpankaj9001@gmail.com</span>.
                         </p>
                       </div>
 
@@ -2652,6 +2655,60 @@ export const App: React.FC = () => {
                         >
                           <LogOut className="w-3.5 h-3.5" />
                           <span>Sign Out & Switch Account</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : authUser && authUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' && !authUser.emailVerified ? (
+                    /* Email Verification Barrier for Admin Account */
+                    <div className="bg-white rounded-3xl border border-amber-200 p-6 sm:p-8 shadow-sm space-y-4 max-w-lg mx-auto text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                        <Mail className="w-7 h-7" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                          Email Verification Required
+                        </span>
+                        <h3 className="text-base font-extrabold text-slate-900 pt-1">Verify Email Ownership</h3>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          You are authenticated as <strong className="text-slate-900 font-semibold">{authUser.email}</strong>, but this administrator account requires verified email ownership before administrative privileges (approval, rejection, deletion, and edits) can be exercised.
+                        </p>
+                        <p className="text-[11px] text-amber-700">
+                          Please verify your email address to unlock the admin console.
+                        </p>
+                      </div>
+
+                      <div className="pt-2 flex flex-col sm:flex-row gap-2.5 justify-center">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await sendAdminVerificationEmail();
+                          }}
+                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>Send Verification Email</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await checkAdminVerificationStatus();
+                          }}
+                          className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>I Have Verified • Refresh</span>
+                        </button>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await logoutAdmin();
+                          }}
+                          className="text-xs text-slate-500 hover:text-slate-700 underline cursor-pointer"
+                        >
+                          Sign Out
                         </button>
                       </div>
                     </div>
@@ -2682,11 +2739,11 @@ export const App: React.FC = () => {
                             required
                             value={adminEmail}
                             onChange={(e) => setAdminEmail(e.target.value)}
-                            placeholder="jangirpankaj901@gmail.com"
+                            placeholder="jangirpankaj9001@gmail.com"
                             className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
                           />
                           <span className="text-[10px] text-slate-400 mt-1 block">
-                            Only authorized account: jangirpankaj901@gmail.com
+                            Only authorized account: jangirpankaj9001@gmail.com
                           </span>
                         </div>
 

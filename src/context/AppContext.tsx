@@ -13,7 +13,8 @@ import {
   createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
-  User 
+  User,
+  sendEmailVerification
 } from 'firebase/auth';
 import { INITIAL_TIFFINS } from '../data/initialData';
 import { 
@@ -76,7 +77,9 @@ interface AppContextType {
   navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
   showToast: (msg: string) => void;
   resetFilters: () => void;
-  loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string; needsVerification?: boolean }>;
+  sendAdminVerificationEmail: () => Promise<boolean>;
+  checkAdminVerificationStatus: () => Promise<boolean>;
   logoutAdmin: () => Promise<void>;
   loginOwnerWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   registerOwnerWithEmailPassword: (email: string, pass: string, name?: string, phone?: string) => Promise<{ success: boolean; error?: string }>;
@@ -191,9 +194,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsOwnerAuthenticated(!!user);
 
       const isUserAdmin = Boolean(
-        user && user.email && user.email.toLowerCase() === 'jangirpankaj901@gmail.com'
+        user && 
+        user.email && 
+        user.email.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
+        user.emailVerified
       );
-      setAdminUser(isUserAdmin ? user : null);
+      setAdminUser(user && user.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' ? user : null);
       setIsAdminAuthenticated(isUserAdmin);
       setIsAdminLoading(false);
 
@@ -489,7 +495,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loginAdminWithEmailPassword = async (
     email: string, 
     pass: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; needsVerification?: boolean }> => {
     if (!auth) {
       const msg = 'Firebase is not initialized. Please connect your Firebase project in Settings.';
       showToast(msg);
@@ -497,11 +503,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-    const authorizedAdminEmail = 'jangirpankaj901@gmail.com';
+    const authorizedAdminEmail = 'jangirpankaj9001@gmail.com';
 
     // Strictly enforce that only the authorized administrator email can attempt admin login
     if (trimmedEmail !== authorizedAdminEmail) {
-      const errorMsg = 'Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj901@gmail.com) can access the Admin Panel.';
+      const errorMsg = 'Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj9001@gmail.com) can access the Admin Panel.';
       showToast(errorMsg);
       return { success: false, error: errorMsg };
     }
@@ -525,27 +531,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, error: errorMsg };
       }
 
+      if (!user.emailVerified) {
+        setAdminUser(user);
+        setIsAdminAuthenticated(false);
+        const errorMsg = 'Access Denied: Email verification required. Please verify email ownership for jangirpankaj9001@gmail.com before accessing administrative features.';
+        showToast(errorMsg);
+        return { success: false, error: errorMsg, needsVerification: true };
+      }
+
       setAdminUser(user);
       setIsAdminAuthenticated(true);
       showToast(`Welcome! Admin signed in as ${user.email}`);
       return { success: true };
     } catch (err: any) {
       console.error('Firebase Admin Login Error:', err);
-      // Auto-provision verified admin user account in Firebase Auth if not yet created
-      if (
-        (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') &&
-        trimmedEmail === authorizedAdminEmail
-      ) {
-        try {
-          const newCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, pass);
-          setAdminUser(newCredential.user);
-          setIsAdminAuthenticated(true);
-          showToast(`Admin account initialized! Welcome, ${newCredential.user.email}`);
-          return { success: true };
-        } catch (createErr: any) {
-          console.warn('Admin user auto-creation fallback failed:', createErr);
-        }
-      }
 
       let errorMsg = 'Invalid email or password.';
       if (
@@ -563,6 +562,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       showToast(errorMsg);
       return { success: false, error: errorMsg };
+    }
+  };
+
+  const sendAdminVerificationEmail = async (): Promise<boolean> => {
+    if (!auth?.currentUser) {
+      showToast('No signed-in administrator account found to verify.');
+      return false;
+    }
+    try {
+      await sendEmailVerification(auth.currentUser);
+      showToast('Verification email sent to ' + auth.currentUser.email + '. Please check your inbox and verify.');
+      return true;
+    } catch (err: any) {
+      console.error('Error sending verification email:', err);
+      showToast('Failed to send verification email: ' + (err.message || 'Please try again later.'));
+      return false;
+    }
+  };
+
+  const checkAdminVerificationStatus = async (): Promise<boolean> => {
+    if (!auth?.currentUser) return false;
+    try {
+      await auth.currentUser.reload();
+      const refreshedUser = auth.currentUser;
+      const isVerified = Boolean(
+        refreshedUser &&
+        refreshedUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
+        refreshedUser.emailVerified
+      );
+      setAdminUser(refreshedUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' ? refreshedUser : null);
+      setIsAdminAuthenticated(isVerified);
+      if (isVerified) {
+        showToast('Email ownership verified! Admin console unlocked.');
+      } else {
+        showToast('Email ownership not verified yet. Please check your inbox/spam folder.');
+      }
+      return isVerified;
+    } catch (err: any) {
+      console.error('Error reloading user status:', err);
+      return false;
     }
   };
 
@@ -754,6 +793,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast,
       resetFilters,
       loginAdminWithEmailPassword,
+      sendAdminVerificationEmail,
+      checkAdminVerificationStatus,
       logoutAdmin,
       loginOwnerWithEmailPassword,
       registerOwnerWithEmailPassword,
