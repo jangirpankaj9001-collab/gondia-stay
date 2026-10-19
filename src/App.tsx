@@ -153,6 +153,9 @@ export const App: React.FC = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verificationSuccess, setVerificationSuccess] = useState<string | null>(null);
   const [moderatingPropId, setModeratingPropId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -2677,23 +2680,62 @@ export const App: React.FC = () => {
                         </p>
                       </div>
 
+                      {verificationError && (
+                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2 text-left">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                          <span>{verificationError}</span>
+                        </div>
+                      )}
+
+                      {verificationSuccess && (
+                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2 text-left">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                          <span>{verificationSuccess}</span>
+                        </div>
+                      )}
+
                       <div className="pt-2 flex flex-col sm:flex-row gap-2.5 justify-center">
                         <button
                           type="button"
+                          disabled={isSendingVerification}
                           onClick={async () => {
-                            await sendAdminVerificationEmail();
+                            setVerificationError(null);
+                            setVerificationSuccess(null);
+                            setIsSendingVerification(true);
+                            try {
+                              const res = await sendAdminVerificationEmail();
+                              if (res.success) {
+                                setVerificationSuccess(`Verification email sent to ${authUser?.email || 'your email'}. Please check your inbox and spam folder.`);
+                              } else {
+                                setVerificationError(res.error || 'Failed to send verification email. Please try again.');
+                              }
+                            } catch (err: any) {
+                              setVerificationError(err?.message || 'An error occurred while sending verification email.');
+                            } finally {
+                              setIsSendingVerification(false);
+                            }
                           }}
-                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                         >
-                          <Mail className="w-3.5 h-3.5" />
-                          <span>Send Verification Email</span>
+                          {isSendingVerification ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Mail className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isSendingVerification ? 'Sending Email...' : 'Send Verification Email'}</span>
                         </button>
                         <button
                           type="button"
+                          disabled={isSendingVerification}
                           onClick={async () => {
-                            await checkAdminVerificationStatus();
+                            setVerificationError(null);
+                            setVerificationSuccess(null);
+                            const verified = await checkAdminVerificationStatus();
+                            if (!verified) {
+                              setVerificationError('Email ownership is not verified yet. Please check your inbox, click the verification link, and then click Refresh.');
+                            }
                           }}
-                          className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                          className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-500 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
                           <span>I Have Verified • Refresh</span>

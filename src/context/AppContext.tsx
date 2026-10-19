@@ -78,7 +78,7 @@ interface AppContextType {
   showToast: (msg: string) => void;
   resetFilters: () => void;
   loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string; needsVerification?: boolean }>;
-  sendAdminVerificationEmail: () => Promise<boolean>;
+  sendAdminVerificationEmail: () => Promise<{ success: boolean; error?: string }>;
   checkAdminVerificationStatus: () => Promise<boolean>;
   logoutAdmin: () => Promise<void>;
   loginOwnerWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
@@ -565,19 +565,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const sendAdminVerificationEmail = async (): Promise<boolean> => {
-    if (!auth?.currentUser) {
-      showToast('No signed-in administrator account found to verify.');
-      return false;
+  const sendAdminVerificationEmail = async (): Promise<{ success: boolean; error?: string }> => {
+    const targetUser = auth?.currentUser || adminUser || authUser;
+    if (!targetUser) {
+      const msg = 'No signed-in administrator account found to verify. Please sign in first.';
+      showToast(msg);
+      return { success: false, error: msg };
     }
     try {
-      await sendEmailVerification(auth.currentUser);
-      showToast('Verification email sent to ' + auth.currentUser.email + '. Please check your inbox and verify.');
-      return true;
+      await sendEmailVerification(targetUser);
+      showToast('Verification email sent to ' + targetUser.email + '. Please check your inbox and verify.');
+      return { success: true };
     } catch (err: any) {
       console.error('Error sending verification email:', err);
-      showToast('Failed to send verification email: ' + (err.message || 'Please try again later.'));
-      return false;
+      let errorMsg = err?.message || 'Failed to send verification email.';
+      if (err?.code === 'auth/too-many-requests') {
+        errorMsg = 'Too many requests. Firebase has temporarily throttled verification emails. Please wait a few minutes before trying again.';
+      } else if (err?.code === 'auth/user-token-expired' || err?.code === 'auth/user-disabled') {
+        errorMsg = 'Session expired or invalid. Please sign out and sign in again.';
+      } else if (err?.code === 'auth/network-request-failed') {
+        errorMsg = 'Network error. Please check your internet connection.';
+      }
+      showToast(errorMsg);
+      return { success: false, error: errorMsg };
     }
   };
 
