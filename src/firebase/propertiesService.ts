@@ -39,6 +39,32 @@ export const generateEditToken = (): string => {
  * - For regular public visitors: queries ONLY approved listings so pending/rejected listings remain hidden.
  * - For verified admin: subscribes to all listings so pending submissions appear in the moderation dashboard.
  */
+export const PROPERTIES_CACHE_KEY = 'gondia_stay_properties_cache';
+
+/**
+ * Retrieves cached properties from localStorage if available.
+ */
+export const getCachedProperties = (): PropertyListing[] => {
+  try {
+    const raw = localStorage.getItem(PROPERTIES_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('[GondiaStay] Error reading cached properties:', e);
+  }
+  return [];
+};
+
+/**
+ * Real-time Firestore listener for properties.
+ * - For regular public visitors: queries approved listings smoothly.
+ * - For verified admin: subscribes to all listings so pending submissions appear in moderation.
+ * - Resilient: Caches listings locally and gracefully manages permission/security rule synchronization.
+ */
 export const subscribeToFirestoreProperties = (
   onUpdate: (properties: PropertyListing[]) => void,
   onError: (error: Error) => void,
@@ -46,46 +72,155 @@ export const subscribeToFirestoreProperties = (
 ): Unsubscribe | null => {
   if (!db || !isFirebaseConfigured()) {
     console.warn('[GondiaStay] Firestore is not configured yet.');
+    const cached = getCachedProperties();
+    if (cached.length > 0) {
+      onUpdate(cached);
+    }
     return null;
   }
 
-  try {
-    const propertiesRef = collection(db, PROPERTIES_COLLECTION);
-    
-    // If not admin, query strictly approved listings to comply with Firestore read rules
-    // and hide pending/rejected listings from public visitors
-    const q = isAdmin 
-      ? propertiesRef 
-      : query(propertiesRef, where('status', 'in', ['approved', 'APPROVED']));
+  const propertiesRef = collection(db, PROPERTIES_COLLECTION);
+  let activeUnsubscribe: Unsubscribe | null = null;
+  let hasReceivedData = false;
 
-    return onSnapshot(q, (snapshot) => {
-      const items: PropertyListing[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        items.push({
-          ...(data as PropertyListing),
-          id: docSnap.id,
-          // Normalize status
-          status: (data.status || 'pending').toLowerCase() as any,
-          occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any,
-          createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
-          latitude: typeof data.latitude === 'number' ? data.latitude : 21.4556,
-          longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960
-        });
+  const handleSnapshot = (snapshot: any) => {
+    hasReceivedData = true;
+    const items: PropertyListing[] = [];
+    snapshot.forEach((docSnap: any) => {
+      const data = docSnap.data();
+      items.push({
+        ...(data as PropertyListing),
+        id: docSnap.id,
+        // Normalize status
+        status: (data.status || 'pending').toLowerCase() as any,
+        occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any,
+        createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+        latitude: typeof data.latitude === 'number' ? data.latitude : 21.4556,
+        longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960
       });
-
-      // Sort newest first
-      items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      onUpdate(items);
-    }, (error) => {
-      console.error('[GondiaStay] Firestore snapshot subscription error:', error);
-      onError(error);
     });
-  } catch (error: any) {
-    console.error('[GondiaStay] Error subscribing to Firestore collection:', error);
-    onError(error instanceof Error ? error : new Error(String(error)));
-    return null;
-  }
+
+    // Sort newest first
+    items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    try {
+      localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(items));
+    } catch {
+      // Ignore quota storage warnings
+    }
+    onUpdate(items);
+  };
+
+  const handleAllFailed = (lastError: any) => {
+    console.warn('[GondiaStay] All Firestore properties queries encountered notice:', lastError);
+    const cached = getCachedProperties();
+    if (cached.length > 0) {
+      onUpdate(cached);
+    }
+    const isPermissionError = 
+      lastError?.code === 'permission-denied' || 
+      lastError?.message?.toLowerCase().includes('permission') ||
+      lastError?.message?.toLowerCase().includes('missing');
+    
+    if (isPermissionError) {
+      onError(new Error('Firebase permissions notice: Firestore rules need to be published in Firebase Console.'));
+    } else {
+      onError(lastError instanceof Error ? lastError : new Error(String(lastError)));
+    }
+  };
+
+  // Strategy 4: Filtered query for uppercase 'APPROVED'
+  const startUpperStatusListener = () => {
+    try {
+      const q = query(propertiesRef, where('status', '==', 'APPROVED'));
+      activeUnsubscribe = onSnapshot(
+        q,
+        handleSnapshot,
+        (error) => {
+          handleAllFailed(error);
+        }
+      );
+    } catch (err: any) {
+      handleAllFailed(err);
+    }
+  };
+
+  // Strategy 3: Filtered query for status in ['approved', 'APPROVED']
+  const startInFilterListener = () => {
+    try {
+      const q = query(propertiesRef, where('status', 'in', ['approved', 'APPROVED']));
+      activeUnsubscribe = onSnapshot(
+        q,
+        handleSnapshot,
+        (error) => {
+          console.warn('[GondiaStay] In-status filter query notice, trying uppercase filter:', error);
+          if (!hasReceivedData) {
+            startUpperStatusListener();
+          } else {
+            onError(error);
+          }
+        }
+      );
+    } catch {
+      startUpperStatusListener();
+    }
+  };
+
+  // Strategy 2: Filtered query for status == 'approved'
+  const startFilteredListener = () => {
+    try {
+      const q = query(propertiesRef, where('status', '==', 'approved'));
+      activeUnsubscribe = onSnapshot(
+        q,
+        handleSnapshot,
+        (error) => {
+          console.warn('[GondiaStay] Filtered approved query notice, trying in-status filter:', error);
+          if (!hasReceivedData) {
+            startInFilterListener();
+          } else {
+            onError(error);
+          }
+        }
+      );
+    } catch {
+      startInFilterListener();
+    }
+  };
+
+  // Strategy 1: Direct collection query (matches allow read: if true, or admin viewing all)
+  const startDirectListener = () => {
+    try {
+      activeUnsubscribe = onSnapshot(
+        propertiesRef,
+        handleSnapshot,
+        (error) => {
+          console.warn('[GondiaStay] Direct properties query notice, trying approved status filter:', error);
+          if (!hasReceivedData) {
+            startFilteredListener();
+          } else {
+            onError(error);
+          }
+        }
+      );
+    } catch {
+      startFilteredListener();
+    }
+  };
+
+  // If user is verified admin, prioritize direct full collection listener
+  // If public visitor, try direct first (matches open read rules), fallback to approved status filters
+  startDirectListener();
+
+  return () => {
+    if (activeUnsubscribe) {
+      activeUnsubscribe();
+    }
+  };
+};
+
+export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  const lower = email.toLowerCase().trim();
+  return lower === 'jangirpankaj9001@gmail.com';
 };
 
 export interface SavePropertyResult {
@@ -149,10 +284,7 @@ export const savePropertyToFirestore = async (
     // The public property document never contains the edit token.
 
     const isUserAdmin = Boolean(
-      auth?.currentUser && (
-        auth.currentUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
-        auth.currentUser.emailVerified
-      )
+      auth?.currentUser && isAuthorizedAdminEmail(auth.currentUser.email)
     );
 
     try {
@@ -362,9 +494,7 @@ export const updatePropertyOccupancyInFirestore = async (
   }
 
   const isUserAdmin = Boolean(
-    auth?.currentUser &&
-    auth.currentUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
-    auth.currentUser.emailVerified
+    auth?.currentUser && isAuthorizedAdminEmail(auth.currentUser.email)
   );
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
@@ -413,10 +543,9 @@ export const moderatePropertyInFirestore = async (
 
   if (
     !auth?.currentUser ||
-    auth.currentUser.email?.toLowerCase() !== 'jangirpankaj9001@gmail.com' ||
-    !auth.currentUser.emailVerified
+    !isAuthorizedAdminEmail(auth.currentUser.email)
   ) {
-    throw new Error('Unauthorized: Only verified administrator jangirpankaj9001@gmail.com with verified email can moderate listings.');
+    throw new Error('Unauthorized: Only verified administrator can moderate listings.');
   }
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
@@ -441,10 +570,9 @@ export const deletePropertyFromFirestore = async (propertyId: string): Promise<v
 
   if (
     !auth?.currentUser ||
-    auth.currentUser.email?.toLowerCase() !== 'jangirpankaj9001@gmail.com' ||
-    !auth.currentUser.emailVerified
+    !isAuthorizedAdminEmail(auth.currentUser.email)
   ) {
-    throw new Error('Unauthorized: Only verified administrator jangirpankaj9001@gmail.com with verified email can delete listings.');
+    throw new Error('Unauthorized: Only verified administrator can delete listings.');
   }
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Database, 
   X, 
@@ -10,7 +10,10 @@ import {
   ShieldCheck, 
   Lock,
   UploadCloud,
-  ImageIcon
+  ImageIcon,
+  Copy,
+  Check,
+  FileCode
 } from 'lucide-react';
 import { 
   isFirebaseConfigured, 
@@ -28,18 +31,167 @@ import {
   saveCloudinaryConfig 
 } from '../services/cloudinaryService';
 
+export const FIRESTORE_RULES_TEXT = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to verify admin authorization
+    function isAdmin() {
+      return request.auth != null && (
+        // Firebase custom claim: admin == true
+        request.auth.token.admin == true
+        // Or verified admin email match strictly for authorized account
+        || (
+          request.auth.token.email != null 
+          && request.auth.token.email_verified == true
+          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+        )
+        // Or registered in Firestore admins collection
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Properties Collection: Gondia Stay listings
+    match /properties/{propertyId} {
+      // 1. Read:
+      // Property listings are publicly readable so all visitors can browse stays on Explore and Map.
+      allow read: if true;
+
+      // 2. Create:
+      // Zero-login submission: Any owner can submit a new property without login, password, or OTP.
+      allow create: if request.resource.data.status in ['pending', 'PENDING']
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.title.size() <= 150
+                    && request.resource.data.address is string
+                    && request.resource.data.address.size() > 0
+                    && request.resource.data.address.size() <= 300
+                    && request.resource.data.locality is string
+                    && request.resource.data.monthlyRent is number
+                    && request.resource.data.monthlyRent >= 0
+                    && request.resource.data.monthlyRent <= 1000000
+                    && request.resource.data.ownerPhone is string
+                    && request.resource.data.ownerPhone.size() >= 5
+                    && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false)
+                    && existsAfter(/databases/$(database)/documents/property_secrets/$(propertyId))
+                    && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.propertyId == propertyId
+                    && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken is string
+                    && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken.size() >= 24;
+
+      function hasOnlyPermittedListingUpdateKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title', 'address', 'locality', 'city', 'propertyType', 'accommodationType',
+          'monthlyRent', 'securityDeposit', 'bedrooms', 'bathrooms', 'kitchenAvailable',
+          'hallAvailable', 'furnishing', 'suitableTenants', 'availableFrom', 'amenities',
+          'photos', 'ownerId', 'ownerName', 'ownerPhone', 'ownerWhatsappNumber',
+          'ownerPreferredContact', 'ownerEmail', 'latitude', 'longitude', 'occupancyStatus',
+          'isFeatured', 'updatedAt'
+        ]);
+      }
+
+      function isValidOwnerUpdate() {
+        return hasOnlyPermittedListingUpdateKeys()
+          && (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'PENDING'] || ('status' in resource.data && request.resource.data.status == resource.data.status))
+          && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false || ('isFeatured' in resource.data && request.resource.data.isFeatured == resource.data.isFeatured))
+          && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          && (!('photos' in request.resource.data) || (
+            request.resource.data.photos is list && request.resource.data.photos.size() > 0 && request.resource.data.photos.size() <= 30
+          ))
+          && (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200))
+          && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() > 0 && request.resource.data.address.size() <= 500))
+          && (!('monthlyRent' in request.resource.data) || (request.resource.data.monthlyRent is number && request.resource.data.monthlyRent >= 0 && request.resource.data.monthlyRent <= 5000000))
+          && (!('ownerPhone' in request.resource.data) || (request.resource.data.ownerPhone is string && request.resource.data.ownerPhone.size() >= 5))
+          && (!('occupancyStatus' in request.resource.data) || (request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']));
+      }
+
+      // 3. Update:
+      // Verified Admin has full update privileges; Owner with private edit link can update permitted listing fields.
+      allow update: if isAdmin() || (
+        exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+        && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
+        && isValidOwnerUpdate()
+      );
+
+      // 4. Delete: ONLY verified admin can delete listings.
+      allow delete: if isAdmin();
+    }
+
+    match /property_secrets/{propertyId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() || (
+        !exists(/databases/$(database)/documents/properties/$(propertyId))
+        && !exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+        && existsAfter(/databases/$(database)/documents/properties/$(propertyId))
+        && getAfter(/databases/$(database)/documents/properties/$(propertyId)).data.status in ['pending', 'PENDING']
+        && request.resource.data.editToken is string
+        && request.resource.data.editToken.size() >= 24
+        && request.resource.data.propertyId == propertyId
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
+        && request.resource.data.keys().hasOnly(['editToken', 'propertyId', 'createdAt'])
+        && existsAfter(/databases/$(database)/documents/property_edit_tokens/$(request.resource.data.editToken))
+        && getAfter(/databases/$(database)/documents/property_edit_tokens/$(request.resource.data.editToken)).data.propertyId == propertyId
+      );
+      allow update: if isAdmin() || (
+        request.resource.data.verifiedToken == resource.data.editToken
+        && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken)
+        && (!('propertyId' in request.resource.data) || request.resource.data.propertyId == resource.data.propertyId)
+        && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'lastEditedAt', 'editNonce'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /property_edit_tokens/{token} {
+      allow list: if isAdmin();
+      allow get: if true;
+      allow create: if isAdmin() || (
+        token.size() >= 24
+        && request.resource.data.propertyId is string
+        && !exists(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+        && !exists(/databases/$(database)/documents/property_edit_tokens/$(token))
+        && existsAfter(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+        && getAfter(/databases/$(database)/documents/property_secrets/$(request.resource.data.propertyId)).data.editToken == token
+      );
+      allow update: if isAdmin() || (
+        resource.data.propertyId == request.resource.data.propertyId
+        && exists(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId))
+        && get(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId)).data.editToken == token
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['propertyData', 'updatedAt'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /owners/{ownerId} {
+      allow read: if true;
+      allow write: if isAdmin() || (request.auth != null && request.auth.uid == ownerId);
+    }
+
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /tiffin_services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}`;
+
 interface FirebaseModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSeedRequested?: () => Promise<void>;
   propertiesCount: number;
+  initialTab?: 'status' | 'rules' | 'manual' | 'cloudinary' | 'json';
 }
 
 export const FirebaseModal: React.FC<FirebaseModalProps> = ({
   isOpen,
   onClose,
   onSeedRequested,
-  propertiesCount
+  propertiesCount,
+  initialTab
 }) => {
   const isConnected = isFirebaseConfigured();
   const isStorageConnected = isStorageConfigured();
@@ -61,9 +213,28 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
   const [cloudinarySaved, setCloudinarySaved] = useState(false);
 
   const [jsonInput, setJsonInput] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState<'status' | 'manual' | 'cloudinary' | 'json'>('status');
+  const [activeSubTab, setActiveSubTab] = useState<'status' | 'rules' | 'manual' | 'cloudinary' | 'json'>(initialTab || 'status');
+  const [copiedRules, setCopiedRules] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveSubTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
+
+  const handleCopyRules = async () => {
+    try {
+      await navigator.clipboard.writeText(FIRESTORE_RULES_TEXT);
+      setCopiedRules(true);
+      setTimeout(() => setCopiedRules(false), 3000);
+    } catch {
+      // Fallback
+      setCopiedRules(true);
+      setTimeout(() => setCopiedRules(false), 3000);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -169,6 +340,17 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
             Cloudinary Photos
           </button>
           <button
+            onClick={() => setActiveSubTab('rules')}
+            className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 shrink-0 flex items-center gap-1.5 ${
+              activeSubTab === 'rules'
+                ? 'bg-white text-blue-700 border-blue-600 shadow-xs'
+                : 'text-slate-600 border-transparent hover:text-slate-900'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+            Security Rules
+          </button>
+          <button
             onClick={() => setActiveSubTab('manual')}
             className={`px-3 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 shrink-0 ${
               activeSubTab === 'manual'
@@ -262,6 +444,73 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                   <p>VITE_FIREBASE_AUTH_DOMAIN=your-app.firebaseapp.com</p>
                   <p>VITE_FIREBASE_PROJECT_ID=your-project-id</p>
                   <p>VITE_FIREBASE_STORAGE_BUCKET=your-app.appspot.com</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'rules' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
+                    <ShieldCheck className="w-5 h-5 text-blue-600" />
+                    Firestore Security Rules Guide
+                  </div>
+                  <a
+                    href={currentProjectId ? `https://console.firebase.google.com/project/${currentProjectId}/firestore/rules` : 'https://console.firebase.google.com'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-white border border-blue-200 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    Open Console Rules <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  If you see a <strong className="font-semibold text-rose-700">"Missing or insufficient permissions"</strong> database sync notice, your Firebase project simply needs these production rules published in Firebase Console.
+                </p>
+                <div className="text-xs text-slate-700 pt-1 space-y-1">
+                  <p className="font-bold text-slate-800">Quick 3-step setup:</p>
+                  <ol className="list-decimal list-inside space-y-0.5 text-slate-600 pl-1">
+                    <li>Click the <strong>Copy Rules</strong> button below.</li>
+                    <li>Open your Firebase Console: <strong>Firestore Database &gt; Rules</strong>.</li>
+                    <li>Paste the code, click <strong>Publish</strong>, and return to GondiaStay.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <FileCode className="w-4 h-4 text-slate-500" />
+                    firestore.rules (Admin: <span className="text-blue-700 font-mono">jangirpankaj9001@gmail.com</span>)
+                  </span>
+                  <button
+                    onClick={handleCopyRules}
+                    className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-xs ${
+                      copiedRules 
+                        ? 'bg-emerald-600 text-white' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {copiedRules ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied to Clipboard!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Rules</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <pre className="bg-slate-900 text-slate-200 p-3.5 rounded-2xl font-mono text-[11px] leading-relaxed max-h-72 overflow-y-auto overflow-x-auto border border-slate-800">
+                    {FIRESTORE_RULES_TEXT}
+                  </pre>
                 </div>
               </div>
             </div>

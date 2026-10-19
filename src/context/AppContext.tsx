@@ -29,7 +29,8 @@ import {
   updatePropertyOccupancyInFirestore,
   saveOwnerProfileToFirestore,
   subscribeToOwnerProfile,
-  SavePropertyResult
+  SavePropertyResult,
+  getCachedProperties
 } from '../firebase/propertiesService';
 
 interface AppContextType {
@@ -86,6 +87,7 @@ interface AppContextType {
   logoutOwner: () => Promise<void>;
   verifyAdminPasscode: (passcode: string) => boolean;
   setIsFirebaseModalOpen: (open: boolean) => void;
+  clearFirestoreError: () => void;
   ownerSubTab: 'listings' | 'new' | 'moderation';
   setOwnerSubTab: React.Dispatch<React.SetStateAction<'listings' | 'new' | 'moderation'>>;
   openPostListing: () => void;
@@ -103,8 +105,8 @@ const defaultFilterCriteria: FilterCriteria = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Properties are exclusively loaded from Firestore (no demo properties, no localStorage fallback)
-  const [properties, setProperties] = useState<PropertyListing[]>([]);
+  // Properties are loaded from Cloud Firestore, initialized with local cache for instant UI availability
+  const [properties, setProperties] = useState<PropertyListing[]>(() => getCachedProperties());
   const [isFirestoreLoading, setIsFirestoreLoading] = useState<boolean>(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured());
@@ -193,14 +195,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuthUser(user);
       setIsOwnerAuthenticated(!!user);
 
-      const isUserAdmin = Boolean(
-        user && 
-        user.email && 
+      const isAuthorizedEmail = Boolean(
+        user && user.email && 
         user.email.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
         user.emailVerified
       );
       setAdminUser(user && user.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' ? user : null);
-      setIsAdminAuthenticated(isUserAdmin);
+      setIsAdminAuthenticated(isAuthorizedEmail);
       setIsAdminLoading(false);
 
       if (user) {
@@ -232,6 +233,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [currentOwner.id]);
 
+  // Clear firestore error manually
+  const clearFirestoreError = useCallback(() => {
+    setFirestoreError(null);
+  }, []);
+
   // Set up real-time Cloud Firestore subscription on the 'properties' collection
   // Requirement 4: Real-time listener ensures admin dashboard and public users update automatically
   useEffect(() => {
@@ -240,12 +246,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!configured) {
       setIsFirestoreLoading(false);
-      setProperties([]);
       return;
     }
 
     setIsFirestoreLoading(true);
-    setFirestoreError(null);
 
     const unsubscribe = subscribeToFirestoreProperties(
       (remoteProperties) => {
@@ -255,8 +259,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       (error) => {
         setIsFirestoreLoading(false);
-        setFirestoreError(error.message || 'Error connecting to Cloud Firestore');
-        showToast('Firestore error: ' + (error.message || 'Check database permissions'));
+        const msg = error.message || 'Error connecting to Cloud Firestore';
+        setFirestoreError(msg);
+        console.warn('[GondiaStay] Firestore sync warning:', msg);
       },
       isAdminAuthenticated
     );
@@ -264,7 +269,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isAdminAuthenticated, showToast]);
+  }, [isAdminAuthenticated]);
 
   useEffect(() => {
     localStorage.setItem('gondia_stay_tiffins', JSON.stringify(tiffinServices));
@@ -503,10 +508,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-    const authorizedAdminEmail = 'jangirpankaj9001@gmail.com';
+    const isAuthorized = trimmedEmail === 'jangirpankaj9001@gmail.com';
 
     // Strictly enforce that only the authorized administrator email can attempt admin login
-    if (trimmedEmail !== authorizedAdminEmail) {
+    if (!isAuthorized) {
       const errorMsg = 'Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj9001@gmail.com) can access the Admin Panel.';
       showToast(errorMsg);
       return { success: false, error: errorMsg };
@@ -521,8 +526,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, pass);
       const user = userCredential.user;
+      const userEmail = user.email?.toLowerCase();
 
-      if (!user.email || user.email.toLowerCase() !== authorizedAdminEmail) {
+      if (!userEmail || userEmail !== 'jangirpankaj9001@gmail.com') {
         await signOut(auth);
         setAdminUser(null);
         setIsAdminAuthenticated(false);
@@ -531,15 +537,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, error: errorMsg };
       }
 
+      setAdminUser(user);
       if (!user.emailVerified) {
-        setAdminUser(user);
         setIsAdminAuthenticated(false);
-        const errorMsg = 'Access Denied: Email verification required. Please verify email ownership for jangirpankaj9001@gmail.com before accessing administrative features.';
-        showToast(errorMsg);
-        return { success: false, error: errorMsg, needsVerification: true };
+        const msg = 'Email unverified: Please verify email ownership for jangirpankaj9001@gmail.com.';
+        showToast(msg);
+        return { success: false, needsVerification: true, error: msg };
       }
 
-      setAdminUser(user);
       setIsAdminAuthenticated(true);
       showToast(`Welcome! Admin signed in as ${user.email}`);
       return { success: true };
@@ -810,7 +815,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       registerOwnerWithEmailPassword,
       logoutOwner,
       verifyAdminPasscode,
-      setIsFirebaseModalOpen
+      setIsFirebaseModalOpen,
+      clearFirestoreError
     }}>
       {children}
     </AppContext.Provider>

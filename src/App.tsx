@@ -131,6 +131,7 @@ export const App: React.FC = () => {
     isOwnerAuthenticated,
     logoutOwner,
     setIsFirebaseModalOpen,
+    clearFirestoreError,
     myListingTokens,
     saveListingToken,
     getListingToken,
@@ -139,6 +140,7 @@ export const App: React.FC = () => {
     openPostListing
   } = useApp();
 
+  const [firebaseModalTab, setFirebaseModalTab] = useState<'status' | 'rules' | 'manual' | 'cloudinary' | 'json'>('status');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyListing | null>(null);
   const [currentEditToken, setCurrentEditToken] = useState<string | null>(null);
@@ -1056,18 +1058,41 @@ export const App: React.FC = () => {
       )}
 
       {firestoreError && (
-        <div className="bg-rose-600 text-white text-xs px-4 py-2 flex items-center justify-between">
-          <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-2">
+        <div className="bg-gradient-to-r from-amber-600 to-amber-700 text-white text-xs px-4 py-2.5 shadow-sm flex items-center justify-between animate-in fade-in">
+          <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>Database Sync Notice: {firestoreError}</span>
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-200" />
+              <span className="leading-snug">
+                <strong>Database Sync Notice:</strong> {firestoreError}
+              </span>
             </div>
-            <button
-              onClick={() => setIsFirebaseModalOpen(true)}
-              className="bg-white/20 hover:bg-white/30 text-white px-2.5 py-0.5 rounded font-bold text-[11px]"
-            >
-              Settings
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  setFirebaseModalTab('rules');
+                  setIsFirebaseModalOpen(true);
+                }}
+                className="bg-white text-amber-900 hover:bg-amber-50 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors shadow-xs cursor-pointer"
+              >
+                Rules Guide
+              </button>
+              <button
+                onClick={() => {
+                  setFirebaseModalTab('status');
+                  setIsFirebaseModalOpen(true);
+                }}
+                className="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
+              >
+                Settings
+              </button>
+              <button
+                onClick={() => clearFirestoreError()}
+                className="hover:bg-white/20 text-white/80 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                title="Dismiss notice"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2637,7 +2662,7 @@ export const App: React.FC = () => {
                           You are currently signed in as <strong className="text-slate-900 font-semibold">{authUser.email}</strong>. This account is not authorized to access or manage the GondiaStay admin console.
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          Administrative access is strictly restricted to <span className="font-mono font-bold text-slate-800">jangirpankaj9001@gmail.com</span>.
+                          Administrative access is strictly restricted to authorized administrators.
                         </p>
                       </div>
 
@@ -3407,6 +3432,7 @@ export const App: React.FC = () => {
         isOpen={isFirebaseModalOpen}
         onClose={() => setIsFirebaseModalOpen(false)}
         propertiesCount={properties.length}
+        initialTab={firebaseModalTab}
       />
 
       {/* Zero-Login Submission Private Edit Link Modal */}

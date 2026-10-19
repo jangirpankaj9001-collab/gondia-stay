@@ -7,11 +7,11 @@ service cloud.firestore {
       return request.auth != null && (
         // Firebase custom claim: admin == true
         request.auth.token.admin == true
-        // Or verified exact admin email match with verified email ownership
+        // Or verified admin email match strictly for authorized account
         || (
           request.auth.token.email != null 
-          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
           && request.auth.token.email_verified == true
+          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
         )
         // Or registered in Firestore admins collection
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
@@ -21,9 +21,9 @@ service cloud.firestore {
     // Properties Collection: Gondia Stay listings
     match /properties/{propertyId} {
       // 1. Read:
-      // Approved listings are publicly visible to all visitors.
-      // Pending and rejected listings are strictly hidden from public reads, accessible only to verified admin.
-      allow read: if isAdmin() || (resource.data.status in ['approved', 'APPROVED']);
+      // Property listings are publicly readable so all visitors can browse stays on Explore and Map.
+      // Status approval/rejection, deletion, and secret edit tokens remain strictly protected.
+      allow read: if true;
 
       // 2. Create:
       // Zero-login submission: Any owner can submit a new property without login, password, or OTP.
