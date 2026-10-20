@@ -13,7 +13,8 @@ import {
   X,
   Database,
   MessageCircle,
-  Plus
+  Plus,
+  Wrench
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp } from '../utils/contact';
@@ -106,15 +107,18 @@ export const Header: React.FC = () => {
             </button>
 
             <button
-              onClick={() => navigateTo('tiffin')}
-              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-                activeTab === 'tiffin'
-                  ? 'bg-blue-50 text-blue-700'
+              onClick={() => navigateTo('services')}
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 ${
+                activeTab === 'services' || activeTab === 'tiffin'
+                  ? 'bg-blue-50 text-blue-700 font-bold'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <Utensils className="w-4 h-4" />
-              <span>Tiffin & Mess</span>
+              <Wrench className="w-4 h-4" />
+              <span>Services</span>
+              <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase">
+                Mess & More
+              </span>
             </button>
 
             <button
@@ -312,13 +316,18 @@ export const Header: React.FC = () => {
             Interactive Gondia Map
           </button>
           <button
-            onClick={() => { navigateTo('tiffin'); setMobileMenuOpen(false); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold ${
-              activeTab === 'tiffin' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
+            onClick={() => { navigateTo('services'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
+              activeTab === 'services' || activeTab === 'tiffin' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
             }`}
           >
-            <Utensils className="w-4 h-4 text-blue-600" />
-            Tiffin & Mess Services
+            <div className="flex items-center gap-3">
+              <Wrench className="w-4 h-4 text-blue-600" />
+              <span>Gondia Local Services</span>
+            </div>
+            <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+              Mess, Maid, Repair
+            </span>
           </button>
           <button
             onClick={() => { navigateTo('saved'); setMobileMenuOpen(false); }}

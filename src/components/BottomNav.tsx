@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, MapPin, Utensils, Bookmark, UserCheck } from 'lucide-react';
+import { Building2, MapPin, Wrench, Bookmark, UserCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export const BottomNav: React.FC = () => {
@@ -29,13 +29,13 @@ export const BottomNav: React.FC = () => {
         </button>
 
         <button
-          onClick={() => navigateTo('tiffin')}
+          onClick={() => navigateTo('services')}
           className={`flex flex-col items-center py-1 px-2.5 rounded-lg transition-colors ${
-            activeTab === 'tiffin' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+            activeTab === 'services' || activeTab === 'tiffin' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <Utensils className="w-5 h-5" />
-          <span className="text-[11px] mt-0.5">Tiffin</span>
+          <Wrench className="w-5 h-5" />
+          <span className="text-[11px] mt-0.5">Services</span>
         </button>
 
         <button

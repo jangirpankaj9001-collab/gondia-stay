@@ -236,10 +236,34 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Tiffin Services Collection
+    // Tiffin Services Collection (Legacy support)
     match /tiffin_services/{serviceId} {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Services Collection: Gondia local services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security)
+    match /services/{serviceId} {
+      // 1. Read: Only approved services are visible to public visitors. Verified admin can read all (pending, approved, rejected).
+      allow read: if (resource.data.status in ['approved', 'APPROVED']) || isAdmin();
+
+      // 2. Create: Anyone in Gondia can register/submit their service listing, but status MUST default to 'pending' (no self-approval).
+      allow create: if (
+        request.resource.data.status in ['pending', 'PENDING']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 5
+        && request.resource.data.category is string
+      ) || isAdmin();
+
+      // 3. Update: Strictly restricted to authenticated administrator for approval, rejection, or updates.
+      allow update: if isAdmin();
+
+      // 4. Delete: Strictly restricted to authenticated administrator.
+      allow delete: if isAdmin();
+    }
   }
 }
+

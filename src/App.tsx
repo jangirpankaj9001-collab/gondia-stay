@@ -47,7 +47,10 @@ import {
   Link as LinkIcon,
   ShieldAlert,
   Mail,
-  X
+  X,
+  Wrench,
+  Droplets,
+  Shirt
 } from 'lucide-react';
 import { 
   uploadMultiplePropertyPhotos, 
@@ -64,6 +67,8 @@ import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { PropertyCard } from './components/PropertyCard';
 import { TiffinCard } from './components/TiffinCard';
+import { ServiceCard } from './components/ServiceCard';
+import { AddServiceModal } from './components/AddServiceModal';
 import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
 import { GondiaMap } from './components/GondiaMap';
@@ -85,7 +90,10 @@ import {
   isPending,
   isRejected,
   isOccupied,
-  isAvailable
+  isAvailable,
+  ServiceItem,
+  ServiceCategory,
+  SERVICE_CATEGORIES
 } from './types';
 import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps } from './utils/contact';
 
@@ -93,6 +101,10 @@ export const App: React.FC = () => {
   const {
     properties,
     tiffinServices,
+    services,
+    saveService,
+    moderateService,
+    deleteService,
     favorites,
     currentOwner,
     searchQuery,
@@ -149,6 +161,15 @@ export const App: React.FC = () => {
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
   const [copiedPropId, setCopiedPropId] = useState<string | null>(null);
   const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [adminModerationSection, setAdminModerationSection] = useState<'properties' | 'services'>('properties');
+  const [adminServiceModerationFilter, setAdminServiceModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  
+  // Services Section States
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState<'ALL' | ServiceCategory>('ALL');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+  const [serviceLocalityFilter, setServiceLocalityFilter] = useState('All');
+  const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
+
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState('jangirpankaj9001@gmail.com');
@@ -650,6 +671,70 @@ export const App: React.FC = () => {
   const rejectedProperties = useMemo(() => {
     return properties.filter(p => (p.status || '').toLowerCase() === 'rejected');
   }, [properties]);
+
+  // Gondia Services grouped for Admin Moderation & Public display
+  const pendingServices = useMemo(() => {
+    return services.filter(s => isPending(s.status));
+  }, [services]);
+
+  const approvedServices = useMemo(() => {
+    return services.filter(s => isApproved(s.status));
+  }, [services]);
+
+  const rejectedServices = useMemo(() => {
+    return services.filter(s => (s.status || '').toLowerCase() === 'rejected');
+  }, [services]);
+
+  // Filtered services for the Services Tab
+  const filteredServices = useMemo(() => {
+    return services.filter(s => {
+      // Ordinary public visitors only see approved listings
+      if (!isAdminAuthenticated && !isApproved(s.status)) {
+        return false;
+      }
+
+      // Category filter
+      if (selectedServiceCategory !== 'ALL' && s.category !== selectedServiceCategory) {
+        return false;
+      }
+
+      // Locality filter
+      if (serviceLocalityFilter !== 'All') {
+        const inAreas = (s.serviceAreas || []).some(area => 
+          area.toLowerCase() === 'all gondia' || 
+          area.toLowerCase() === serviceLocalityFilter.toLowerCase()
+        );
+        const inBaseLocality = (s.locality || '').toLowerCase() === serviceLocalityFilter.toLowerCase();
+        if (!inAreas && !inBaseLocality) {
+          return false;
+        }
+      }
+
+      // Search Query filter
+      if (serviceSearchQuery.trim()) {
+        const queryLower = serviceSearchQuery.toLowerCase().trim();
+        const matchesTitle = s.title.toLowerCase().includes(queryLower);
+        const matchesProvider = s.providerName.toLowerCase().includes(queryLower);
+        const matchesDesc = s.description.toLowerCase().includes(queryLower);
+        const matchesCategory = (s.category || '').toLowerCase().includes(queryLower);
+        const matchesAreas = (s.serviceAreas || []).some(a => a.toLowerCase().includes(queryLower));
+        const matchesSpecialties = (s.specialties || []).some(spec => spec.toLowerCase().includes(queryLower));
+
+        if (!matchesTitle && !matchesProvider && !matchesDesc && !matchesCategory && !matchesAreas && !matchesSpecialties) {
+          return false;
+        }
+      }
+
+      return true;
+    }).sort((a, b) => {
+      // Highlight Mess/Tiffin or featured services
+      if (a.isFeatured && !b.isFeatured) return -1;
+      if (!a.isFeatured && b.isFeatured) return 1;
+      if (a.category === 'MESS_TIFFIN' && b.category !== 'MESS_TIFFIN' && selectedServiceCategory === 'ALL') return -1;
+      if (a.category !== 'MESS_TIFFIN' && b.category === 'MESS_TIFFIN' && selectedServiceCategory === 'ALL') return 1;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  }, [services, selectedServiceCategory, serviceLocalityFilter, serviceSearchQuery, isAdminAuthenticated]);
 
   // Handle Form Submission
   // Requirement 1 & 2: Connect owner listing form to Firestore and save immediately
@@ -1464,30 +1549,244 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* ===================== TIFFIN TAB ===================== */}
-        {activeTab === 'tiffin' && (
+        {/* ===================== SERVICES TAB ===================== */}
+        {(activeTab === 'services' || activeTab === 'tiffin') && (
           <div className="space-y-6">
-            <div className="rounded-3xl bg-gradient-to-r from-amber-600 to-orange-600 text-white p-8 shadow-xl relative overflow-hidden">
-              <div className="relative z-10 max-w-2xl">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold uppercase tracking-wider backdrop-blur-xs mb-3">
-                  <Utensils className="w-3.5 h-3.5" />
-                  Daily Student & Working Professional Food
-                </span>
-                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight mb-2">
-                  Verified Tiffin & Mess in Gondia
-                </h1>
-                <p className="text-sm sm:text-base text-amber-100 font-normal">
-                  Fresh, hygienic, home-cooked daily meals delivered to your room or hostel across Gondia. Direct WhatsApp enquiry with mess vendors.
-                </p>
+            
+            {/* Services Hero Header Banner */}
+            <div className="rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 right-10 w-72 h-72 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+              
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="max-w-2xl space-y-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-wider backdrop-blur-xs">
+                      <Wrench className="w-3.5 h-3.5 text-amber-300" />
+                      Gondia Verified Local Services
+                    </span>
+                    <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                      0% Commission
+                    </span>
+                  </div>
+
+                  <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
+                    Home, Mess & Student Services in Gondia
+                  </h1>
+
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
+                    Discover authentic daily Mess & Tiffin services, police-verified maids, housekeeping deep cleaners, laundry, licensed electricians, plumbers, chilled RO water cans, and security guards across Gondia.
+                  </p>
+                </div>
+
+                {/* Right Action: Register Service Button */}
+                <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddServiceModalOpen(true)}
+                    className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-2xl transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>Register Your Service</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Tiffin Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {tiffinServices.map(tiffin => (
-                <TiffinCard key={tiffin.id} tiffin={tiffin} />
-              ))}
+            {/* Category Filter Pills (Horizontal Scrolling) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                    Service Categories
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    ({filteredServices.length} {filteredServices.length === 1 ? 'service' : 'services'} available)
+                  </span>
+                </div>
+
+                {selectedServiceCategory !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedServiceCategory('ALL')}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    View All Categories
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                
+                {/* All Services Pill */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedServiceCategory('ALL')}
+                  className={`px-3.5 py-2 rounded-2xl text-xs font-black transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                    selectedServiceCategory === 'ALL'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>All Services</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    selectedServiceCategory === 'ALL' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {services.filter(s => isAdminAuthenticated || isApproved(s.status)).length}
+                  </span>
+                </button>
+
+                {/* Categories with Mess/Tiffin prominently highlighted */}
+                {SERVICE_CATEGORIES.map(cat => {
+                  const isSelected = selectedServiceCategory === cat.id;
+                  const isHighlighted = cat.isMainHighlighted;
+                  const catCount = services.filter(s => 
+                    s.category === cat.id && (isAdminAuthenticated || isApproved(s.status))
+                  ).length;
+
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedServiceCategory(cat.id)}
+                      className={`px-3.5 py-2 rounded-2xl text-xs font-extrabold transition-all shrink-0 flex items-center gap-2 cursor-pointer border ${
+                        isSelected
+                          ? isHighlighted
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 border-amber-400 shadow-md ring-2 ring-amber-300'
+                            : 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : isHighlighted
+                            ? 'bg-amber-50/80 text-amber-950 border-amber-300 hover:border-amber-400 hover:bg-amber-100/70 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isHighlighted && (
+                        <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded">
+                          Main
+                        </span>
+                      )}
+                      <span>{cat.shortLabel}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                        isSelected 
+                          ? isHighlighted ? 'bg-amber-700 text-white' : 'bg-blue-800 text-white' 
+                          : isHighlighted ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {catCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Search & Locality Filter Controls Bar */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              
+              {/* Search input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={serviceSearchQuery}
+                  onChange={(e) => setServiceSearchQuery(e.target.value)}
+                  placeholder="Search services, provider name, plumber, electrician, tiffin, maid..."
+                  className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none"
+                />
+                {serviceSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setServiceSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Locality selector */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <select
+                    value={serviceLocalityFilter}
+                    onChange={(e) => setServiceLocalityFilter(e.target.value)}
+                    className="pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:border-blue-600 outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="All">All Gondia Localities</option>
+                    {GONDIA_LOCALITIES.filter(l => l !== 'All').map(loc => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reset Filters button if applied */}
+                {(serviceSearchQuery || serviceLocalityFilter !== 'All' || selectedServiceCategory !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceSearchQuery('');
+                      setServiceLocalityFilter('All');
+                      setSelectedServiceCategory('ALL');
+                    }}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors shrink-0"
+                    title="Reset all service filters"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Services Cards Grid */}
+            {filteredServices.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredServices.map(service => (
+                  <ServiceCard 
+                    key={service.id} 
+                    service={service} 
+                    isAdmin={isAdminAuthenticated}
+                    onModerate={moderateService}
+                    onDelete={deleteService}
+                  />
+                ))}
+              </div>
+            ) : (
+              /* Empty state */
+              <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                  <Wrench className="w-7 h-7" />
+                </div>
+                <div className="space-y-1 max-w-sm mx-auto">
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    No Services Found
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    We couldn't find any service matching your current category, search, or locality filter.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceSearchQuery('');
+                      setServiceLocalityFilter('All');
+                      setSelectedServiceCategory('ALL');
+                    }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Reset Filters
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddServiceModalOpen(true)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Register a Service Here</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2876,43 +3175,85 @@ export const App: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* Moderation Status Tabs */}
-                    <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
+                    {/* Admin Moderation Section Selector (Properties vs Services) */}
+                    <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl">
                       <button
                         type="button"
-                        onClick={() => setAdminModerationFilter('pending')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                          adminModerationFilter === 'pending'
-                            ? 'bg-amber-500 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        onClick={() => setAdminModerationSection('properties')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          adminModerationSection === 'properties'
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>Pending Review</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                          adminModerationFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
-                        }`}>
-                          {pendingProperties.length}
-                        </span>
+                        <Building2 className="w-4 h-4 text-blue-600" />
+                        <span>Rental Properties</span>
+                        {pendingProperties.length > 0 && (
+                          <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                            {pendingProperties.length} pending
+                          </span>
+                        )}
                       </button>
 
                       <button
                         type="button"
-                        onClick={() => setAdminModerationFilter('approved')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                          adminModerationFilter === 'approved'
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        onClick={() => setAdminModerationSection('services')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          adminModerationSection === 'services'
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Approved & Public</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                          adminModerationFilter === 'approved' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
-                        }`}>
-                          {approvedProperties.length}
-                        </span>
+                        <Wrench className="w-4 h-4 text-amber-600" />
+                        <span>Local Services</span>
+                        {pendingServices.length > 0 && (
+                          <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                            {pendingServices.length} pending
+                          </span>
+                        )}
                       </button>
+                    </div>
+
+                    {/* Properties Moderation View */}
+                    {adminModerationSection === 'properties' && (
+                      <div className="space-y-4">
+                        {/* Moderation Status Tabs */}
+                        <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setAdminModerationFilter('pending')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              adminModerationFilter === 'pending'
+                                ? 'bg-amber-500 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Pending Review</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                              adminModerationFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {pendingProperties.length}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAdminModerationFilter('approved')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              adminModerationFilter === 'approved'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Approved & Public</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                              adminModerationFilter === 'approved' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {approvedProperties.length}
+                            </span>
+                          </button>
 
                       <button
                         type="button"
@@ -3055,6 +3396,186 @@ export const App: React.FC = () => {
                                     }}
                                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                                     title="Permanently Delete Listing"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Delete</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Local Services Moderation View */}
+                {adminModerationSection === 'services' && (
+                  <div className="space-y-4">
+                    {/* Status Filter Tabs */}
+                    <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setAdminServiceModerationFilter('pending')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminServiceModerationFilter === 'pending'
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Pending Review</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminServiceModerationFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {pendingServices.length}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminServiceModerationFilter('approved')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminServiceModerationFilter === 'approved'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Approved & Public</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminServiceModerationFilter === 'approved' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {approvedServices.length}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminServiceModerationFilter('rejected')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminServiceModerationFilter === 'rejected'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Rejected</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminServiceModerationFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {rejectedServices.length}
+                        </span>
+                      </button>
+
+                      <div className="ml-auto">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddServiceModalOpen(true)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Service</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const displayedServices = adminServiceModerationFilter === 'pending'
+                        ? pendingServices
+                        : adminServiceModerationFilter === 'approved'
+                          ? approvedServices
+                          : rejectedServices;
+
+                      if (displayedServices.length === 0) {
+                        return (
+                          <div className="text-center py-12 bg-white rounded-3xl border border-slate-200">
+                            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-slate-800">
+                              {adminServiceModerationFilter === 'pending'
+                                ? 'No pending services awaiting verification.'
+                                : adminServiceModerationFilter === 'approved'
+                                  ? 'No approved services yet.'
+                                  : 'No rejected services.'}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              All service listings in Cloud Firestore are synchronized in real-time.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          {displayedServices.map(srv => {
+                            const catMeta = SERVICE_CATEGORIES.find(c => c.id === srv.category);
+                            return (
+                              <div key={srv.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3.5">
+                                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
+                                    <img 
+                                      src={srv.photos[0] || (srv.category === 'MESS_TIFFIN' ? '/hero_tiffin_mess.jpg' : '/hero_gondia_stays.jpg')} 
+                                      alt={srv.title}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                        isApproved(srv.status)
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : isPending(srv.status)
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-rose-100 text-rose-800'
+                                      }`}>
+                                        {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
+                                      </span>
+                                      <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                                        {catMeta?.label || srv.category}
+                                      </span>
+                                      <span className="text-xs font-semibold text-slate-500">{srv.locality || 'Gondia'}</span>
+                                    </div>
+                                    <h4 className="text-sm font-bold text-slate-900">{srv.title}</h4>
+                                    <p className="text-xs text-slate-500 line-clamp-1">{srv.description}</p>
+                                    <div className="text-xs text-slate-600 font-medium pt-0.5">
+                                      Provider: <span className="font-bold text-slate-800">{srv.providerName}</span> ({formatDisplayPhone(srv.phone)}) • Charges: <span className="font-extrabold text-blue-700">{srv.charges}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                  {adminServiceModerationFilter !== 'approved' && (
+                                    <button
+                                      onClick={() => moderateService(srv.id, true)}
+                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Approve service and publish live"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4" />
+                                      <span>Approve</span>
+                                    </button>
+                                  )}
+
+                                  {adminServiceModerationFilter !== 'rejected' && (
+                                    <button
+                                      onClick={() => moderateService(srv.id, false)}
+                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Reject service listing"
+                                    >
+                                      <XCircle className="w-4 h-4" />
+                                      <span>Reject</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm(`Permanently delete "${srv.title}" from Cloud Firestore?`)) {
+                                        deleteService(srv.id);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                    title="Delete service"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                     <span>Delete</span>
@@ -3545,6 +4066,13 @@ export const App: React.FC = () => {
           <span>Post Property</span>
         </button>
       )}
+
+      {/* Add / Register Local Service Modal */}
+      <AddServiceModal
+        isOpen={isAddServiceModalOpen}
+        onClose={() => setIsAddServiceModalOpen(false)}
+        isAdmin={isAdminAuthenticated}
+      />
 
       {/* Global Toast Notification */}
       {toastMessage && (

@@ -105,6 +105,135 @@ export interface TiffinService {
   isFeatured?: boolean;
 }
 
+export type ServiceCategory = 
+  | 'MESS_TIFFIN'
+  | 'MAID'
+  | 'HOUSEKEEPING'
+  | 'LAUNDRY'
+  | 'ELECTRICIAN'
+  | 'PLUMBER'
+  | 'WATER_CANS'
+  | 'SECURITY';
+
+export interface ServiceCategoryMeta {
+  id: ServiceCategory;
+  label: string;
+  shortLabel: string;
+  iconName: string;
+  badge?: string;
+  isMainHighlighted?: boolean;
+  defaultUnit: string;
+  exampleCharge: string;
+  description: string;
+}
+
+export const SERVICE_CATEGORIES: ServiceCategoryMeta[] = [
+  {
+    id: 'MESS_TIFFIN',
+    label: 'Mess / Tiffin Service',
+    shortLabel: 'Mess / Tiffin',
+    iconName: 'Utensils',
+    badge: 'Popular & Essential',
+    isMainHighlighted: true,
+    defaultUnit: 'month',
+    exampleCharge: '₹2,500 / month',
+    description: 'Daily home-cooked meals, thalis, and tiffin delivery across Gondia'
+  },
+  {
+    id: 'MAID',
+    label: 'Maid & Domestic Help',
+    shortLabel: 'Maid',
+    iconName: 'Sparkles',
+    defaultUnit: 'month',
+    exampleCharge: '₹1,500 / month',
+    description: 'Daily cooking, dish washing, floor sweeping & mopping assistance'
+  },
+  {
+    id: 'HOUSEKEEPING',
+    label: 'Housekeeping & Cleaning',
+    shortLabel: 'Housekeeping',
+    iconName: 'Home',
+    defaultUnit: 'visit',
+    exampleCharge: '₹800 / visit',
+    description: 'Deep bathroom cleaning, kitchen degreasing, and move-in sanitize'
+  },
+  {
+    id: 'LAUNDRY',
+    label: 'Laundry & Ironing',
+    shortLabel: 'Laundry',
+    iconName: 'Shirt',
+    defaultUnit: 'piece / month',
+    exampleCharge: '₹10 / piece',
+    description: 'Steam press, washing, dry-cleaning & doorstep laundry pickup'
+  },
+  {
+    id: 'ELECTRICIAN',
+    label: 'Electrician',
+    shortLabel: 'Electrician',
+    iconName: 'Zap',
+    defaultUnit: 'visit',
+    exampleCharge: '₹150 / visit',
+    description: 'Wiring, fan/cooler fitting, MCB repair, switchboard & inverter repair'
+  },
+  {
+    id: 'PLUMBER',
+    label: 'Plumber',
+    shortLabel: 'Plumber',
+    iconName: 'Wrench',
+    defaultUnit: 'visit',
+    exampleCharge: '₹150 / visit',
+    description: 'Leakage repairs, tap and shower fitting, pipeline installation & RO fit'
+  },
+  {
+    id: 'WATER_CANS',
+    label: 'Water Cans (RO Supply)',
+    shortLabel: 'Water Cans',
+    iconName: 'Droplets',
+    defaultUnit: 'can',
+    exampleCharge: '₹30 / 20L can',
+    description: 'Chilled RO drinking water 20L cans delivered to your flat or hostel'
+  },
+  {
+    id: 'SECURITY',
+    label: 'Security (CCTV / Guard)',
+    shortLabel: 'Security',
+    iconName: 'ShieldCheck',
+    defaultUnit: 'service',
+    exampleCharge: 'Starting ₹1,200',
+    description: 'CCTV setup, DVR repair, residential night guard & gate security'
+  }
+];
+
+export interface ServiceItem {
+  id: string;
+  title: string;
+  category: ServiceCategory;
+  providerName: string;
+  phone: string;
+  whatsappNumber?: string;
+  charges: string;
+  chargeUnit?: string;
+  priceNumeric?: number;
+  description: string;
+  serviceAreas: string[];
+  locality?: string;
+  city?: string;
+  address?: string;
+  photos: string[];
+  businessCardPhoto?: string;
+  timing?: string;
+  experienceYears?: number;
+  status: ListingStatus;
+  rating?: number;
+  reviewCount?: number;
+  isFeatured?: boolean;
+  specialties?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+  moderatedAt?: number;
+  moderatedBy?: string;
+}
+
 export type SortOption = 
   | 'RELEVANCE'
   | 'RENT_LOW_TO_HIGH'

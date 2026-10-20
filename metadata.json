@@ -1,6 +1,6 @@
 {
   "name": "Gondia Stay",
-  "description": "Find and rent flats, PGs, and rooms, explore tiffin and mess services, with interactive locality map and owner dashboard in Gondia, Maharashtra.",
+  "description": "Find and rent flats, PGs, and rooms, discover local services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security), with interactive map and owner dashboard in Gondia.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

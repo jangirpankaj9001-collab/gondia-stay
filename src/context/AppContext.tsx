@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { 
   PropertyListing, 
   TiffinService, 
+  ServiceItem,
   PropertyType, 
   SortOption, 
   FilterCriteria, 
@@ -16,7 +17,7 @@ import {
   User,
   sendEmailVerification
 } from 'firebase/auth';
-import { INITIAL_TIFFINS } from '../data/initialData';
+import { INITIAL_TIFFINS, INITIAL_SERVICES } from '../data/initialData';
 import { 
   auth,
   isFirebaseConfigured
@@ -32,10 +33,21 @@ import {
   SavePropertyResult,
   getCachedProperties
 } from '../firebase/propertiesService';
+import {
+  subscribeToFirestoreServices,
+  saveServiceToFirestore,
+  moderateServiceInFirestore,
+  deleteServiceInFirestore,
+  getCachedServices
+} from '../firebase/servicesService';
 
 interface AppContextType {
   properties: PropertyListing[];
   tiffinServices: TiffinService[];
+  services: ServiceItem[];
+  saveService: (service: Partial<ServiceItem>) => Promise<{ success: boolean; serviceId: string; error?: string }>;
+  moderateService: (serviceId: string, approve: boolean) => Promise<boolean>;
+  deleteService: (serviceId: string) => Promise<boolean>;
   favorites: string[];
   currentOwner: OwnerProfile;
   searchQuery: string;
@@ -44,7 +56,7 @@ interface AppContextType {
   sortOption: SortOption;
   filterCriteria: FilterCriteria;
   selectedProperty: PropertyListing | null;
-  activeTab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail';
+  activeTab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail';
   toastMessage: string | null;
 
   // Firebase Firestore Status & Moderation
@@ -75,7 +87,7 @@ interface AppContextType {
   deleteProperty: (propertyId: string) => Promise<void>;
   toggleFeatured: (propertyId: string) => void;
   approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
-  navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
+  navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
   showToast: (msg: string) => void;
   resetFilters: () => void;
   loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string; needsVerification?: boolean }>;
@@ -118,6 +130,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAdminLoading, setIsAdminLoading] = useState<boolean>(true);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isOwnerAuthenticated, setIsOwnerAuthenticated] = useState<boolean>(false);
+
+  // GondiaStay Services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security)
+  const [services, setServices] = useState<ServiceItem[]>(() => getCachedServices());
 
   const [tiffinServices, setTiffinServices] = useState<TiffinService[]>(() => {
     try {
@@ -174,7 +189,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [sortOption, setSortOption] = useState<SortOption>('RELEVANCE');
   const [filterCriteria, setFilterCriteria] = useState<FilterCriteria>(defaultFilterCriteria);
   const [selectedProperty, setSelectedProperty] = useState<PropertyListing | null>(null);
-  const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail'>('explore');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -262,6 +277,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const msg = error.message || 'Error connecting to Cloud Firestore';
         setFirestoreError(msg);
         console.warn('[GondiaStay] Firestore sync warning:', msg);
+      },
+      isAdminAuthenticated
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isAdminAuthenticated]);
+
+  // Set up real-time Cloud Firestore subscription on the 'services' collection
+  useEffect(() => {
+    const configured = isFirebaseConfigured();
+    if (!configured) return;
+
+    const unsubscribe = subscribeToFirestoreServices(
+      (remoteServices) => {
+        setServices(remoteServices);
+      },
+      (error) => {
+        console.warn('[GondiaStay] Services sync notice:', error.message);
       },
       isAdminAuthenticated
     );
@@ -492,6 +527,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ));
     showToast(approve ? "Listing approved in Cloud Firestore! Live for all visitors." : "Listing rejected.");
     return true;
+  };
+
+  /**
+   * Submits a new local service to Cloud Firestore and updates local state.
+   */
+  const saveService = async (
+    service: Partial<ServiceItem>
+  ): Promise<{ success: boolean; serviceId: string; error?: string }> => {
+    const result = await saveServiceToFirestore(service, isAdminAuthenticated);
+    if (result.success) {
+      showToast(isAdminAuthenticated ? "Service listing published!" : "Service submitted! Awaiting admin verification.");
+      const cleanService: ServiceItem = {
+        id: result.serviceId,
+        title: service.title || '',
+        category: service.category || 'MESS_TIFFIN',
+        providerName: service.providerName || '',
+        phone: service.phone || '',
+        whatsappNumber: service.whatsappNumber || service.phone || '',
+        charges: service.charges || '',
+        description: service.description || '',
+        serviceAreas: service.serviceAreas || ['All Gondia'],
+        locality: service.locality || 'Civil Lines',
+        photos: service.photos || [],
+        businessCardPhoto: service.businessCardPhoto || '',
+        status: (isAdminAuthenticated ? 'approved' : 'pending') as any,
+        timing: service.timing || '8:00 AM - 8:00 PM',
+        createdAt: Date.now()
+      };
+      setServices(prev => [cleanService, ...prev.filter(s => s.id !== result.serviceId)]);
+    } else {
+      showToast(result.error || "Failed to save service");
+    }
+    return result;
+  };
+
+  /**
+   * Moderates (approves or rejects) a service listing in Cloud Firestore.
+   */
+  const moderateService = async (serviceId: string, approve: boolean): Promise<boolean> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to moderate services.");
+      return false;
+    }
+    const adminEmail = adminUser?.email || 'admin';
+    const success = await moderateServiceInFirestore(serviceId, approve, adminEmail);
+    if (success) {
+      setServices(prev => prev.map(s => s.id === serviceId ? { ...s, status: (approve ? 'approved' : 'rejected') as any } : s));
+      showToast(approve ? "Service approved! Live for all visitors in Gondia." : "Service rejected.");
+    }
+    return success;
+  };
+
+  /**
+   * Deletes a service listing permanently from Cloud Firestore.
+   */
+  const deleteService = async (serviceId: string): Promise<boolean> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to delete services.");
+      return false;
+    }
+    const success = await deleteServiceInFirestore(serviceId);
+    if (success) {
+      setServices(prev => prev.filter(s => s.id !== serviceId));
+      showToast("Service listing removed.");
+    }
+    return success;
   };
 
   /**
@@ -736,11 +837,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return isAdminAuthenticated;
   };
 
-  const navigateTo = (tab: 'explore' | 'map' | 'tiffin' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => {
+  const navigateTo = (tab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => {
     if (property) {
       setSelectedProperty(property);
     }
-    setActiveTab(tab);
+    const targetTab = tab === 'tiffin' ? 'services' : tab;
+    setActiveTab(targetTab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -765,6 +867,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       properties,
       tiffinServices,
+      services,
+      saveService,
+      moderateService,
+      deleteService,
       favorites,
       currentOwner,
       searchQuery,
