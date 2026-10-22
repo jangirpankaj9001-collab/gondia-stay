@@ -26,6 +26,7 @@ import {
   Check,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Filter,
   Database,
   Lock,
@@ -1692,84 +1693,42 @@ export const App: React.FC = () => {
               selectedCategory={selectedServiceCategory}
               onSelectCategory={setSelectedServiceCategory}
               isAdmin={isAdminAuthenticated}
+              onModerate={moderateService}
+              onDelete={deleteService}
             />
 
-            {/* Detailed Cards Section Header */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-extrabold text-slate-900">
-                  {selectedServiceCategory === 'ALL' 
-                    ? `Detailed Provider Cards (${filteredServices.length})` 
-                    : `${SERVICE_CATEGORIES.find(c => c.id === selectedServiceCategory)?.label || selectedServiceCategory} Providers (${filteredServices.length})`
-                  }
-                </h3>
-                {selectedServiceCategory !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedServiceCategory('ALL')}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    (Show All)
-                  </button>
-                )}
-              </div>
+            {/* Optional Full Photo & Visiting Card Gallery Section */}
+            <div className="pt-2">
+              <details className="group bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs">
+                <summary className="p-3.5 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs sm:text-sm font-extrabold text-slate-800">
+                      View Full Photo & Visiting Card Gallery ({filteredServices.length} providers)
+                    </span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
+                </summary>
 
-              <span className="text-[11px] font-semibold text-slate-500">
-                Direct phone & WhatsApp verification
-              </span>
+                <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/50">
+                  {filteredServices.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredServices.map(service => (
+                        <ServiceCard 
+                          key={service.id} 
+                          service={service} 
+                          isAdmin={isAdminAuthenticated}
+                          onModerate={moderateService}
+                          onDelete={deleteService}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 text-center py-4">No matching photo cards found.</p>
+                  )}
+                </div>
+              </details>
             </div>
-
-            {/* Services Cards Grid */}
-            {filteredServices.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredServices.map(service => (
-                  <ServiceCard 
-                    key={service.id} 
-                    service={service} 
-                    isAdmin={isAdminAuthenticated}
-                    onModerate={moderateService}
-                    onDelete={deleteService}
-                  />
-                ))}
-              </div>
-            ) : (
-              /* Empty state */
-              <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
-                  <Wrench className="w-7 h-7" />
-                </div>
-                <div className="space-y-1 max-w-sm mx-auto">
-                  <h3 className="text-base font-extrabold text-slate-900">
-                    No Services Found
-                  </h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    We couldn't find any service matching your current category, search, or locality filter.
-                  </p>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setServiceSearchQuery('');
-                      setServiceLocalityFilter('All');
-                      setSelectedServiceCategory('ALL');
-                    }}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                  >
-                    Reset Filters
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddServiceModalOpen(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Register a Service Here</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
