@@ -68,6 +68,7 @@ import { BottomNav } from './components/BottomNav';
 import { PropertyCard } from './components/PropertyCard';
 import { TiffinCard } from './components/TiffinCard';
 import { ServiceCard } from './components/ServiceCard';
+import { ServiceCategoryGrid } from './components/ServiceCategoryGrid';
 import { AddServiceModal } from './components/AddServiceModal';
 import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
@@ -735,6 +736,40 @@ export const App: React.FC = () => {
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
   }, [services, selectedServiceCategory, serviceLocalityFilter, serviceSearchQuery, isAdminAuthenticated]);
+
+  // Services available for the Category Grid (filtered by locality & query, preserving all categories)
+  const servicesForCategoryGrid = useMemo(() => {
+    return services.filter(s => {
+      if (!isAdminAuthenticated && !isApproved(s.status)) return false;
+
+      // Locality filter
+      if (serviceLocalityFilter !== 'All') {
+        const inAreas = (s.serviceAreas || []).some(area => 
+          area.toLowerCase() === 'all gondia' || 
+          area.toLowerCase() === serviceLocalityFilter.toLowerCase()
+        );
+        const inBaseLocality = (s.locality || '').toLowerCase() === serviceLocalityFilter.toLowerCase();
+        if (!inAreas && !inBaseLocality) return false;
+      }
+
+      // Search Query filter
+      if (serviceSearchQuery.trim()) {
+        const queryLower = serviceSearchQuery.toLowerCase().trim();
+        const matchesTitle = s.title.toLowerCase().includes(queryLower);
+        const matchesProvider = s.providerName.toLowerCase().includes(queryLower);
+        const matchesDesc = s.description.toLowerCase().includes(queryLower);
+        const matchesCategory = (s.category || '').toLowerCase().includes(queryLower);
+        const matchesAreas = (s.serviceAreas || []).some(a => a.toLowerCase().includes(queryLower));
+        const matchesSpecialties = (s.specialties || []).some(spec => spec.toLowerCase().includes(queryLower));
+
+        if (!matchesTitle && !matchesProvider && !matchesDesc && !matchesCategory && !matchesAreas && !matchesSpecialties) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [services, isAdminAuthenticated, serviceLocalityFilter, serviceSearchQuery]);
 
   // Handle Form Submission
   // Requirement 1 & 2: Connect owner listing form to Firestore and save immediately
@@ -1593,91 +1628,6 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Category Filter Pills (Horizontal Scrolling) */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Service Categories
-                  </span>
-                  <span className="text-[11px] font-bold text-slate-500">
-                    ({filteredServices.length} {filteredServices.length === 1 ? 'service' : 'services'} available)
-                  </span>
-                </div>
-
-                {selectedServiceCategory !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedServiceCategory('ALL')}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    View All Categories
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-                
-                {/* All Services Pill */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedServiceCategory('ALL')}
-                  className={`px-3.5 py-2 rounded-2xl text-xs font-black transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
-                    selectedServiceCategory === 'ALL'
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                      : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>All Services</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    selectedServiceCategory === 'ALL' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {services.filter(s => isAdminAuthenticated || isApproved(s.status)).length}
-                  </span>
-                </button>
-
-                {/* Categories with Mess/Tiffin prominently highlighted */}
-                {SERVICE_CATEGORIES.map(cat => {
-                  const isSelected = selectedServiceCategory === cat.id;
-                  const isHighlighted = cat.isMainHighlighted;
-                  const catCount = services.filter(s => 
-                    s.category === cat.id && (isAdminAuthenticated || isApproved(s.status))
-                  ).length;
-
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setSelectedServiceCategory(cat.id)}
-                      className={`px-3.5 py-2 rounded-2xl text-xs font-extrabold transition-all shrink-0 flex items-center gap-2 cursor-pointer border ${
-                        isSelected
-                          ? isHighlighted
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 border-amber-400 shadow-md ring-2 ring-amber-300'
-                            : 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                          : isHighlighted
-                            ? 'bg-amber-50/80 text-amber-950 border-amber-300 hover:border-amber-400 hover:bg-amber-100/70 shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isHighlighted && (
-                        <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded">
-                          Main
-                        </span>
-                      )}
-                      <span>{cat.shortLabel}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                        isSelected 
-                          ? isHighlighted ? 'bg-amber-700 text-white' : 'bg-blue-800 text-white' 
-                          : isHighlighted ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {catCount}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* Search & Locality Filter Controls Bar */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               
@@ -1688,7 +1638,7 @@ export const App: React.FC = () => {
                   type="text"
                   value={serviceSearchQuery}
                   onChange={(e) => setServiceSearchQuery(e.target.value)}
-                  placeholder="Search services, provider name, plumber, electrician, tiffin, maid..."
+                  placeholder="Search services, provider/owner name, electrician, plumber, tiffin, maid..."
                   className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none"
                 />
                 {serviceSearchQuery && (
@@ -1734,6 +1684,39 @@ export const App: React.FC = () => {
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* Service Categories in Grid View with Modern Sub Icons & Inside Appropriate Owners Listed */}
+            <ServiceCategoryGrid 
+              services={servicesForCategoryGrid}
+              selectedCategory={selectedServiceCategory}
+              onSelectCategory={setSelectedServiceCategory}
+              isAdmin={isAdminAuthenticated}
+            />
+
+            {/* Detailed Cards Section Header */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  {selectedServiceCategory === 'ALL' 
+                    ? `Detailed Provider Cards (${filteredServices.length})` 
+                    : `${SERVICE_CATEGORIES.find(c => c.id === selectedServiceCategory)?.label || selectedServiceCategory} Providers (${filteredServices.length})`
+                  }
+                </h3>
+                {selectedServiceCategory !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedServiceCategory('ALL')}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    (Show All)
+                  </button>
+                )}
+              </div>
+
+              <span className="text-[11px] font-semibold text-slate-500">
+                Direct phone & WhatsApp verification
+              </span>
             </div>
 
             {/* Services Cards Grid */}
@@ -4061,7 +4044,7 @@ export const App: React.FC = () => {
             setCurrentEditToken(null);
             openPostListing();
           }}
-          className="md:hidden fixed bottom-6 right-5 z-40 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 text-xs font-extrabold transition-all cursor-pointer border-2 border-white/80"
+          className="md:hidden fixed bottom-20 right-4 sm:right-5 z-40 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 text-xs font-extrabold transition-all cursor-pointer border-2 border-white/80"
           title="Post Property Listing in Gondia"
         >
           <Plus className="w-4 h-4 stroke-[3]" />

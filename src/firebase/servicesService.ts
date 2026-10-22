@@ -36,7 +36,15 @@ export const getCachedServices = (): ServiceItem[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        // Merge in any initial services that aren't already in cache
+        const existingIds = new Set(parsed.map((s: any) => s.id));
+        const merged = [...parsed];
+        INITIAL_SERVICES.forEach(initService => {
+          if (!existingIds.has(initService.id)) {
+            merged.push(initService);
+          }
+        });
+        return merged;
       }
     }
   } catch (err) {
