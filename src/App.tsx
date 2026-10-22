@@ -3594,6 +3594,8 @@ export const App: React.FC = () => {
 
           </div>
         )}
+          </div>
+        )}
 
         {/* ===================== DETAIL VIEW TAB ===================== */}
         {activeTab === 'detail' && selectedProperty && (
