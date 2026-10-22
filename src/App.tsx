@@ -1696,39 +1696,6 @@ export const App: React.FC = () => {
               onModerate={moderateService}
               onDelete={deleteService}
             />
-
-            {/* Optional Full Photo & Visiting Card Gallery Section */}
-            <div className="pt-2">
-              <details className="group bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs">
-                <summary className="p-3.5 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors select-none">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-blue-600" />
-                    <span className="text-xs sm:text-sm font-extrabold text-slate-800">
-                      View Full Photo & Visiting Card Gallery ({filteredServices.length} providers)
-                    </span>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
-                </summary>
-
-                <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/50">
-                  {filteredServices.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {filteredServices.map(service => (
-                        <ServiceCard 
-                          key={service.id} 
-                          service={service} 
-                          isAdmin={isAdminAuthenticated}
-                          onModerate={moderateService}
-                          onDelete={deleteService}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 text-center py-4">No matching photo cards found.</p>
-                  )}
-                </div>
-              </details>
-            </div>
           </div>
         )}
 
