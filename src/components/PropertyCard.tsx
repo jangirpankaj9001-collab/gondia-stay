@@ -191,17 +191,44 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
               100% Free Listing
             </span>
           </div>
+
+          {/* Property Landlord Identity - saved specifically in this listing's document */}
+          <div className="mt-2.5 bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
+                  {(property.ownerName || 'O')[0].toUpperCase()}
+                </div>
+                <span className="text-xs font-bold text-slate-800 truncate" title={property.ownerName || 'Property Owner'}>
+                  {property.ownerName || 'Property Owner'}
+                </span>
+              </div>
+              <span className="text-[9px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded-md shrink-0">
+                Landlord
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-slate-600 gap-2 pt-0.5">
+              <div className="flex items-center gap-1 font-semibold truncate text-slate-700" title={`Call Landlord: ${property.ownerPhone}`}>
+                <Phone className="w-3 h-3 text-blue-600 shrink-0" />
+                <span>{formatDisplayPhone(property.ownerPhone)}</span>
+              </div>
+              <div className="flex items-center gap-1 font-bold text-emerald-700 truncate" title={`WhatsApp Landlord: ${property.ownerWhatsappNumber || property.ownerPhone}`}>
+                <MessageCircle className="w-3 h-3 text-[#25D366] fill-[#25D366] shrink-0" />
+                <span>{formatDisplayPhone(property.ownerWhatsappNumber || property.ownerPhone)}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Action Buttons: Tenant View vs Owner View */}
-        <div className="mt-4 pt-3 border-t border-slate-100">
+        <div className="mt-3 pt-3 border-t border-slate-100">
           {isOwnerView ? (
             /* Landlord controls */
-            <div className="space-y-2.5">
-              {/* Landlord Contact Info Pill */}
-              <div className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
-                <span className="font-semibold text-slate-700 truncate">
-                  Owner: {property.ownerName} ({formatDisplayPhone(property.ownerPhone)})
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                <span className="font-bold text-slate-700 truncate">
+                  Status: {property.status?.toUpperCase() || 'PENDING'}
                 </span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                   occupied ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'

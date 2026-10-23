@@ -220,7 +220,7 @@ export const subscribeToFirestoreProperties = (
 export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const lower = email.toLowerCase().trim();
-  return lower === 'jangirpankaj9001@gmail.com';
+  return lower === 'jangirpankaj9001@gmail.com' || lower === 'jangirpankaj901@gmail.com';
 };
 
 export interface SavePropertyResult {

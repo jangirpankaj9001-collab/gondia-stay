@@ -1020,9 +1020,9 @@ export const App: React.FC = () => {
         suitableTenants: ['ALL'],
         availableFrom: 'Immediate',
         amenities: ['24/7 Water', 'Wi-Fi'],
-        ownerName: currentOwner.name,
-        ownerPhone: currentOwner.phone,
-        ownerWhatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
+        ownerName: '',
+        ownerPhone: '',
+        ownerWhatsappNumber: '',
         ownerPreferredContact: 'BOTH',
         latitude: 21.4602,
         longitude: 80.1945,
@@ -1068,9 +1068,9 @@ export const App: React.FC = () => {
       suitableTenants: property.suitableTenants || ['ALL'],
       availableFrom: property.availableFrom,
       amenities: property.amenities,
-      ownerName: property.ownerName || currentOwner.name,
-      ownerPhone: property.ownerPhone || currentOwner.phone,
-      ownerWhatsappNumber: property.ownerWhatsappNumber || property.ownerPhone || currentOwner.phone,
+      ownerName: property.ownerName || '',
+      ownerPhone: property.ownerPhone || '',
+      ownerWhatsappNumber: property.ownerWhatsappNumber || property.ownerPhone || '',
       ownerPreferredContact: property.ownerPreferredContact,
       latitude: property.latitude || GONDIA_LOCALITY_COORDS[property.locality]?.lat || 21.4602,
       longitude: property.longitude || GONDIA_LOCALITY_COORDS[property.locality]?.lng || 80.1945,
@@ -2214,7 +2214,21 @@ export const App: React.FC = () => {
                             </div>
                             <h4 className="text-sm font-bold text-slate-900 mt-1">{property.title}</h4>
                             <p className="text-xs text-slate-500">{property.address}, {property.locality}</p>
-                            <p className="text-xs font-bold text-blue-700 mt-0.5">₹{property.monthlyRent}/month</p>
+                            <div className="flex items-center gap-2 text-xs mt-1 flex-wrap">
+                              <span className="font-extrabold text-blue-700">₹{property.monthlyRent}/month</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-slate-700 font-bold">
+                                Owner: {property.ownerName || 'Property Owner'}
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-slate-600 font-medium">
+                                Tel: {formatDisplayPhone(property.ownerPhone)}
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-emerald-700 font-bold">
+                                WA: {formatDisplayPhone(property.ownerWhatsappNumber || property.ownerPhone)}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -2922,14 +2936,14 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Requirement 1 & 3: Actual Landlord Contact Information */}
+                  {/* Custom Landlord Contact Information */}
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                         <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        <span>Actual Landlord Contact Information (Stored in Cloud Firestore)</span>
+                        <span>Landlord Contact Identity (Saved in this Listing's Document)</span>
                       </div>
-                      <span className="text-[10px] text-slate-500">Auto-filled from owner account</span>
+                      <span className="text-[10px] text-emerald-700 font-bold">Displayed directly on your listing card</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
@@ -2939,7 +2953,7 @@ export const App: React.FC = () => {
                           required
                           value={formData.ownerName}
                           onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                          placeholder="e.g. Rajesh Sharma"
+                          placeholder="e.g. Ramesh Patel"
                           className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
                         />
                       </div>
@@ -2949,8 +2963,15 @@ export const App: React.FC = () => {
                           type="tel"
                           required
                           value={formData.ownerPhone}
-                          onChange={(e) => setFormData({ ...formData, ownerPhone: e.target.value })}
-                          placeholder="+91 98765 43210"
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              ownerPhone: val,
+                              ownerWhatsappNumber: prev.ownerWhatsappNumber ? prev.ownerWhatsappNumber : val
+                            }));
+                          }}
+                          placeholder="+91 98230 54321"
                           className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
                         />
                       </div>
@@ -2961,7 +2982,7 @@ export const App: React.FC = () => {
                           required
                           value={formData.ownerWhatsappNumber}
                           onChange={(e) => setFormData({ ...formData, ownerWhatsappNumber: e.target.value })}
-                          placeholder="+91 98765 43210"
+                          placeholder="+91 98230 54321"
                           className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
                         />
                       </div>
@@ -3957,17 +3978,21 @@ export const App: React.FC = () => {
                           <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                             Verified Landlord
                           </span>
-                          <h4 className="text-base font-bold text-slate-900 mt-0.5">{selectedProperty.ownerName}</h4>
-                          <p className="text-xs text-slate-500">Contact: {formatDisplayPhone(selectedProperty.ownerPhone)}</p>
+                          <h4 className="text-base font-bold text-slate-900 mt-0.5">{selectedProperty.ownerName || 'Property Owner'}</h4>
+                          <div className="flex items-center gap-3 text-xs text-slate-600 mt-1 flex-wrap">
+                            <span>Phone: <strong className="text-slate-900">{formatDisplayPhone(selectedProperty.ownerPhone)}</strong></span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-emerald-700 font-bold">WhatsApp: {formatDisplayPhone(selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone)}</span>
+                          </div>
                         </div>
                       </div>
 
                       {/* Owner or Admin Can Mark as Occupied */}
-                      {(currentOwner.id === selectedProperty.ownerId || isAdminAuthenticated) && (
+                      {(myListingTokens[selectedProperty.id] || currentOwner.id === selectedProperty.ownerId || isAdminAuthenticated) && (
                         <button
                           type="button"
                           onClick={async () => {
-                            await updatePropertyOccupancy(selectedProperty.id, 'OCCUPIED');
+                            await updatePropertyOccupancy(selectedProperty.id, 'OCCUPIED', myListingTokens[selectedProperty.id]);
                             showToast('Property marked as Rented / Occupied!');
                           }}
                           className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shrink-0"
@@ -3984,7 +4009,10 @@ export const App: React.FC = () => {
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                       <button
-                        onClick={() => openWhatsApp(selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone, selectedProperty.title)}
+                        onClick={() => openWhatsApp(
+                          selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone, 
+                          `Hello ${selectedProperty.ownerName || 'Landlord'}, I am interested in your listing '${selectedProperty.title}' in ${selectedProperty.locality}, Gondia on GondiaStay. Is it available for rent?`
+                        )}
                         className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
                       >
                         <MessageCircle className="w-4 h-4 fill-current" />

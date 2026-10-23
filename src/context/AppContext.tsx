@@ -225,7 +225,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsAdminAuthenticated(isAuthorizedEmail);
       setIsAdminLoading(false);
 
-      if (user) {
+      if (user && !isAuthorizedAdminEmail(user.email)) {
         setCurrentOwner(prev => {
           const updated: OwnerProfile = {
             ...prev,
