@@ -114,6 +114,12 @@ const defaultFilterCriteria: FilterCriteria = {
   statusOnlyApproved: true,
 };
 
+export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  const lower = email.trim().toLowerCase();
+  return lower === 'jangirpankaj9001@gmail.com' || lower === 'jangirpankaj901@gmail.com';
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -212,10 +218,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const isAuthorizedEmail = Boolean(
         user && user.email && 
-        user.email.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
+        isAuthorizedAdminEmail(user.email) &&
         user.emailVerified
       );
-      setAdminUser(user && user.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' ? user : null);
+      setAdminUser(user && isAuthorizedAdminEmail(user.email) ? user : null);
       setIsAdminAuthenticated(isAuthorizedEmail);
       setIsAdminLoading(false);
 
@@ -609,7 +615,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-    const isAuthorized = trimmedEmail === 'jangirpankaj9001@gmail.com';
+    const isAuthorized = isAuthorizedAdminEmail(trimmedEmail);
 
     // Strictly enforce that only the authorized administrator email can attempt admin login
     if (!isAuthorized) {
@@ -629,7 +635,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const user = userCredential.user;
       const userEmail = user.email?.toLowerCase();
 
-      if (!userEmail || userEmail !== 'jangirpankaj9001@gmail.com') {
+      if (!userEmail || !isAuthorizedAdminEmail(userEmail)) {
         await signOut(auth);
         setAdminUser(null);
         setIsAdminAuthenticated(false);

@@ -65,7 +65,7 @@ import {
   getCachedPhotoUrl
 } from './firebase/storageService';
 import { fetchPropertyDirect } from './firebase/propertiesService';
-import { useApp } from './context/AppContext';
+import { useApp, isAuthorizedAdminEmail } from './context/AppContext';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { PropertyCard } from './components/PropertyCard';
@@ -227,6 +227,25 @@ export const App: React.FC = () => {
       if (isAdminRoute) {
         navigateTo('owner');
         setOwnerSubTab('moderation');
+      }
+
+      // Secure direct URL routing to Firebase Connection panel (?firebase=true, #firebase, ?db=true, #firestore)
+      const isFirebaseDirectRoute = 
+        searchParams.get('firebase') === 'true' || 
+        searchParams.get('db') === 'true' || 
+        searchParams.get('firestore') === 'true' || 
+        window.location.hash === '#firebase' || 
+        window.location.hash === '#firestore' ||
+        window.location.hash === '#db';
+
+      if (isFirebaseDirectRoute) {
+        if (isAdminAuthenticated) {
+          setIsFirebaseModalOpen(true);
+        } else {
+          navigateTo('owner');
+          setOwnerSubTab('moderation');
+          showToast('Administrator authentication required to access Cloud Firestore settings.');
+        }
       }
     } catch (e) {
       console.warn('URL parameter parse notice:', e);
@@ -1093,7 +1112,7 @@ export const App: React.FC = () => {
     setAdminAuthError(null);
 
     const emailTrimmed = adminEmail.trim().toLowerCase();
-    if (emailTrimmed !== 'jangirpankaj9001@gmail.com') {
+    if (!isAuthorizedAdminEmail(emailTrimmed)) {
       setAdminAuthError('Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj9001@gmail.com) can access this console.');
       return;
     }
@@ -1162,8 +1181,8 @@ export const App: React.FC = () => {
       {/* Top Header */}
       <Header />
 
-      {/* Database Status Alert Bar (if disconnected or error) */}
-      {!isFirebaseConnected && (
+      {/* Database Status Alert Bar (if disconnected - Admin Only) */}
+      {isAdminAuthenticated && !isFirebaseConnected && (
         <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white text-xs px-4 py-2.5 shadow-xs flex items-center justify-between">
           <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -1174,7 +1193,7 @@ export const App: React.FC = () => {
             </div>
             <button
               onClick={() => setIsFirebaseModalOpen(true)}
-              className="bg-white text-amber-900 hover:bg-amber-50 px-3 py-1 rounded-lg font-bold text-[11px] shrink-0 transition-colors shadow-xs"
+              className="bg-white text-amber-900 hover:bg-amber-50 px-3 py-1 rounded-lg font-bold text-[11px] shrink-0 transition-colors shadow-xs cursor-pointer"
             >
               Configure Firebase
             </button>
@@ -1188,28 +1207,32 @@ export const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-amber-200" />
               <span className="leading-snug">
-                <strong>Database Sync Notice:</strong> {firestoreError}
+                <strong>Database Notice:</strong> {firestoreError}
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => {
-                  setFirebaseModalTab('rules');
-                  setIsFirebaseModalOpen(true);
-                }}
-                className="bg-white text-amber-900 hover:bg-amber-50 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors shadow-xs cursor-pointer"
-              >
-                Rules Guide
-              </button>
-              <button
-                onClick={() => {
-                  setFirebaseModalTab('status');
-                  setIsFirebaseModalOpen(true);
-                }}
-                className="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
-              >
-                Settings
-              </button>
+              {isAdminAuthenticated && (
+                <>
+                  <button
+                    onClick={() => {
+                      setFirebaseModalTab('rules');
+                      setIsFirebaseModalOpen(true);
+                    }}
+                    className="bg-white text-amber-900 hover:bg-amber-50 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors shadow-xs cursor-pointer"
+                  >
+                    Rules Guide
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFirebaseModalTab('status');
+                      setIsFirebaseModalOpen(true);
+                    }}
+                    className="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
+                  >
+                    Settings
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => clearFirestoreError()}
                 className="hover:bg-white/20 text-white/80 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
@@ -2328,13 +2351,15 @@ export const App: React.FC = () => {
                       <div className="font-bold">Error Saving Listing to Cloud Firestore:</div>
                       <div className="text-rose-700 mt-0.5">{submissionError}</div>
                       <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsFirebaseModalOpen(true)}
-                          className="px-2.5 py-1 bg-rose-700 text-white font-bold rounded-lg text-[11px]"
-                        >
-                          Check Firebase Settings
-                        </button>
+                        {isAdminAuthenticated && (
+                          <button
+                            type="button"
+                            onClick={() => setIsFirebaseModalOpen(true)}
+                            className="px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-lg text-[11px] cursor-pointer"
+                          >
+                            Check Firebase Settings
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setSubmissionError(null)}
@@ -3202,12 +3227,27 @@ export const App: React.FC = () => {
                           </span>
                         </div>
                       </div>
-                      <button
-                        onClick={logoutAdmin}
-                        className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-xl font-bold text-[11px] transition-colors self-start sm:self-auto"
-                      >
-                        Sign Out
-                      </button>
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFirebaseModalTab('status');
+                            setIsFirebaseModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          title="Cloud Firestore Connection & Database Settings"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                          <span>Firestore Connection</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={logoutAdmin}
+                          className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-xl font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
                     </div>
 
                     {/* Admin Moderation Section Selector (Properties vs Services) */}

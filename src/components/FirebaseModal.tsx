@@ -30,6 +30,7 @@ import {
   getCloudinaryConfig, 
   saveCloudinaryConfig 
 } from '../services/cloudinaryService';
+import { useApp } from '../context/AppContext';
 
 export const FIRESTORE_RULES_TEXT = `rules_version = '2';
 service cloud.firestore {
@@ -44,7 +45,7 @@ service cloud.firestore {
         || (
           request.auth.token.email != null 
           && request.auth.token.email_verified == true
-          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+          && (request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com' || request.auth.token.email.lower() == 'jangirpankaj901@gmail.com')
         )
         // Or registered in Firestore admins collection
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
@@ -236,7 +237,45 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
     }
   };
 
+  const { isAdminAuthenticated, navigateTo, setOwnerSubTab } = useApp();
+
   if (!isOpen) return null;
+
+  if (!isAdminAuthenticated) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-200 p-6 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-xs">
+            <Lock className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-base font-extrabold text-slate-900">Admin Authentication Required</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Cloud Firestore connection parameters, API credentials, and database security rules are private and restricted exclusively to the verified administrator account (<strong className="text-slate-700">jangirpankaj9001@gmail.com</strong>).
+            </p>
+          </div>
+          <div className="flex gap-2.5 pt-2">
+            <button
+              onClick={() => {
+                onClose();
+                navigateTo('owner');
+                setOwnerSubTab('moderation');
+              }}
+              className="flex-1 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              Sign In to Admin Portal
+            </button>
+            <button
+              onClick={onClose}
+              className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleParseJson = () => {
     try {
