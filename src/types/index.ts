@@ -107,13 +107,14 @@ export interface TiffinService {
 
 export type ServiceCategory = 
   | 'MESS_TIFFIN'
-  | 'MAID'
-  | 'HOUSEKEEPING'
   | 'LAUNDRY'
   | 'ELECTRICIAN'
   | 'PLUMBER'
   | 'WATER_CANS'
-  | 'SECURITY';
+  | 'SECURITY'
+  | 'COOK'
+  | 'MAID'
+  | 'HOUSEKEEPING';
 
 export interface ServiceCategoryMeta {
   id: ServiceCategory;
@@ -130,59 +131,43 @@ export interface ServiceCategoryMeta {
 export const SERVICE_CATEGORIES: ServiceCategoryMeta[] = [
   {
     id: 'MESS_TIFFIN',
-    label: 'Mess / Tiffin Service',
-    shortLabel: 'Mess / Tiffin',
+    label: 'Mess / Tiffin',
+    shortLabel: 'Mess/Tiffin',
     iconName: 'Utensils',
-    badge: 'Popular & Essential',
+    badge: 'Popular',
     isMainHighlighted: true,
     defaultUnit: 'month',
-    exampleCharge: '₹2,500 / month',
-    description: 'Daily home-cooked meals, thalis, and tiffin delivery across Gondia'
-  },
-  {
-    id: 'MAID',
-    label: 'Maid & Domestic Help',
-    shortLabel: 'Maid',
-    iconName: 'Sparkles',
-    defaultUnit: 'month',
-    exampleCharge: '₹1,500 / month',
-    description: 'Daily cooking, dish washing, floor sweeping & mopping assistance'
-  },
-  {
-    id: 'HOUSEKEEPING',
-    label: 'Housekeeping & Cleaning',
-    shortLabel: 'Housekeeping',
-    iconName: 'Home',
-    defaultUnit: 'visit',
-    exampleCharge: '₹800 / visit',
-    description: 'Deep bathroom cleaning, kitchen degreasing, and move-in sanitize'
+    exampleCharge: 'From ₹2,500/mo',
+    description: 'Fresh daily homestyle meals, veg thalis, and tiffin delivery across Gondia'
   },
   {
     id: 'LAUNDRY',
     label: 'Laundry & Ironing',
     shortLabel: 'Laundry',
     iconName: 'Shirt',
-    defaultUnit: 'piece / month',
-    exampleCharge: '₹10 / piece',
-    description: 'Steam press, washing, dry-cleaning & doorstep laundry pickup'
+    defaultUnit: 'piece',
+    exampleCharge: 'From ₹10/piece',
+    description: 'Doorstep pickup, teflon steam ironing, fabric wash, and suit dry-cleaning'
   },
   {
     id: 'ELECTRICIAN',
     label: 'Electrician',
     shortLabel: 'Electrician',
     iconName: 'Zap',
+    badge: '24x7 Emergency',
     defaultUnit: 'visit',
-    exampleCharge: '₹150 / visit',
-    description: 'Wiring, fan/cooler fitting, MCB repair, switchboard & inverter repair'
+    exampleCharge: '₹150 inspection',
+    description: 'Wiring, MCB tripping, cooler/fan rewinding, inverter setup & appliance repair'
   },
   {
     id: 'PLUMBER',
     label: 'Plumber',
     shortLabel: 'Plumber',
     iconName: 'Wrench',
+    badge: '30-Min Arrival',
     defaultUnit: 'visit',
-    exampleCharge: '₹150 / visit',
-    description: 'Leakage repairs, tap and shower fitting, pipeline installation & RO fit'
+    exampleCharge: '₹150 visit',
+    description: 'Concealed leak repairs, tap fitting, drain blockage removal & water tanks'
   },
   {
     id: 'WATER_CANS',
@@ -191,16 +176,35 @@ export const SERVICE_CATEGORIES: ServiceCategoryMeta[] = [
     iconName: 'Droplets',
     defaultUnit: 'can',
     exampleCharge: '₹30 / 20L can',
-    description: 'Chilled RO drinking water 20L cans delivered to your flat or hostel'
+    description: 'Hygienic chilled 20L RO drinking water cans delivered to your door or floor'
   },
   {
     id: 'SECURITY',
     label: 'Security (CCTV / Guard)',
-    shortLabel: 'Security',
+    shortLabel: 'Security (CCTV/Guard)',
     iconName: 'ShieldCheck',
     defaultUnit: 'service',
-    exampleCharge: 'Starting ₹1,200',
-    description: 'CCTV setup, DVR repair, residential night guard & gate security'
+    exampleCharge: 'From ₹1,200',
+    description: 'HD CCTV installation, mobile live streaming setup & background-verified night guards'
+  },
+  {
+    id: 'COOK',
+    label: 'Cook & Homestyle Chef',
+    shortLabel: 'Cook',
+    iconName: 'ChefHat',
+    badge: 'Police Verified',
+    defaultUnit: 'month',
+    exampleCharge: 'From ₹1,800/mo',
+    description: 'Authentic Maharashtrian & North-Indian daily cooking, healthy chapatis & maid help'
+  },
+  {
+    id: 'HOUSEKEEPING',
+    label: 'Housekeeping & Deep Clean',
+    shortLabel: 'Housekeeping',
+    iconName: 'Home',
+    defaultUnit: 'visit',
+    exampleCharge: 'From ₹699/visit',
+    description: 'Industrial machine floor scrub, bathroom descaling, sofa steam clean & tenant move-in'
   }
 ];
 
