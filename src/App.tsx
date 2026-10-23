@@ -1784,32 +1784,6 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Zero-Login Listing System Information Banner */}
-              <div className="bg-blue-950/40 border border-blue-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2.5 text-blue-200">
-                  <ShieldCheck className="w-5 h-5 text-blue-400 shrink-0" />
-                  <div>
-                    <strong className="text-white block font-bold">Zero-Login Property Posting & Private Edit Links</strong>
-                    <span className="text-slate-300">
-                      Post properties freely without passwords, accounts, or OTPs. Every listing receives a private, unguessable edit link to update photos, rent, or rental occupancy anytime.
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingProperty(null);
-                      setSubmissionError(null);
-                      setOwnerSubTab('new');
-                    }}
-                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-xs cursor-pointer text-xs flex items-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Post Property</span>
-                  </button>
-                </div>
-              </div>
 
               {/* Requirement 1: Owner contact number, WhatsApp number, and working WhatsApp contact button */}
               <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
