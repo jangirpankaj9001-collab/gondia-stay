@@ -28,6 +28,8 @@ import {
   ChevronLeft,
   ChevronDown,
   Filter,
+  LayoutDashboard,
+  Info,
   Database,
   Lock,
   Unlock,
@@ -171,6 +173,8 @@ export const App: React.FC = () => {
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [serviceLocalityFilter, setServiceLocalityFilter] = useState('All');
   const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
+  const [isServicesDashboardOpen, setIsServicesDashboardOpen] = useState(false);
+  const [isOwnerDashboardOpen, setIsOwnerDashboardOpen] = useState(false);
 
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
@@ -1589,45 +1593,122 @@ export const App: React.FC = () => {
         {(activeTab === 'services' || activeTab === 'tiffin') && (
           <div className="space-y-6">
             
-            {/* Services Hero Header Banner */}
-            <div className="rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 right-10 w-72 h-72 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-              
-              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="max-w-2xl space-y-2.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-wider backdrop-blur-xs">
-                      <Wrench className="w-3.5 h-3.5 text-amber-300" />
-                      Gondia Verified Local Services
-                    </span>
-                    <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                      0% Commission
-                    </span>
-                  </div>
-
-                  <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
-                    Home, Mess & Student Services in Gondia
+            {/* Compact Header - keeps subcategories grid immediately visible without scrolling */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                    Home & Student Services
                   </h1>
-
-                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
-                    Discover authentic daily Mess & Tiffin services, police-verified maids, housekeeping deep cleaners, laundry, licensed electricians, plumbers, chilled RO water cans, and security guards across Gondia.
-                  </p>
+                  <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 uppercase tracking-wider">
+                    Gondia
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    0% Commission
+                  </span>
                 </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Verified daily tiffin, cooks, cleaning, repairs, laundry & chilled RO water across Gondia
+                </p>
+              </div>
 
-                {/* Right Action: Register Service Button */}
-                <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddServiceModalOpen(true)}
-                    className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-2xl transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 stroke-[3]" />
-                    <span>Register Your Service</span>
-                  </button>
-                </div>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsServicesDashboardOpen(true)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200/80"
+                  title="View Services Overview & Dashboard Details"
+                >
+                  <Info className="w-3.5 h-3.5 text-blue-600" />
+                  <span>About Services</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddServiceModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Register Service</span>
+                </button>
               </div>
             </div>
+
+            {/* Small Floating Corner Button for Services Section */}
+            <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40">
+              <button
+                type="button"
+                onClick={() => setIsServicesDashboardOpen(true)}
+                className="group flex items-center gap-2 bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-500 text-white pl-3.5 pr-4 py-2.5 rounded-full shadow-xl hover:shadow-2xl border border-white/20 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
+                title="Open Services Dashboard & Overview"
+              >
+                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
+                  <Wrench className="w-3.5 h-3.5 text-amber-300" />
+                </div>
+                <span className="text-xs font-black tracking-tight">Services Hub</span>
+              </button>
+            </div>
+
+            {/* Expanded Services Dashboard Details Modal */}
+            {isServicesDashboardOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+                <div className="rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 shadow-2xl relative overflow-hidden max-w-2xl w-full border border-blue-500/30">
+                  <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute bottom-0 right-10 w-72 h-72 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+                  
+                  <div className="relative z-10 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-wider backdrop-blur-xs">
+                          <Wrench className="w-3.5 h-3.5 text-amber-300" />
+                          Gondia Verified Local Services
+                        </span>
+                        <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                          0% Commission
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsServicesDashboardOpen(false)}
+                        className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        title="Close Dashboard"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div>
+                      <h2 className="text-xl sm:text-3xl font-black tracking-tight leading-tight">
+                        Home, Mess & Student Services in Gondia
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mt-2">
+                        Discover authentic daily Mess & Tiffin services, police-verified maids, housekeeping deep cleaners, laundry, licensed electricians, plumbers, chilled RO water cans, and security guards across Gondia.
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <div className="text-xs text-slate-400">
+                        Direct connection • Verified Phone & WhatsApp
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsServicesDashboardOpen(false);
+                            setIsAddServiceModalOpen(true);
+                          }}
+                          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-xl transition-all shadow-md hover:scale-105 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4 stroke-[3]" />
+                          <span>Register Your Service</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Search & Locality Filter Controls Bar */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -1740,193 +1821,264 @@ export const App: React.FC = () => {
         {activeTab === 'owner' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             
-            {/* Owner Hub Welcome & Stats Card (Requirement 1) */}
-            <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-xl space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="bg-blue-600/30 text-blue-400 border border-blue-500/30 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                      Verified Landlord Console
-                    </span>
-                    {isFirebaseConnected && (
-                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Database className="w-3 h-3" /> Cloud Firestore Active
-                      </span>
-                    )}
-                  </div>
-                  <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight">
+            {/* Compact Header - keeps listings and navigation immediately visible without scrolling */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+              <div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
                     Welcome, {currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}
                   </h1>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Real Owner Account stored in Cloud Firestore • Gondia, Maharashtra
-                  </p>
+                  <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                    Landlord
+                  </span>
+                  {isFirebaseConnected && (
+                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Database className="w-3 h-3" /> Cloud Active
+                    </span>
+                  )}
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => setIsEditingOwnerProfile(!isEditingOwnerProfile)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border border-slate-700 shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>{isEditingOwnerProfile ? 'Close Editor' : 'Edit Profile'}</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingProperty(null);
-                      setSubmissionError(null);
-                      setOwnerSubTab('new');
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Post New Listing</span>
-                  </button>
-                </div>
+                <p className="text-xs text-slate-500">
+                  {myProperties.length} total properties ({myProperties.filter(p => isApproved(p.status)).length} live) • Gondia, Maharashtra
+                </p>
               </div>
 
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsOwnerDashboardOpen(true)}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="View Owner Dashboard & Stats"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Dashboard Details</span>
+                  <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-0.5">
+                    {myProperties.length}
+                  </span>
+                </button>
 
-              {/* Requirement 1: Owner contact number, WhatsApp number, and working WhatsApp contact button */}
-              <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
-                  <div>
-                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered Contact Number</span>
-                    <div className="text-sm font-extrabold text-white mt-0.5 flex items-center gap-1.5">
-                      <Phone className="w-4 h-4 text-blue-400" />
-                      <span>{formatDisplayPhone(currentOwner.phone)}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered WhatsApp Number</span>
-                    <div className="text-sm font-extrabold text-emerald-400 mt-0.5 flex items-center gap-1.5">
-                      <MessageCircle className="w-4 h-4 fill-current text-emerald-400" />
-                      <span>{formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello Mr. ${currentOwner.name}, contacting you regarding your property listings on GondiaStay.`)}
-                    className="px-4 py-2.5 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center gap-2 active:scale-95 transition-transform cursor-pointer"
-                  >
-                    <MessageCircle className="w-4 h-4 fill-current" />
-                    <span>WhatsApp Owner</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dialPhone(currentOwner.phone)}
-                    className="px-3.5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>Call</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Inline Owner Profile Editor */}
-              {isEditingOwnerProfile && (
-                <div className="bg-slate-800 p-5 rounded-2xl border border-blue-500/30 space-y-4 animate-in fade-in slide-in-from-top-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <UserCheck className="w-4 h-4 text-blue-400" />
-                      Edit Real Landlord Profile (Cloud Firestore)
-                    </h3>
-                    <span className="text-[10px] text-slate-400">Syncs automatically to cloud</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Landlord Name *</label>
-                      <input
-                        type="text"
-                        value={ownerProfileForm.name}
-                        onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, name: e.target.value })}
-                        placeholder="Rajesh Sharma"
-                        className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Phone Number *</label>
-                      <input
-                        type="text"
-                        value={ownerProfileForm.phone}
-                        onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, phone: e.target.value })}
-                        placeholder="+91 98230 12345"
-                        className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-300 block mb-1">WhatsApp Number *</label>
-                      <input
-                        type="text"
-                        value={ownerProfileForm.whatsappNumber}
-                        onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, whatsappNumber: e.target.value })}
-                        placeholder="+91 98230 12345"
-                        className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingOwnerProfile(false)}
-                      className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-lg cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!ownerProfileForm.name.trim() || !ownerProfileForm.phone.trim()) {
-                          showToast("Please provide owner name and phone.");
-                          return;
-                        }
-                        await updateOwnerProfile({
-                          name: ownerProfileForm.name.trim(),
-                          phone: ownerProfileForm.phone.trim(),
-                          whatsappNumber: (ownerProfileForm.whatsappNumber || ownerProfileForm.phone).trim()
-                        });
-                        setIsEditingOwnerProfile(false);
-                      }}
-                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-lg shadow-xs cursor-pointer"
-                    >
-                      Save Profile to Firebase
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Stat Counters */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
-                  <span className="text-xs text-slate-400 font-semibold">Your Listings</span>
-                  <div className="text-2xl font-extrabold text-white mt-1">{myProperties.length}</div>
-                </div>
-
-                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
-                  <span className="text-xs text-slate-400 font-semibold">Approved (Live)</span>
-                  <div className="text-2xl font-extrabold text-emerald-400 mt-1">
-                    {myProperties.filter(p => isApproved(p.status)).length}
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
-                  <span className="text-xs text-slate-400 font-semibold">Pending Review</span>
-                  <div className="text-2xl font-extrabold text-amber-400 mt-1">
-                    {myProperties.filter(p => isPending(p.status)).length}
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
-                  <span className="text-xs text-slate-400 font-semibold">Total Pending</span>
-                  <div className="text-2xl font-extrabold text-amber-300 mt-1">
-                    {pendingProperties.length}
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingProperty(null);
+                    setSubmissionError(null);
+                    setOwnerSubTab('new');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Post Listing</span>
+                </button>
               </div>
             </div>
+
+            {/* Small Floating Corner Button for Owner Section */}
+            <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40">
+              <button
+                type="button"
+                onClick={() => setIsOwnerDashboardOpen(true)}
+                className="group flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white pl-3.5 pr-4 py-2.5 rounded-full shadow-2xl border border-slate-700 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
+                title="Open Owner Dashboard & Stats"
+              >
+                <div className="w-6 h-6 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center">
+                  <LayoutDashboard className="w-3.5 h-3.5 text-blue-400" />
+                </div>
+                <span className="text-xs font-black tracking-tight">Owner Dashboard</span>
+                <span className="bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full ml-0.5">
+                  {myProperties.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Expanded Owner Dashboard Details Modal */}
+            {isOwnerDashboardOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+                <div className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 shadow-2xl space-y-6 max-w-2xl w-full border border-slate-800 my-8">
+                  
+                  {/* Top Bar inside expanded dashboard */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="bg-blue-600/30 text-blue-400 border border-blue-500/30 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                          Verified Landlord Console
+                        </span>
+                        {isFirebaseConnected && (
+                          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Database className="w-3 h-3" /> Cloud Firestore Active
+                          </span>
+                        )}
+                      </div>
+                      <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+                        Welcome, {currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Real Owner Account stored in Cloud Firestore • Gondia, Maharashtra
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button
+                        onClick={() => setIsEditingOwnerProfile(!isEditingOwnerProfile)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border border-slate-700 shadow-xs transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>{isEditingOwnerProfile ? 'Close Editor' : 'Edit Profile'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsOwnerDashboardOpen(false)}
+                        className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        title="Close Dashboard"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Owner Contact and WhatsApp Number Card */}
+                  <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                      <div>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered Contact Number</span>
+                        <div className="text-sm font-extrabold text-white mt-0.5 flex items-center gap-1.5">
+                          <Phone className="w-4 h-4 text-blue-400" />
+                          <span>{formatDisplayPhone(currentOwner.phone)}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered WhatsApp Number</span>
+                        <div className="text-sm font-extrabold text-emerald-400 mt-0.5 flex items-center gap-1.5">
+                          <MessageCircle className="w-4 h-4 fill-current text-emerald-400" />
+                          <span>{formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello Mr. ${currentOwner.name}, contacting you regarding your property listings on GondiaStay.`)}
+                        className="px-3.5 py-2 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                        <span>WhatsApp Owner</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => dialPhone(currentOwner.phone)}
+                        className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Call</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Inline Owner Profile Editor */}
+                  {isEditingOwnerProfile && (
+                    <div className="bg-slate-800 p-5 rounded-2xl border border-blue-500/30 space-y-4 animate-in fade-in slide-in-from-top-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-blue-400" />
+                          Edit Real Landlord Profile (Cloud Firestore)
+                        </h3>
+                        <span className="text-[10px] text-slate-400">Syncs automatically to cloud</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-300 block mb-1">Landlord Name *</label>
+                          <input
+                            type="text"
+                            value={ownerProfileForm.name}
+                            onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, name: e.target.value })}
+                            placeholder="Rajesh Sharma"
+                            className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-300 block mb-1">Phone Number *</label>
+                          <input
+                            type="text"
+                            value={ownerProfileForm.phone}
+                            onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, phone: e.target.value })}
+                            placeholder="+91 98230 12345"
+                            className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-300 block mb-1">WhatsApp Number *</label>
+                          <input
+                            type="text"
+                            value={ownerProfileForm.whatsappNumber}
+                            onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, whatsappNumber: e.target.value })}
+                            placeholder="+91 98230 12345"
+                            className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingOwnerProfile(false)}
+                          className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-lg cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!ownerProfileForm.name.trim() || !ownerProfileForm.phone.trim()) {
+                              showToast("Please provide owner name and phone.");
+                              return;
+                            }
+                            await updateOwnerProfile({
+                              name: ownerProfileForm.name.trim(),
+                              phone: ownerProfileForm.phone.trim(),
+                              whatsappNumber: (ownerProfileForm.whatsappNumber || ownerProfileForm.phone).trim()
+                            });
+                            setIsEditingOwnerProfile(false);
+                          }}
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-lg shadow-xs cursor-pointer"
+                        >
+                          Save Profile to Firebase
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick Stat Counters */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
+                      <span className="text-xs text-slate-400 font-semibold">Your Listings</span>
+                      <div className="text-2xl font-extrabold text-white mt-1">{myProperties.length}</div>
+                    </div>
+
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
+                      <span className="text-xs text-slate-400 font-semibold">Approved (Live)</span>
+                      <div className="text-2xl font-extrabold text-emerald-400 mt-1">
+                        {myProperties.filter(p => isApproved(p.status)).length}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
+                      <span className="text-xs text-slate-400 font-semibold">Pending Review</span>
+                      <div className="text-2xl font-extrabold text-amber-400 mt-1">
+                        {myProperties.filter(p => isPending(p.status)).length}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/60">
+                      <span className="text-xs text-slate-400 font-semibold">Total Pending</span>
+                      <div className="text-2xl font-extrabold text-amber-300 mt-1">
+                        {pendingProperties.length}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Owner Hub Navigation Sub-Tabs */}
             <div className="flex items-center justify-between border-b border-slate-200">
