@@ -50,7 +50,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
     ? property.photos[0] 
     : '/hero_gondia_stays.jpg';
 
-  const defaultMsg = `Hello ${property.ownerName}, I saw your listing for '${property.title}' in ${property.locality}, Gondia on Gondia Stay. Is it available for rent?`;
+  const defaultMsg = `Hello ${property.ownerName ? property.ownerName : 'Landlord'}, I saw your listing for '${property.title}' in ${property.locality}, Gondia on Gondia Stay. Is it available for rent?`;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-xl transition-all duration-200 overflow-hidden flex flex-col group">
@@ -193,32 +193,40 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
           </div>
 
           {/* Property Landlord Identity - saved specifically in this listing's document */}
-          <div className="mt-2.5 bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
-                  {(property.ownerName || 'O')[0].toUpperCase()}
+          {(property.ownerName || property.ownerPhone) && (
+            <div className="mt-2.5 bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
+                    {(property.ownerName?.trim() || 'L')[0].toUpperCase()}
+                  </div>
+                  <span className="text-xs font-bold text-slate-800 truncate" title={property.ownerName || ''}>
+                    {property.ownerName || 'Landlord'}
+                  </span>
                 </div>
-                <span className="text-xs font-bold text-slate-800 truncate" title={property.ownerName || 'Property Owner'}>
-                  {property.ownerName || 'Property Owner'}
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded-md shrink-0">
+                  Landlord
                 </span>
               </div>
-              <span className="text-[9px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded-md shrink-0">
-                Landlord
-              </span>
-            </div>
 
-            <div className="flex items-center justify-between text-[11px] text-slate-600 gap-2 pt-0.5">
-              <div className="flex items-center gap-1 font-semibold truncate text-slate-700" title={`Call Landlord: ${property.ownerPhone}`}>
-                <Phone className="w-3 h-3 text-blue-600 shrink-0" />
-                <span>{formatDisplayPhone(property.ownerPhone)}</span>
-              </div>
-              <div className="flex items-center gap-1 font-bold text-emerald-700 truncate" title={`WhatsApp Landlord: ${property.ownerWhatsappNumber || property.ownerPhone}`}>
-                <MessageCircle className="w-3 h-3 text-[#25D366] fill-[#25D366] shrink-0" />
-                <span>{formatDisplayPhone(property.ownerWhatsappNumber || property.ownerPhone)}</span>
-              </div>
+              {(property.ownerPhone || property.ownerWhatsappNumber) && (
+                <div className="flex items-center justify-between text-[11px] text-slate-600 gap-2 pt-0.5">
+                  {property.ownerPhone && (
+                    <div className="flex items-center gap-1 font-semibold truncate text-slate-700" title={`Call Landlord: ${property.ownerPhone}`}>
+                      <Phone className="w-3 h-3 text-blue-600 shrink-0" />
+                      <span>{formatDisplayPhone(property.ownerPhone)}</span>
+                    </div>
+                  )}
+                  {(property.ownerWhatsappNumber || property.ownerPhone) && (
+                    <div className="flex items-center gap-1 font-bold text-emerald-700 truncate" title={`WhatsApp Landlord: ${property.ownerWhatsappNumber || property.ownerPhone}`}>
+                      <MessageCircle className="w-3 h-3 text-[#25D366] fill-[#25D366] shrink-0" />
+                      <span>{formatDisplayPhone(property.ownerWhatsappNumber || property.ownerPhone)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Action Buttons: Tenant View vs Owner View */}

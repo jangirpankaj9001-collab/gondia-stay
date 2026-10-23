@@ -484,9 +484,9 @@ export const App: React.FC = () => {
     suitableTenants: ['ALL'] as SuitableTenantType[],
     availableFrom: 'Immediate',
     amenities: ['24/7 Water', 'Wi-Fi'],
-    ownerName: currentOwner.name,
-    ownerPhone: currentOwner.phone,
-    ownerWhatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
+    ownerName: '',
+    ownerPhone: '',
+    ownerWhatsappNumber: '',
     ownerPreferredContact: 'BOTH' as ContactMethod,
     latitude: 21.4602,
     longitude: 80.1945,
@@ -940,11 +940,11 @@ export const App: React.FC = () => {
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
-          ownerId: editingProperty.ownerId || authUser?.uid || currentOwner.id,
-          ownerEmail: editingProperty.ownerEmail || authUser?.email || currentOwner.email,
-          ownerName: formData.ownerName || currentOwner.name,
-          ownerPhone: formData.ownerPhone || currentOwner.phone,
-          ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || currentOwner.phone,
+          ownerId: editingProperty.ownerId || 'owner_unauthenticated',
+          ownerEmail: editingProperty.ownerEmail || (formData.ownerPhone ? `${formData.ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''),
+          ownerName: formData.ownerName.trim(),
+          ownerPhone: formData.ownerPhone.trim(),
+          ownerWhatsappNumber: (formData.ownerWhatsappNumber || formData.ownerPhone).trim(),
           ownerPreferredContact: formData.ownerPreferredContact,
           latitude: Number(formData.latitude) || 21.4602,
           longitude: Number(formData.longitude) || 80.1945,
@@ -977,9 +977,9 @@ export const App: React.FC = () => {
           photos: finalPhotoUrls,
           ownerId: 'owner_unauthenticated',
           ownerEmail: formData.ownerPhone ? `${formData.ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '',
-          ownerName: formData.ownerName || 'Property Owner',
-          ownerPhone: formData.ownerPhone || '+91 98230 12345',
-          ownerWhatsappNumber: formData.ownerWhatsappNumber || formData.ownerPhone || '+91 98230 12345',
+          ownerName: formData.ownerName.trim(),
+          ownerPhone: formData.ownerPhone.trim(),
+          ownerWhatsappNumber: (formData.ownerWhatsappNumber || formData.ownerPhone).trim(),
           ownerPreferredContact: formData.ownerPreferredContact,
           status: 'pending', // Requirement 4: Set every new listing's status to "pending"
           occupancyStatus: 'AVAILABLE',
@@ -1088,6 +1088,39 @@ export const App: React.FC = () => {
     setSelectedPhotos(existingItems);
     setOwnerSubTab('new');
     window.scrollTo({ top: 300, behavior: 'smooth' });
+  };
+
+  const handleStartNewListing = () => {
+    setEditingProperty(null);
+    setCurrentEditToken(null);
+    setSubmissionError(null);
+    setPhotoUploadError(null);
+    setSelectedPhotos([]);
+    setFormData({
+      title: '',
+      address: '',
+      locality: GONDIA_LOCALITIES[1],
+      propertyType: 'FLAT',
+      accommodationType: '1_BHK',
+      monthlyRent: 8000,
+      securityDeposit: 16000,
+      bedrooms: 1,
+      bathrooms: 1,
+      kitchenAvailable: 'PRIVATE',
+      hallAvailable: true,
+      furnishing: 'SEMI_FURNISHED',
+      suitableTenants: ['ALL'],
+      availableFrom: 'Immediate',
+      amenities: ['24/7 Water', 'Wi-Fi'],
+      ownerName: '',
+      ownerPhone: '',
+      ownerWhatsappNumber: '',
+      ownerPreferredContact: 'BOTH',
+      latitude: 21.4602,
+      longitude: 80.1945,
+      photos: []
+    });
+    setOwnerSubTab('new');
   };
 
   const toggleAmenity = (amenity: string) => {
@@ -1533,7 +1566,7 @@ export const App: React.FC = () => {
                   )}
                   <button
                     onClick={() => {
-                      setOwnerSubTab('new');
+                      handleStartNewListing();
                       navigateTo('owner');
                     }}
                     className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -1881,11 +1914,7 @@ export const App: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingProperty(null);
-                    setSubmissionError(null);
-                    setOwnerSubTab('new');
-                  }}
+                  onClick={handleStartNewListing}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
@@ -2117,11 +2146,7 @@ export const App: React.FC = () => {
                   My Properties ({myProperties.length})
                 </button>
                 <button
-                  onClick={() => {
-                    setEditingProperty(null);
-                    setSubmissionError(null);
-                    setOwnerSubTab('new');
-                  }}
+                  onClick={handleStartNewListing}
                   className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all ${
                     ownerSubTab === 'new'
                       ? 'border-blue-600 text-blue-700'
@@ -2216,18 +2241,27 @@ export const App: React.FC = () => {
                             <p className="text-xs text-slate-500">{property.address}, {property.locality}</p>
                             <div className="flex items-center gap-2 text-xs mt-1 flex-wrap">
                               <span className="font-extrabold text-blue-700">₹{property.monthlyRent}/month</span>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-slate-700 font-bold">
-                                Owner: {property.ownerName || 'Property Owner'}
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-slate-600 font-medium">
-                                Tel: {formatDisplayPhone(property.ownerPhone)}
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-emerald-700 font-bold">
-                                WA: {formatDisplayPhone(property.ownerWhatsappNumber || property.ownerPhone)}
-                              </span>
+                              {property.ownerName && (
+                                <>
+                                  <span className="text-slate-700 font-bold">
+                                    Owner: {property.ownerName}
+                                  </span>
+                                  <span className="text-slate-300">•</span>
+                                </>
+                              )}
+                              {property.ownerPhone && (
+                                <>
+                                  <span className="text-slate-600 font-medium">
+                                    Tel: {formatDisplayPhone(property.ownerPhone)}
+                                  </span>
+                                  <span className="text-slate-300">•</span>
+                                </>
+                              )}
+                              {(property.ownerWhatsappNumber || property.ownerPhone) && (
+                                <span className="text-emerald-700 font-bold">
+                                  WA: {formatDisplayPhone(property.ownerWhatsappNumber || property.ownerPhone)}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2327,10 +2361,10 @@ export const App: React.FC = () => {
                 ) : (
                   <div className="text-center py-12 bg-white rounded-3xl border border-slate-200">
                     <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm font-bold text-slate-800">No properties listed under {currentOwner.name} yet.</p>
+                    <p className="text-sm font-bold text-slate-800">No properties listed yet.</p>
                     <p className="text-xs text-slate-500 mt-1">Tap below to add your room, flat, or student PG directly to Cloud Firestore.</p>
                     <button
-                      onClick={() => setOwnerSubTab('new')}
+                      onClick={handleStartNewListing}
                       className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl"
                     >
                       Post Your First Listing
@@ -3972,17 +4006,23 @@ export const App: React.FC = () => {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                          {selectedProperty.ownerName[0]}
+                          {(selectedProperty.ownerName?.trim() || 'L')[0].toUpperCase()}
                         </div>
                         <div>
                           <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                             Verified Landlord
                           </span>
-                          <h4 className="text-base font-bold text-slate-900 mt-0.5">{selectedProperty.ownerName || 'Property Owner'}</h4>
+                          <h4 className="text-base font-bold text-slate-900 mt-0.5">{selectedProperty.ownerName || 'Landlord'}</h4>
                           <div className="flex items-center gap-3 text-xs text-slate-600 mt-1 flex-wrap">
-                            <span>Phone: <strong className="text-slate-900">{formatDisplayPhone(selectedProperty.ownerPhone)}</strong></span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-emerald-700 font-bold">WhatsApp: {formatDisplayPhone(selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone)}</span>
+                            {selectedProperty.ownerPhone && (
+                              <span>Phone: <strong className="text-slate-900">{formatDisplayPhone(selectedProperty.ownerPhone)}</strong></span>
+                            )}
+                            {(selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone) && (
+                              <>
+                                <span className="text-slate-300">•</span>
+                                <span className="text-emerald-700 font-bold">WhatsApp: {formatDisplayPhone(selectedProperty.ownerWhatsappNumber || selectedProperty.ownerPhone)}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
