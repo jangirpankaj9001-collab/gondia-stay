@@ -1923,24 +1923,6 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Small Floating Corner Button for Owner Section */}
-            <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40">
-              <button
-                type="button"
-                onClick={() => setIsOwnerDashboardOpen(true)}
-                className="group flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white pl-3.5 pr-4 py-2.5 rounded-full shadow-2xl border border-slate-700 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
-                title="Open Owner Dashboard & Stats"
-              >
-                <div className="w-6 h-6 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center">
-                  <LayoutDashboard className="w-3.5 h-3.5 text-blue-400" />
-                </div>
-                <span className="text-xs font-black tracking-tight">Owner Dashboard</span>
-                <span className="bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full ml-0.5">
-                  {myProperties.length}
-                </span>
-              </button>
-            </div>
-
             {/* Expanded Owner Dashboard Details Modal */}
             {isOwnerDashboardOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in overflow-y-auto">
