@@ -44,7 +44,29 @@ export const uploadPropertyPhoto = async (
   file: File,
   onProgress?: (percent: number) => void
 ): Promise<string> => {
-  return uploadImageToCloudinary(file, onProgress);
+  return uploadImageToCloudinary(file, onProgress, 'gondiastay_properties');
+};
+
+/**
+ * Uploads a service photo or visiting card to Cloudinary CDN under gondiastay_services.
+ */
+export const uploadServicePhoto = async (
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> => {
+  return uploadImageToCloudinary(file, onProgress, 'gondiastay_services');
+};
+
+/**
+ * Uploads multiple service photos to Cloudinary CDN with progress tracking.
+ */
+export const uploadMultipleServicePhotos = async (
+  files: File[],
+  onProgress?: (info: UploadProgressInfo) => void,
+  concurrencyLimit = 2,
+  onFileComplete?: (file: File, url: string, index: number) => void
+): Promise<string[]> => {
+  return uploadMultipleImagesToCloudinary(files, onProgress, concurrencyLimit, onFileComplete, 'gondiastay_services');
 };
 
 /**
@@ -57,7 +79,7 @@ export const uploadMultiplePropertyPhotos = async (
   concurrencyLimit = 2,
   onFileComplete?: (file: File, url: string, index: number) => void
 ): Promise<string[]> => {
-  return uploadMultipleImagesToCloudinary(files, onProgress, concurrencyLimit, onFileComplete);
+  return uploadMultipleImagesToCloudinary(files, onProgress, concurrencyLimit, onFileComplete, 'gondiastay_properties');
 };
 
 export const isCloudinaryConfigured = (): boolean => {

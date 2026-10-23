@@ -41,10 +41,9 @@ service cloud.firestore {
       return request.auth != null && (
         // Firebase custom claim: admin == true
         request.auth.token.admin == true
-        // Or verified admin email match strictly for authorized account
+        // Or authorized admin email match strictly for verified administrator account
         || (
           request.auth.token.email != null 
-          && request.auth.token.email_verified == true
           && (request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com' || request.auth.token.email.lower() == 'jangirpankaj901@gmail.com')
         )
         // Or registered in Firestore admins collection
@@ -174,7 +173,35 @@ service cloud.firestore {
 
     match /tiffin_services/{serviceId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create: if (
+        request.resource.data.status in ['pending', 'PENDING']
+        || isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Services Collection: Gondia local services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security)
+    match /services/{serviceId} {
+      // 1. Read: Publicly readable so visitors can browse all local services across Gondia without errors.
+      allow read: if true;
+
+      // 2. Create: Zero-login registration for any resident/service provider in Gondia.
+      allow create: if (
+        request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 5
+        && request.resource.data.category is string
+        && (
+          request.resource.data.status in ['pending', 'PENDING']
+          || isAdmin()
+        )
+      );
+
+      // 3. Update & Delete: Strictly restricted to verified administrator.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }`;

@@ -89,7 +89,8 @@ export const resetCloudinaryConfig = (): void => {
  */
 export const uploadImageToCloudinary = async (
   file: File,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  folder: string = 'gondiastay_properties'
 ): Promise<string> => {
   const validation = validateImageFile(file);
   if (!validation.valid) {
@@ -135,7 +136,7 @@ export const uploadImageToCloudinary = async (
   const formData = new FormData();
   formData.append('file', uploadableFile);
   formData.append('upload_preset', config.uploadPreset);
-  formData.append('folder', 'gondiastay_properties');
+  formData.append('folder', folder);
 
   const uploadEndpoint = `https://api.cloudinary.com/v1_1/${encodeURIComponent(config.cloudName)}/image/upload`;
 
@@ -222,7 +223,8 @@ export const uploadMultipleImagesToCloudinary = async (
   files: File[],
   onProgress?: (info: UploadProgressInfo) => void,
   concurrencyLimit = 2,
-  onFileComplete?: (file: File, url: string, index: number) => void
+  onFileComplete?: (file: File, url: string, index: number) => void,
+  folder: string = 'gondiastay_properties'
 ): Promise<string[]> => {
   if (!files || files.length === 0) {
     return [];
@@ -264,7 +266,7 @@ export const uploadMultipleImagesToCloudinary = async (
       const url = await uploadImageToCloudinary(file, (singlePercent) => {
         fileProgress[currentIndex] = singlePercent;
         updateOverallProgress(file.name);
-      });
+      }, folder);
 
       results[currentIndex] = url;
       fileProgress[currentIndex] = 100;

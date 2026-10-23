@@ -20,7 +20,8 @@ import {
   onSnapshot, 
   Unsubscribe 
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './config';
+import { db, auth, isFirebaseConfigured } from './config';
+import { isAuthorizedAdminEmail } from './propertiesService';
 import { ServiceItem, ServiceCategory } from '../types';
 import { INITIAL_SERVICES } from '../data/initialData';
 
@@ -179,7 +180,8 @@ export const subscribeToFirestoreServices = (
 
 /**
  * Submits a new local service to Firestore.
- * Always defaults status to 'pending' unless caller is verified admin.
+ * Always defaults status to 'pending' unless caller has an authenticated Firebase Admin session.
+ * Fully supports zero-login submissions from any resident or provider across Gondia.
  */
 export const saveServiceToFirestore = async (
   serviceData: Partial<ServiceItem>,
@@ -187,29 +189,41 @@ export const saveServiceToFirestore = async (
 ): Promise<{ success: boolean; serviceId: string; error?: string }> => {
   const serviceId = serviceData.id || `srv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-  // Default to pending for all public submissions
-  const cleanStatus = isAdmin && serviceData.status ? serviceData.status : 'pending';
+  // Determine if caller has an active, authorized Firebase administrator session
+  const isRealAdminAuth = Boolean(
+    isAdmin &&
+    auth?.currentUser &&
+    auth.currentUser.email &&
+    isAuthorizedAdminEmail(auth.currentUser.email)
+  );
+
+  // Non-admin or unauthenticated submissions ALWAYS default to 'pending' so security rules succeed
+  const cleanStatus = (isRealAdminAuth && serviceData.status) ? serviceData.status : 'pending';
+
+  const cleanTitle = (serviceData.title || '').trim().substring(0, 200);
+  const cleanPhone = (serviceData.phone || '').trim();
+  const cleanCategory = (serviceData.category || 'MESS_TIFFIN') as ServiceCategory;
 
   const cleanData: ServiceItem = {
     id: serviceId,
-    title: (serviceData.title || '').trim(),
-    category: (serviceData.category || 'MESS_TIFFIN') as ServiceCategory,
-    providerName: (serviceData.providerName || '').trim(),
-    phone: (serviceData.phone || '').trim(),
-    whatsappNumber: (serviceData.whatsappNumber || serviceData.phone || '').trim(),
-    charges: (serviceData.charges || '').trim(),
-    chargeUnit: (serviceData.chargeUnit || 'service').trim(),
+    title: cleanTitle,
+    category: cleanCategory,
+    providerName: (serviceData.providerName || '').trim().substring(0, 150),
+    phone: cleanPhone,
+    whatsappNumber: (serviceData.whatsappNumber || cleanPhone).trim().substring(0, 30),
+    charges: (serviceData.charges || '').trim().substring(0, 100),
+    chargeUnit: (serviceData.chargeUnit || 'service').trim().substring(0, 50),
     priceNumeric: typeof serviceData.priceNumeric === 'number' ? serviceData.priceNumeric : 0,
-    description: (serviceData.description || '').trim(),
+    description: (serviceData.description || '').trim().substring(0, 1500),
     serviceAreas: Array.isArray(serviceData.serviceAreas) && serviceData.serviceAreas.length > 0 
       ? serviceData.serviceAreas 
       : ['All Gondia'],
-    locality: (serviceData.locality || 'Gondia').trim(),
+    locality: (serviceData.locality || 'Gondia').trim().substring(0, 100),
     city: 'Gondia',
-    address: (serviceData.address || '').trim(),
+    address: (serviceData.address || '').trim().substring(0, 300),
     photos: Array.isArray(serviceData.photos) ? serviceData.photos : [],
     businessCardPhoto: serviceData.businessCardPhoto || '',
-    timing: (serviceData.timing || '8:00 AM - 8:00 PM').trim(),
+    timing: (serviceData.timing || '8:00 AM - 8:00 PM').trim().substring(0, 100),
     experienceYears: typeof serviceData.experienceYears === 'number' ? serviceData.experienceYears : 1,
     status: cleanStatus as any,
     rating: typeof serviceData.rating === 'number' ? serviceData.rating : 5.0,
@@ -244,17 +258,28 @@ export const saveServiceToFirestore = async (
     return { success: true, serviceId };
   } catch (err: any) {
     console.error('[GondiaStay] Failed to save service in Firestore:', err);
-    // Graceful local cache fallback
+
+    // Graceful local cache fallback so the listing isn't lost
     const cached = getCachedServices();
     const updated = [cleanData, ...cached.filter(s => s.id !== serviceId)];
     try {
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
 
+    const rawError = err?.message || String(err);
+    let userFriendlyError = rawError;
+    if (
+      rawError.toLowerCase().includes('permission') || 
+      rawError.toLowerCase().includes('insufficient') ||
+      rawError.includes('PERMISSION_DENIED')
+    ) {
+      userFriendlyError = 'Database permissions error: Please ensure the latest Firestore security rules are published in Firebase Console -> Firestore Database -> Rules. (Open Firebase Settings in top navigation to copy production rules).';
+    }
+
     return {
       success: false,
       serviceId,
-      error: err?.message || 'Failed to save service in database.'
+      error: userFriendlyError
     };
   }
 };

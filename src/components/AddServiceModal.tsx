@@ -23,7 +23,7 @@ import {
   ServiceItem, 
   GONDIA_LOCALITIES 
 } from '../types';
-import { uploadImageToCloudinary } from '../services/cloudinaryService';
+import { uploadServicePhoto, uploadMultipleServicePhotos } from '../firebase/storageService';
 import { saveServiceToFirestore } from '../firebase/servicesService';
 
 interface AddServiceModalProps {
@@ -97,7 +97,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       setUploadTarget(isCard ? 'card' : 'photos');
       setUploadProgress(15);
 
-      const url = await uploadImageToCloudinary(file, (percent) => {
+      const url = await uploadServicePhoto(file, (percent) => {
         setUploadProgress(percent);
       });
 
@@ -109,7 +109,32 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       setFormError(null);
     } catch (err: any) {
       console.error('[GondiaStay] Photo upload failed:', err);
-      setFormError(err?.message || 'Failed to upload photo. Please check your network connection.');
+      setFormError(err?.message || 'Failed to upload photo to Cloudinary. Please check your network connection.');
+    } finally {
+      setIsUploadingPhoto(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleMultiplePhotosUpload = async (files: File[]) => {
+    if (!files || files.length === 0) return;
+    try {
+      setIsUploadingPhoto(true);
+      setUploadTarget('photos');
+      setUploadProgress(10);
+
+      const urls = await uploadMultipleServicePhotos(files, (info) => {
+        setUploadProgress(info.percent);
+      });
+
+      setUploadedPhotos(prev => {
+        const combined = [...prev, ...urls];
+        return Array.from(new Set(combined));
+      });
+      setFormError(null);
+    } catch (err: any) {
+      console.error('[GondiaStay] Multiple photo upload failed:', err);
+      setFormError(err?.message || 'Failed to upload photos to Cloudinary.');
     } finally {
       setIsUploadingPhoto(false);
       setUploadProgress(0);
@@ -593,21 +618,29 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       type="file"
                       ref={fileInputRef}
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handlePhotoUpload(file, false);
+                        const fileList = e.target.files;
+                        if (fileList && fileList.length > 0) {
+                          const files = Array.from(fileList);
+                          if (files.length === 1) {
+                            handlePhotoUpload(files[0], false);
+                          } else {
+                            handleMultiplePhotosUpload(files);
+                          }
+                        }
                         e.target.value = '';
                       }}
                     />
                     <button
                       type="button"
-                      disabled={isUploadingPhoto || uploadedPhotos.length >= 6}
+                      disabled={isUploadingPhoto || uploadedPhotos.length >= 8}
                       onClick={() => fileInputRef.current?.click()}
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Add Photo</span>
+                      <span>{uploadedPhotos.length > 0 ? `Add More (${uploadedPhotos.length}/8)` : 'Add Photos'}</span>
                     </button>
                   </div>
 
