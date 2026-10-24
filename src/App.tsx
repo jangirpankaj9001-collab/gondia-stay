@@ -1575,16 +1575,6 @@ export const App: React.FC = () => {
                       Reset All Filters
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      handleStartNewListing();
-                      navigateTo('owner');
-                    }}
-                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Post New Property Listing
-                  </button>
                 </div>
 
                 {searchQuery.trim() && (
@@ -2113,55 +2103,77 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Owner Hub Navigation Sub-Tabs */}
-            <div className="flex items-center justify-between border-b border-slate-200">
-              <div className="flex space-x-2">
+            {/* Owner Hub Sub-Tabs / Admin Panel Header */}
+            {ownerSubTab === 'moderation' ? (
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                 <button
+                  type="button"
                   onClick={() => setOwnerSubTab('listings')}
-                  className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all ${
-                    ownerSubTab === 'listings'
-                      ? 'border-blue-600 text-blue-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
+                  className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer border border-slate-200"
                 >
-                  My Properties ({myProperties.length})
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to My Properties</span>
                 </button>
-                <button
-                  onClick={() => setOwnerSubTab('moderation')}
-                  className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
-                    ownerSubTab === 'moderation'
-                      ? 'border-blue-600 text-blue-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Admin Panel</span>
-                  {pendingProperties.length > 0 && (
-                    <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                      {pendingProperties.length}
-                    </span>
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-extrabold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Admin Moderation Console</span>
+                  </div>
+                  {isAdminAuthenticated && (
+                    <button
+                      type="button"
+                      onClick={logoutAdmin}
+                      className="text-xs text-rose-600 hover:text-rose-700 font-bold px-2.5 py-1 rounded-lg border border-rose-200 hover:bg-rose-50 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
                   )}
-                </button>
+                </div>
               </div>
+            ) : (
+              <div className="flex items-center justify-between border-b border-slate-200">
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setOwnerSubTab('listings')}
+                    className="pb-3 px-3 text-xs font-bold border-b-2 border-blue-600 text-blue-700 transition-all"
+                  >
+                    My Properties ({myProperties.length})
+                  </button>
+                  {isAdminAuthenticated && (
+                    <button
+                      onClick={() => setOwnerSubTab('moderation')}
+                      className="pb-3 px-3 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-all flex items-center gap-1.5"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Admin Panel</span>
+                      {pendingProperties.length > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                          {pendingProperties.length}
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
 
-              {/* Edit Phone Number Inline */}
-              <div className="hidden sm:flex items-center gap-2 pb-2">
-                <span className="text-xs font-bold text-slate-500">Contact:</span>
-                <input
-                  type="text"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  placeholder="+91..."
-                  className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg w-36 font-semibold"
-                />
-                <button
-                  onClick={() => updateOwnerPhone(phoneInput)}
-                  className="px-2.5 py-1 text-xs bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800"
-                >
-                  Update
-                </button>
+                {/* Edit Phone Number Inline */}
+                <div className="hidden sm:flex items-center gap-2 pb-2">
+                  <span className="text-xs font-bold text-slate-500">Contact:</span>
+                  <input
+                    type="text"
+                    value={phoneInput}
+                    onChange={(e) => setPhoneInput(e.target.value)}
+                    placeholder="+91..."
+                    className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg w-36 font-semibold"
+                  />
+                  <button
+                    onClick={() => updateOwnerPhone(phoneInput)}
+                    className="px-2.5 py-1 text-xs bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800"
+                  >
+                    Update
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Sub-tab 1: My Properties List */}
             {ownerSubTab === 'listings' && (
@@ -2517,7 +2529,7 @@ export const App: React.FC = () => {
                             className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
                           />
                           <span className="text-[10px] text-slate-400 mt-1 block">
-                            Only authorized account: jangirpankaj9001@gmail.com
+                            Authorized account: jangirpankaj9001@gmail.com
                           </span>
                         </div>
 

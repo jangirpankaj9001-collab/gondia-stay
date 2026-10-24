@@ -10,7 +10,7 @@ service cloud.firestore {
         // Or authorized admin email match strictly for verified administrator account
         || (
           request.auth.token.email != null 
-          && (request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com' || request.auth.token.email.lower() == 'jangirpankaj901@gmail.com')
+          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
         )
         // Or registered in Firestore admins collection
         || exists(/databases/$(database)/documents/admins/$(request.auth.uid))

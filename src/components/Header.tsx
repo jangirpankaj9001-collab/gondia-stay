@@ -172,15 +172,6 @@ export const Header: React.FC = () => {
           {/* Right Action: Post Property, Firebase Sync & Owner Profile Switcher dropdown */}
           <div className="flex items-center gap-2">
             
-            {/* Direct Post Property Button with Plus Icon */}
-            <button
-              onClick={openPostListing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer"
-              title="Post a room, flat, or PG in Gondia (0% Brokerage)"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden sm:inline">Post Property</span>
-            </button>
 
             {/* Cloud Firestore Status Button - Restricted strictly to verified Admin */}
             {isAdminAuthenticated && (
@@ -276,29 +267,31 @@ export const Header: React.FC = () => {
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold text-center shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Post Listing / Owner Hub</span>
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>Owner Hub & My Properties</span>
                     </button>
                   </div>
                 </>
               )}
             </div>
 
-            {/* Mobile hamburger button */}
+            {/* 3-bar hamburger menu button - accessible on any phone or computer */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              className="p-2 rounded-xl text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors flex items-center gap-1.5 cursor-pointer ml-1"
               aria-label="Toggle Menu"
+              title="Menu & Admin Panel"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              <span className="hidden sm:inline text-xs font-bold text-slate-700">Menu</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Mobile Drawer Menu */}
+      {/* Hamburger Drawer Menu - Accessible on phone or computer */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 animate-in slide-in-from-top-2">
+        <div className="bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 animate-in slide-in-from-top-2 shadow-lg">
           <button
             onClick={() => { navigateTo('explore'); setMobileMenuOpen(false); }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold ${
@@ -363,34 +356,34 @@ export const Header: React.FC = () => {
               </span>
             )}
           </button>
-          {isAdminAuthenticated && (
-            <button
-              onClick={() => { 
-                navigateTo('owner'); 
-                setOwnerSubTab('moderation'); 
-                setMobileMenuOpen(false); 
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
-                activeTab === 'owner' && ownerSubTab === 'moderation' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-900 border border-amber-200'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <ShieldCheck className="w-4 h-4 text-amber-600" />
-                Admin Moderation Console
-              </div>
-              {pendingCount > 0 && (
-                <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  {pendingCount} Pending
+
+          {/* Admin Panel Entry - Moved into hamburger menu, protected & accessible on any device */}
+          <button
+            onClick={() => { 
+              navigateTo('owner'); 
+              setOwnerSubTab('moderation'); 
+              setMobileMenuOpen(false); 
+            }}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+              activeTab === 'owner' && ownerSubTab === 'moderation' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-200'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <ShieldCheck className={`w-4 h-4 ${activeTab === 'owner' && ownerSubTab === 'moderation' ? 'text-amber-400' : 'text-amber-600'}`} />
+              <span>Admin Panel</span>
+              {isAdminAuthenticated && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                  Signed In
                 </span>
               )}
-            </button>
-          )}
-          <button
-            onClick={() => { openPostListing(); setMobileMenuOpen(false); }}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Post New Property Listing</span>
+            </div>
+            {pendingCount > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                {pendingCount} Pending
+              </span>
+            )}
           </button>
         </div>
       )}

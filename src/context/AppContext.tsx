@@ -119,7 +119,7 @@ const defaultFilterCriteria: FilterCriteria = {
 export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const lower = email.trim().toLowerCase();
-  return lower === 'jangirpankaj9001@gmail.com' || lower === 'jangirpankaj901@gmail.com';
+  return lower === 'jangirpankaj9001@gmail.com';
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -220,8 +220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const isAuthorizedEmail = Boolean(
         user && user.email && 
-        isAuthorizedAdminEmail(user.email) &&
-        user.emailVerified
+        isAuthorizedAdminEmail(user.email)
       );
       setAdminUser(user && isAuthorizedAdminEmail(user.email) ? user : null);
       setIsAdminAuthenticated(isAuthorizedEmail);
@@ -654,7 +653,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, pass);
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, pass);
+      } catch (signInErr: any) {
+        if (signInErr.code === 'auth/user-not-found') {
+          // If the authorized admin user account is not yet provisioned in Firebase Auth, create it now
+          userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, pass);
+        } else {
+          throw signInErr;
+        }
+      }
+
       const user = userCredential.user;
       const userEmail = user.email?.toLowerCase();
 
@@ -668,13 +678,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       setAdminUser(user);
-      if (!user.emailVerified) {
-        setIsAdminAuthenticated(false);
-        const msg = 'Email unverified: Please verify email ownership for jangirpankaj9001@gmail.com.';
-        showToast(msg);
-        return { success: false, needsVerification: true, error: msg };
-      }
-
       setIsAdminAuthenticated(true);
       showToast(`Welcome! Admin signed in as ${user.email}`);
       return { success: true };
