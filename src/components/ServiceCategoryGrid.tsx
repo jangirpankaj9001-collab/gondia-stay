@@ -223,14 +223,14 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       
       {/* =========================================================================
           VIEW 1: MODERN RESPONSIVE 2-4 COLUMN GRID OF CLICKABLE SUBCATEGORY ICONS
           Appears when activeDedicatedCategory is null
          ========================================================================= */}
       {!activeDedicatedCategory ? (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           
           {/* Section Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
