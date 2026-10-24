@@ -328,12 +328,6 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                   <p className="text-xs sm:text-sm text-slate-600 mt-1">
                     {currentConfig.tagline}
                   </p>
-                  <div className="flex items-center gap-3 mt-2 text-xs font-bold text-slate-500">
-                    <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-700">
-                      Rates: {currentConfig.typicalCharge}
-                    </span>
-                    <span>• Direct 0% Brokerage Connect</span>
-                  </div>
                 </div>
               </div>
             </div>
