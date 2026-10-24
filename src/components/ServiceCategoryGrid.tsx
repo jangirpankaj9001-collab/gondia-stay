@@ -19,7 +19,8 @@ import {
   X,
   SlidersHorizontal,
   Search,
-  ChevronRight
+  ChevronRight,
+  Pencil
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
@@ -134,6 +135,7 @@ interface ServiceCategoryGridProps {
   isAdmin?: boolean;
   onModerate?: (serviceId: string, approve: boolean) => void;
   onDelete?: (serviceId: string) => void;
+  onEdit?: (service: ServiceItem) => void;
 }
 
 export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
@@ -142,7 +144,8 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   onSelectCategory,
   isAdmin = false,
   onModerate,
-  onDelete
+  onDelete,
+  onEdit
 }) => {
   // Currently opened category in dedicated view (null means grid of 8 icons is shown)
   const [activeDedicatedCategory, setActiveDedicatedCategory] = useState<ServiceCategory | null>(
@@ -549,30 +552,41 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                       )}
 
                       {/* Admin Moderation Controls if in admin mode */}
-                      {isAdmin && onModerate && (
+                      {isAdmin && (
                         <div className="pt-2 flex items-center gap-1.5 border-t border-slate-100">
-                          {!isApproved(provider.status) ? (
+                          {onEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onEdit(provider)}
+                              className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
+                              title="Edit service details"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>Edit</span>
+                            </button>
+                          )}
+                          {onModerate && !isApproved(provider.status) ? (
                             <button
                               type="button"
                               onClick={() => onModerate(provider.id, true)}
-                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg"
+                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Approve Listing
                             </button>
-                          ) : (
+                          ) : onModerate ? (
                             <button
                               type="button"
                               onClick={() => onModerate(provider.id, false)}
-                              className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg"
+                              className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Reject Listing
                             </button>
-                          )}
+                          ) : null}
                           {onDelete && (
                             <button
                               type="button"
                               onClick={() => onDelete(provider.id)}
-                              className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg"
+                              className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Delete
                             </button>

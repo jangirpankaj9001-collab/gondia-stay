@@ -36,6 +36,7 @@ import {
 import {
   subscribeToFirestoreServices,
   saveServiceToFirestore,
+  updateServiceInFirestore,
   moderateServiceInFirestore,
   deleteServiceInFirestore,
   getCachedServices
@@ -46,6 +47,7 @@ interface AppContextType {
   tiffinServices: TiffinService[];
   services: ServiceItem[];
   saveService: (service: Partial<ServiceItem>) => Promise<{ success: boolean; serviceId: string; error?: string }>;
+  updateService: (serviceId: string, updatedFields: Partial<ServiceItem>) => Promise<{ success: boolean; error?: string }>;
   moderateService: (serviceId: string, approve: boolean) => Promise<boolean>;
   deleteService: (serviceId: string) => Promise<boolean>;
   favorites: string[];
@@ -569,6 +571,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
+   * Admin action: updates all fields of an existing service in Cloud Firestore.
+   */
+  const updateService = async (
+    serviceId: string,
+    updatedFields: Partial<ServiceItem>
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to edit services.");
+      return { success: false, error: "Admin verification required." };
+    }
+    const result = await updateServiceInFirestore(serviceId, updatedFields);
+    if (result.success) {
+      setServices(prev => prev.map(s => s.id === serviceId ? { ...s, ...updatedFields } : s));
+      showToast("Service details updated in Cloud Firestore!");
+    } else {
+      showToast(result.error || "Failed to update service");
+    }
+    return result;
+  };
+
+  /**
    * Moderates (approves or rejects) a service listing in Cloud Firestore.
    */
   const moderateService = async (serviceId: string, approve: boolean): Promise<boolean> => {
@@ -875,6 +898,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tiffinServices,
       services,
       saveService,
+      updateService,
       moderateService,
       deleteService,
       favorites,

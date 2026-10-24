@@ -53,7 +53,8 @@ import {
   X,
   Wrench,
   Droplets,
-  Shirt
+  Shirt,
+  Pencil
 } from 'lucide-react';
 import { 
   uploadMultiplePropertyPhotos, 
@@ -173,6 +174,7 @@ export const App: React.FC = () => {
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [serviceLocalityFilter, setServiceLocalityFilter] = useState('All');
   const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
+  const [serviceToEdit, setServiceToEdit] = useState<ServiceItem | null>(null);
   const [isServicesDashboardOpen, setIsServicesDashboardOpen] = useState(false);
   const [isOwnerDashboardOpen, setIsOwnerDashboardOpen] = useState(false);
 
@@ -1681,7 +1683,10 @@ export const App: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setIsAddServiceModalOpen(true)}
+                  onClick={() => {
+                    setServiceToEdit(null);
+                    setIsAddServiceModalOpen(true);
+                  }}
                   className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -1752,6 +1757,7 @@ export const App: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setIsServicesDashboardOpen(false);
+                            setServiceToEdit(null);
                             setIsAddServiceModalOpen(true);
                           }}
                           className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black rounded-xl transition-all shadow-md hover:scale-105 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
@@ -1832,6 +1838,10 @@ export const App: React.FC = () => {
               isAdmin={isAdminAuthenticated}
               onModerate={moderateService}
               onDelete={deleteService}
+              onEdit={(srv) => {
+                setServiceToEdit(srv);
+                setIsAddServiceModalOpen(true);
+              }}
             />
           </div>
         )}
@@ -3658,6 +3668,18 @@ export const App: React.FC = () => {
                                 </div>
 
                                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                  <button
+                                    onClick={() => {
+                                      setServiceToEdit(srv);
+                                      setIsAddServiceModalOpen(true);
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                    title="Edit service details"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    <span>Edit</span>
+                                  </button>
+
                                   {adminServiceModerationFilter !== 'approved' && (
                                     <button
                                       onClick={() => moderateService(srv.id, true)}
@@ -4197,8 +4219,15 @@ export const App: React.FC = () => {
       {/* Add / Register Local Service Modal */}
       <AddServiceModal
         isOpen={isAddServiceModalOpen}
-        onClose={() => setIsAddServiceModalOpen(false)}
+        onClose={() => {
+          setIsAddServiceModalOpen(false);
+          setServiceToEdit(null);
+        }}
         isAdmin={isAdminAuthenticated}
+        serviceToEdit={serviceToEdit}
+        onServiceUpdated={(updated: ServiceItem) => {
+          showToast(`Service "${updated.title}" successfully updated!`);
+        }}
       />
 
       {/* Global Toast Notification */}

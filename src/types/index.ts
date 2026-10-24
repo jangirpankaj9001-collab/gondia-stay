@@ -213,8 +213,11 @@ export interface ServiceItem {
   title: string;
   category: ServiceCategory;
   providerName: string;
+  ownerName?: string;
   phone: string;
+  ownerPhone?: string;
   whatsappNumber?: string;
+  ownerWhatsappNumber?: string;
   charges: string;
   chargeUnit?: string;
   priceNumeric?: number;

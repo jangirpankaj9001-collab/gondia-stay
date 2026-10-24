@@ -18,7 +18,8 @@ import {
   Eye, 
   X,
   ShieldAlert,
-  Award
+  Award,
+  Pencil
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
@@ -28,13 +29,15 @@ interface ServiceCardProps {
   isAdmin?: boolean;
   onModerate?: (serviceId: string, approve: boolean) => void;
   onDelete?: (serviceId: string) => void;
+  onEdit?: (service: ServiceItem) => void;
 }
 
 export const ServiceCard: React.FC<ServiceCardProps> = ({ 
   service, 
   isAdmin = false,
   onModerate,
-  onDelete 
+  onDelete,
+  onEdit
 }) => {
   const [showVisitingCardModal, setShowVisitingCardModal] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
@@ -275,9 +278,20 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
             </div>
 
             {/* Admin Moderation Controls if in moderation mode */}
-            {isAdmin && onModerate && (
+            {isAdmin && (
               <div className="pt-2 flex items-center gap-2 border-t border-slate-100">
-                {!isApproved(service.status) && (
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(service)}
+                    className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    title="Edit Service Details"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
+                {onModerate && !isApproved(service.status) && (
                   <button
                     type="button"
                     onClick={() => onModerate(service.id, true)}
@@ -287,7 +301,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                     <span>Approve Publicly</span>
                   </button>
                 )}
-                {isApproved(service.status) && (
+                {onModerate && isApproved(service.status) && (
                   <button
                     type="button"
                     onClick={() => onModerate(service.id, false)}

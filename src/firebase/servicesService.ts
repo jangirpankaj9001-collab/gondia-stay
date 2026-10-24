@@ -27,21 +27,35 @@ import { INITIAL_SERVICES } from '../data/initialData';
 
 export const SERVICES_COLLECTION = 'services';
 export const SERVICES_CACHE_KEY = 'gondia_stay_services_cache';
+export const DELETED_SERVICES_KEY = 'gondia_stay_deleted_services';
+
+const getDeletedServiceIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(DELETED_SERVICES_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+};
 
 /**
  * Retrieves cached services from localStorage or returns verified initial services.
  */
 export const getCachedServices = (): ServiceItem[] => {
+  const deletedIds = getDeletedServiceIds();
   try {
     const raw = localStorage.getItem(SERVICES_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Merge in any initial services that aren't already in cache
-        const existingIds = new Set(parsed.map((s: any) => s.id));
-        const merged = [...parsed];
+        // Filter out deleted IDs and normalize
+        const validCached = parsed.filter((s: any) => s && s.id && !deletedIds.has(s.id));
+        const existingIds = new Set(validCached.map((s: any) => s.id));
+        const merged = [...validCached];
         INITIAL_SERVICES.forEach(initService => {
-          if (!existingIds.has(initService.id)) {
+          if (!existingIds.has(initService.id) && !deletedIds.has(initService.id)) {
             merged.push(initService);
           }
         });
@@ -51,7 +65,7 @@ export const getCachedServices = (): ServiceItem[] => {
   } catch (err) {
     console.warn('[GondiaStay] Error reading services cache:', err);
   }
-  return INITIAL_SERVICES;
+  return INITIAL_SERVICES.filter(s => !deletedIds.has(s.id));
 };
 
 /**
@@ -78,28 +92,64 @@ export const subscribeToFirestoreServices = (
 
   const handleSnapshot = (snapshot: any) => {
     hasReceivedData = true;
+    const deletedIds = getDeletedServiceIds();
     const items: ServiceItem[] = [];
+
     snapshot.forEach((docSnap: any) => {
+      if (deletedIds.has(docSnap.id)) return;
       const data = docSnap.data();
+      const pName = (data.providerName || data.ownerName || '').trim();
+      const pPhone = (data.phone || data.ownerPhone || '').trim();
+      const pWhatsapp = (data.whatsappNumber || data.ownerWhatsappNumber || pPhone).trim();
+      const photos = Array.isArray(data.photos) 
+        ? data.photos.filter((p: any) => typeof p === 'string' && p.trim().length > 0) 
+        : [];
+      const areas = Array.isArray(data.serviceAreas) && data.serviceAreas.length > 0 
+        ? data.serviceAreas 
+        : (data.locality ? [data.locality] : ['All Gondia']);
+
       items.push({
-        ...(data as ServiceItem),
         id: docSnap.id,
-        // Normalize status
+        title: data.title || '',
+        category: (data.category || 'MESS_TIFFIN') as ServiceCategory,
+        providerName: pName,
+        ownerName: pName,
+        phone: pPhone,
+        ownerPhone: pPhone,
+        whatsappNumber: pWhatsapp,
+        ownerWhatsappNumber: pWhatsapp,
+        charges: data.charges || '',
+        chargeUnit: data.chargeUnit || 'month',
+        priceNumeric: typeof data.priceNumeric === 'number' ? data.priceNumeric : 0,
+        description: data.description || '',
+        serviceAreas: areas,
+        locality: data.locality || areas[0] || 'Civil Lines',
+        city: data.city || 'Gondia',
+        address: data.address || '',
+        photos: photos,
+        businessCardPhoto: typeof data.businessCardPhoto === 'string' ? data.businessCardPhoto : '',
+        timing: data.timing || '8:00 AM - 8:00 PM',
+        experienceYears: typeof data.experienceYears === 'number' ? data.experienceYears : 1,
         status: (data.status || 'pending').toLowerCase() as any,
+        rating: typeof data.rating === 'number' ? data.rating : 5.0,
+        reviewCount: typeof data.reviewCount === 'number' ? data.reviewCount : 1,
+        isFeatured: Boolean(data.isFeatured),
+        specialties: Array.isArray(data.specialties) ? data.specialties : [],
         createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
-        photos: Array.isArray(data.photos) ? data.photos : [],
-        serviceAreas: Array.isArray(data.serviceAreas) ? data.serviceAreas : ['All Gondia']
+        updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : Date.now(),
+        moderatedAt: typeof data.moderatedAt === 'number' ? data.moderatedAt : undefined,
+        moderatedBy: typeof data.moderatedBy === 'string' ? data.moderatedBy : undefined
       });
     });
 
     // If Firestore has services, use them; if brand new empty collection, merge/seed initial services
     let merged = items;
     if (items.length === 0 && !isAdmin) {
-      merged = INITIAL_SERVICES;
+      merged = INITIAL_SERVICES.filter(s => !deletedIds.has(s.id));
     } else if (items.length > 0) {
       // Merge with initial services to ensure all 8 categories are represented if not yet seeded
       const existingIds = new Set(items.map(s => s.id));
-      const missingInitial = INITIAL_SERVICES.filter(init => !existingIds.has(init.id));
+      const missingInitial = INITIAL_SERVICES.filter(init => !existingIds.has(init.id) && !deletedIds.has(init.id));
       merged = [...items, ...missingInitial];
     }
 
@@ -201,16 +251,24 @@ export const saveServiceToFirestore = async (
   const cleanStatus = (isRealAdminAuth && serviceData.status) ? serviceData.status : 'pending';
 
   const cleanTitle = (serviceData.title || '').trim().substring(0, 200);
-  const cleanPhone = (serviceData.phone || '').trim();
+  const cleanProvider = (serviceData.providerName || serviceData.ownerName || '').trim().substring(0, 150);
+  const cleanPhone = (serviceData.phone || serviceData.ownerPhone || '').trim();
+  const cleanWhatsapp = (serviceData.whatsappNumber || serviceData.ownerWhatsappNumber || cleanPhone).trim().substring(0, 30);
   const cleanCategory = (serviceData.category || 'MESS_TIFFIN') as ServiceCategory;
+  const cleanPhotos = Array.isArray(serviceData.photos) 
+    ? serviceData.photos.filter(p => typeof p === 'string' && p.trim().length > 0)
+    : [];
 
   const cleanData: ServiceItem = {
     id: serviceId,
     title: cleanTitle,
     category: cleanCategory,
-    providerName: (serviceData.providerName || '').trim().substring(0, 150),
+    providerName: cleanProvider,
+    ownerName: cleanProvider,
     phone: cleanPhone,
-    whatsappNumber: (serviceData.whatsappNumber || cleanPhone).trim().substring(0, 30),
+    ownerPhone: cleanPhone,
+    whatsappNumber: cleanWhatsapp,
+    ownerWhatsappNumber: cleanWhatsapp,
     charges: (serviceData.charges || '').trim().substring(0, 100),
     chargeUnit: (serviceData.chargeUnit || 'service').trim().substring(0, 50),
     priceNumeric: typeof serviceData.priceNumeric === 'number' ? serviceData.priceNumeric : 0,
@@ -221,16 +279,16 @@ export const saveServiceToFirestore = async (
     locality: (serviceData.locality || 'Gondia').trim().substring(0, 100),
     city: 'Gondia',
     address: (serviceData.address || '').trim().substring(0, 300),
-    photos: Array.isArray(serviceData.photos) ? serviceData.photos : [],
-    businessCardPhoto: serviceData.businessCardPhoto || '',
+    photos: cleanPhotos,
+    businessCardPhoto: typeof serviceData.businessCardPhoto === 'string' ? serviceData.businessCardPhoto : '',
     timing: (serviceData.timing || '8:00 AM - 8:00 PM').trim().substring(0, 100),
     experienceYears: typeof serviceData.experienceYears === 'number' ? serviceData.experienceYears : 1,
     status: cleanStatus as any,
     rating: typeof serviceData.rating === 'number' ? serviceData.rating : 5.0,
     reviewCount: typeof serviceData.reviewCount === 'number' ? serviceData.reviewCount : 1,
-    isFeatured: false,
+    isFeatured: Boolean(serviceData.isFeatured),
     specialties: Array.isArray(serviceData.specialties) ? serviceData.specialties : [],
-    createdAt: Date.now(),
+    createdAt: typeof serviceData.createdAt === 'number' ? serviceData.createdAt : Date.now(),
     updatedAt: Date.now()
   };
 
@@ -285,6 +343,79 @@ export const saveServiceToFirestore = async (
 };
 
 /**
+ * Admin action: Updates any or all fields of an existing service in Firestore.
+ * Preserves existing document ID without creating duplicate records.
+ */
+export const updateServiceInFirestore = async (
+  serviceId: string,
+  updatedFields: Partial<ServiceItem>
+): Promise<{ success: boolean; error?: string }> => {
+  const cleanProvider = (updatedFields.providerName || updatedFields.ownerName || '').trim();
+  const cleanPhone = (updatedFields.phone || updatedFields.ownerPhone || '').trim();
+  const cleanWhatsapp = (updatedFields.whatsappNumber || updatedFields.ownerWhatsappNumber || cleanPhone).trim();
+
+  const sanitized: any = {
+    ...updatedFields,
+    updatedAt: Date.now()
+  };
+  delete sanitized.id;
+
+  if (cleanProvider) {
+    sanitized.providerName = cleanProvider;
+    sanitized.ownerName = cleanProvider;
+  }
+  if (cleanPhone) {
+    sanitized.phone = cleanPhone;
+    sanitized.ownerPhone = cleanPhone;
+  }
+  if (cleanWhatsapp) {
+    sanitized.whatsappNumber = cleanWhatsapp;
+    sanitized.ownerWhatsappNumber = cleanWhatsapp;
+  }
+  if (Array.isArray(updatedFields.photos)) {
+    sanitized.photos = updatedFields.photos.filter((p: any) => typeof p === 'string' && p.trim().length > 0);
+  }
+  if (Array.isArray(updatedFields.serviceAreas)) {
+    sanitized.serviceAreas = updatedFields.serviceAreas;
+  }
+  if (Array.isArray(updatedFields.specialties)) {
+    sanitized.specialties = updatedFields.specialties;
+  }
+
+  // Update local cache immediately for responsive zero-lag UI
+  try {
+    const cached = getCachedServices();
+    const updated = cached.map(s => {
+      if (s.id === serviceId) {
+        return {
+          ...s,
+          ...sanitized
+        };
+      }
+      return s;
+    });
+    localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
+  } catch {}
+
+  if (!db || !isFirebaseConfigured()) {
+    return { success: true };
+  }
+
+  try {
+    const docRef = doc(db, SERVICES_COLLECTION, serviceId);
+    // Use setDoc with merge: true to avoid "No document to update" errors if editing an initial template
+    await setDoc(docRef, sanitized, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.error('[GondiaStay] Error updating service in Firestore:', err);
+    return {
+      success: false,
+      error: err?.message || 'Failed to update service in Firestore.'
+    };
+  }
+};
+
+/**
  * Admin action: approves or rejects a service listing in Firestore.
  */
 export const moderateServiceInFirestore = async (
@@ -303,7 +434,8 @@ export const moderateServiceInFirestore = async (
           ...s, 
           status: newStatus as any, 
           moderatedAt: Date.now(), 
-          moderatedBy: adminEmail || 'admin' 
+          moderatedBy: adminEmail || 'admin',
+          updatedAt: Date.now()
         };
       }
       return s;
@@ -317,12 +449,12 @@ export const moderateServiceInFirestore = async (
 
   try {
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
-    await updateDoc(docRef, {
+    await setDoc(docRef, {
       status: newStatus,
       moderatedAt: Date.now(),
       moderatedBy: adminEmail || 'admin',
       updatedAt: Date.now()
-    });
+    }, { merge: true });
     return true;
   } catch (err) {
     console.error('[GondiaStay] Error moderating service in Firestore:', err);
@@ -334,8 +466,15 @@ export const moderateServiceInFirestore = async (
  * Admin action: deletes a service listing permanently from Firestore.
  */
 export const deleteServiceInFirestore = async (serviceId: string): Promise<boolean> => {
-  // Update local cache
+  // Update local cache and deleted tracking
   try {
+    const rawDeleted = localStorage.getItem(DELETED_SERVICES_KEY);
+    const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
+    if (!deletedArr.includes(serviceId)) {
+      deletedArr.push(serviceId);
+      localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify(deletedArr));
+    }
+
     const cached = getCachedServices();
     const updated = cached.filter(s => s.id !== serviceId);
     localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
   Upload, 
@@ -15,7 +15,9 @@ import {
   MapPin,
   Clock,
   ShieldCheck,
-  Plus
+  Plus,
+  Pencil,
+  XCircle
 } from 'lucide-react';
 import { 
   ServiceCategory, 
@@ -24,12 +26,14 @@ import {
   GONDIA_LOCALITIES 
 } from '../types';
 import { uploadServicePhoto, uploadMultipleServicePhotos } from '../firebase/storageService';
-import { saveServiceToFirestore } from '../firebase/servicesService';
+import { saveServiceToFirestore, updateServiceInFirestore } from '../firebase/servicesService';
 
 interface AddServiceModalProps {
   isOpen: boolean;
   onClose: () => void;
   onServiceAdded?: (service: ServiceItem) => void;
+  onServiceUpdated?: (service: ServiceItem) => void;
+  serviceToEdit?: ServiceItem | null;
   isAdmin?: boolean;
 }
 
@@ -37,6 +41,8 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   isOpen,
   onClose,
   onServiceAdded,
+  onServiceUpdated,
+  serviceToEdit = null,
   isAdmin = false
 }) => {
   const [category, setCategory] = useState<ServiceCategory>('MESS_TIFFIN');
@@ -53,6 +59,52 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   const [timing, setTiming] = useState('8:00 AM - 8:00 PM');
   const [experienceYears, setExperienceYears] = useState(5);
   const [specialties, setSpecialties] = useState('');
+  const [adminStatus, setAdminStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+
+  // Populate or reset form fields when serviceToEdit changes
+  useEffect(() => {
+    if (serviceToEdit) {
+      setCategory(serviceToEdit.category || 'MESS_TIFFIN');
+      setTitle(serviceToEdit.title || '');
+      setProviderName(serviceToEdit.providerName || serviceToEdit.ownerName || '');
+      setPhone(serviceToEdit.phone || serviceToEdit.ownerPhone || '');
+      setWhatsappNumber(serviceToEdit.whatsappNumber || serviceToEdit.ownerWhatsappNumber || '');
+      setCharges(serviceToEdit.charges || '');
+      setChargeUnit(serviceToEdit.chargeUnit || 'service');
+      setDescription(serviceToEdit.description || '');
+      setSelectedAreas(serviceToEdit.serviceAreas && serviceToEdit.serviceAreas.length > 0 ? serviceToEdit.serviceAreas : ['All Gondia']);
+      setLocality(serviceToEdit.locality || 'Civil Lines');
+      setAddress(serviceToEdit.address || '');
+      setTiming(serviceToEdit.timing || '8:00 AM - 8:00 PM');
+      setExperienceYears(serviceToEdit.experienceYears ?? 5);
+      setSpecialties(Array.isArray(serviceToEdit.specialties) ? serviceToEdit.specialties.join(', ') : '');
+      setUploadedPhotos(Array.isArray(serviceToEdit.photos) ? [...serviceToEdit.photos] : []);
+      setBusinessCardPhoto(serviceToEdit.businessCardPhoto || '');
+      setAdminStatus((serviceToEdit.status as any) || 'approved');
+      setFormError(null);
+      setSubmissionSuccess(false);
+    } else {
+      setCategory('MESS_TIFFIN');
+      setTitle('');
+      setProviderName('');
+      setPhone('');
+      setWhatsappNumber('');
+      setCharges('');
+      setChargeUnit('month');
+      setDescription('');
+      setSelectedAreas(['All Gondia']);
+      setLocality('Civil Lines');
+      setAddress('');
+      setTiming('8:00 AM - 8:00 PM');
+      setExperienceYears(5);
+      setSpecialties('');
+      setUploadedPhotos([]);
+      setBusinessCardPhoto('');
+      setAdminStatus('pending');
+      setFormError(null);
+      setSubmissionSuccess(false);
+    }
+  }, [serviceToEdit, isOpen]);
 
   // Photos state
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
@@ -190,17 +242,67 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         allPhotos.push(businessCardPhoto);
       }
 
+      const formattedPhone = cleanPhone.startsWith('91') ? `+${cleanPhone}` : `+91${cleanPhone.slice(-10)}`;
+      const formattedWhatsapp = whatsappNumber.trim() ? (
+        whatsappNumber.replace(/\D/g, '').startsWith('91') 
+          ? `+${whatsappNumber.replace(/\D/g, '')}` 
+          : `+91${whatsappNumber.replace(/\D/g, '').slice(-10)}`
+      ) : formattedPhone;
+
+      if (serviceToEdit) {
+        const updatedServiceData: Partial<ServiceItem> = {
+          title: title.trim(),
+          category,
+          providerName: providerName.trim(),
+          ownerName: providerName.trim(),
+          phone: formattedPhone,
+          ownerPhone: formattedPhone,
+          whatsappNumber: formattedWhatsapp,
+          ownerWhatsappNumber: formattedWhatsapp,
+          charges: charges.trim(),
+          chargeUnit,
+          priceNumeric,
+          description: description.trim(),
+          serviceAreas: selectedAreas,
+          locality,
+          city: 'Gondia',
+          address: address.trim() || `${locality}, Gondia`,
+          photos: allPhotos,
+          businessCardPhoto,
+          timing: timing.trim(),
+          experienceYears,
+          specialties: specs,
+          ...(isAdmin ? { status: adminStatus } : {})
+        };
+
+        const result = await updateServiceInFirestore(serviceToEdit.id, updatedServiceData);
+        if (result.success) {
+          const updatedFull: ServiceItem = {
+            ...serviceToEdit,
+            ...updatedServiceData,
+            status: (isAdmin ? adminStatus : serviceToEdit.status) as any
+          };
+          if (onServiceUpdated) {
+            onServiceUpdated(updatedFull);
+          }
+          onClose();
+          return;
+        } else {
+          setFormError(result.error || 'Failed to update service in Firestore.');
+          return;
+        }
+      }
+
       // Default status MUST be 'pending' for zero-friction submission
       const newService: Partial<ServiceItem> = {
         title: title.trim(),
         category,
         providerName: providerName.trim(),
-        phone: cleanPhone.startsWith('91') ? `+${cleanPhone}` : `+91${cleanPhone.slice(-10)}`,
-        whatsappNumber: whatsappNumber.trim() ? (
-          whatsappNumber.replace(/\D/g, '').startsWith('91') 
-            ? `+${whatsappNumber.replace(/\D/g, '')}` 
-            : `+91${whatsappNumber.replace(/\D/g, '').slice(-10)}`
-        ) : (cleanPhone.startsWith('91') ? `+${cleanPhone}` : `+91${cleanPhone.slice(-10)}`),
+        ownerName: providerName.trim(),
+        phone: formattedPhone,
+        ownerPhone: formattedPhone,
+        whatsappNumber: formattedWhatsapp,
+        ownerWhatsappNumber: formattedWhatsapp,
         charges: charges.trim(),
         chargeUnit,
         priceNumeric,
@@ -213,7 +315,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         businessCardPhoto,
         timing: timing.trim(),
         experienceYears,
-        status: isAdmin ? 'approved' : 'pending',
+        status: isAdmin ? adminStatus : 'pending',
         rating: 5.0,
         reviewCount: 1,
         specialties: specs
@@ -227,7 +329,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           onServiceAdded({
             ...newService,
             id: result.serviceId,
-            status: (isAdmin ? 'approved' : 'pending') as any
+            status: (isAdmin ? adminStatus : 'pending') as any
           } as ServiceItem);
         }
       } else {
@@ -248,27 +350,40 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         {/* Header */}
         <div className="p-4 sm:p-6 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex items-center justify-between shrink-0">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
                 0% Brokerage • Free Listing
               </span>
               {isAdmin && (
                 <span className="bg-emerald-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                  Admin Direct Add
+                  {serviceToEdit ? 'Admin Edit Console' : 'Admin Direct Add'}
+                </span>
+              )}
+              {serviceToEdit && (
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                  serviceToEdit.status === 'approved' 
+                    ? 'bg-emerald-500 text-white' 
+                    : serviceToEdit.status === 'rejected'
+                      ? 'bg-rose-500 text-white'
+                      : 'bg-amber-400 text-slate-950'
+                }`}>
+                  Status: {serviceToEdit.status || 'pending'}
                 </span>
               )}
             </div>
             <h2 className="text-xl sm:text-2xl font-black mt-1">
-              Register Your Service in Gondia
+              {serviceToEdit ? `Edit: ${serviceToEdit.title}` : 'Register Your Service in Gondia'}
             </h2>
             <p className="text-xs text-blue-100 mt-0.5">
-              Connect directly with students, tenants, and families looking for services across Gondia.
+              {serviceToEdit
+                ? 'Update all provider, contact, charge, and coverage details in Firestore.'
+                : 'Connect directly with students, tenants, and families looking for services across Gondia.'}
             </p>
           </div>
           <button 
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full text-blue-200 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-2 rounded-full text-blue-200 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -315,6 +430,59 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ) : (
             /* Form view */
             <form onSubmit={handleSubmit} className="space-y-5">
+
+              {/* Admin Moderation Status Selector */}
+              {isAdmin && (
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-blue-600" />
+                      <span>Moderation Status in Firestore</span>
+                    </label>
+                    <span className="text-[11px] text-slate-500 font-semibold">
+                      Controls public live visibility
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAdminStatus('pending')}
+                      className={`py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        adminStatus === 'pending'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-amber-50'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Pending</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminStatus('approved')}
+                      className={`py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        adminStatus === 'approved'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Approved (Live)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminStatus('rejected')}
+                      className={`py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        adminStatus === 'rejected'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-rose-50'
+                      }`}
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Rejected</span>
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {/* Category Picker */}
               <div className="space-y-2">
