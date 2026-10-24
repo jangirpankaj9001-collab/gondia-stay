@@ -3505,17 +3505,6 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Floating Quick Action Button for Mobile: Post Property */}
-      <button
-        onClick={() => {
-          handleStartNewListing();
-        }}
-        className="md:hidden fixed bottom-20 right-4 sm:right-5 z-40 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 text-xs font-extrabold transition-all cursor-pointer border-2 border-white/80"
-        title="Add Property Listing in Gondia"
-      >
-        <Plus className="w-4 h-4 stroke-[3]" />
-        <span>Post Property</span>
-      </button>
 
       {/* Add / Edit Property Modal */}
       <AddPropertyModal
