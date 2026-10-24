@@ -18,7 +18,6 @@ import {
   Plus,
   X,
   SlidersHorizontal,
-  ChevronRight,
   Pencil
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
@@ -44,7 +43,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-amber-500 to-orange-500',
     glow: 'shadow-amber-500/25',
     accentColor: 'text-amber-600 bg-amber-50 border-amber-200',
-    subIcon: <UtensilsCrossed className="w-6 h-6 text-white" />,
+    subIcon: <UtensilsCrossed className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Fresh daily homestyle meals & tiffin delivery in Gondia',
     typicalCharge: 'From ₹2,500 / month'
   },
@@ -55,7 +54,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-purple-500 to-indigo-500',
     glow: 'shadow-purple-500/25',
     accentColor: 'text-purple-600 bg-purple-50 border-purple-200',
-    subIcon: <Shirt className="w-6 h-6 text-white" />,
+    subIcon: <Shirt className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Steam press, washing, blanket wash & dry cleaning',
     typicalCharge: 'From ₹10 / piece'
   },
@@ -66,7 +65,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-amber-400 to-yellow-500',
     glow: 'shadow-yellow-500/25',
     accentColor: 'text-amber-700 bg-amber-50 border-amber-200',
-    subIcon: <Zap className="w-6 h-6 text-white" />,
+    subIcon: <Zap className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'MCB repair, cooler/fan rewinding, inverter wiring & appliance repair',
     typicalCharge: '₹150 visiting fee'
   },
@@ -77,7 +76,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-cyan-500 to-blue-500',
     glow: 'shadow-cyan-500/25',
     accentColor: 'text-cyan-700 bg-cyan-50 border-cyan-200',
-    subIcon: <Wrench className="w-6 h-6 text-white" />,
+    subIcon: <Wrench className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Concealed leak repairs, tap fitting, flush valves & water tank repair',
     typicalCharge: '₹150 inspection'
   },
@@ -88,7 +87,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-sky-400 to-blue-600',
     glow: 'shadow-sky-500/25',
     accentColor: 'text-sky-700 bg-sky-50 border-sky-200',
-    subIcon: <Droplets className="w-6 h-6 text-white" />,
+    subIcon: <Droplets className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Multi-stage RO + UV purified 20L chilled water cans delivered to floor',
     typicalCharge: '₹30 / 20-Litre can'
   },
@@ -99,7 +98,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-slate-700 to-slate-900',
     glow: 'shadow-slate-500/25',
     accentColor: 'text-slate-800 bg-slate-100 border-slate-300',
-    subIcon: <ShieldCheck className="w-6 h-6 text-white" />,
+    subIcon: <ShieldCheck className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Color night vision CCTV camera installation & background-verified night guards',
     typicalCharge: 'Starting ₹1,200'
   },
@@ -110,7 +109,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-emerald-500 to-teal-600',
     glow: 'shadow-emerald-500/25',
     accentColor: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-    subIcon: <ChefHat className="w-6 h-6 text-white" />,
+    subIcon: <ChefHat className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Trustworthy homestyle Maharashtrian & North Indian cooking & maid help',
     typicalCharge: 'From ₹1,800 / month'
   },
@@ -121,7 +120,7 @@ const SUBCATEGORIES: SubCategoryConfig[] = [
     gradient: 'from-blue-600 to-indigo-700',
     glow: 'shadow-indigo-500/25',
     accentColor: 'text-indigo-700 bg-indigo-50 border-indigo-200',
-    subIcon: <Sparkles className="w-6 h-6 text-white" />,
+    subIcon: <Sparkles className="w-8 h-8 sm:w-10 sm:h-10 text-white stroke-[2.2]" />,
     tagline: 'Mechanized tile scrubbing, bathroom descaling, sofa steam & move-in clean',
     typicalCharge: 'From ₹699 / room'
   }
@@ -250,50 +249,24 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
 
           {/* Clean 2–4 Column Grid of Subcategory Icons */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3.5 sm:gap-5">
-            {SUBCATEGORIES.map(cat => {
-              // Count approved providers in this category from Firestore
-              const count = services.filter(s => 
-                (isAdmin || isApproved(s.status)) && matchesSubcategory(s.category, cat.id)
-              ).length;
+            {SUBCATEGORIES.map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleCategoryIconClick(cat.id)}
+                className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200/90 hover:border-blue-500 shadow-xs hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center text-center group cursor-pointer relative overflow-hidden active:scale-95"
+              >
+                {/* Large & Attractive Gradient Icon Container */}
+                <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl bg-gradient-to-br ${cat.gradient} flex items-center justify-center shadow-lg ${cat.glow} group-hover:scale-110 group-hover:rotate-1 transition-all duration-300 shrink-0 ring-4 ring-white/70`}>
+                  {cat.subIcon}
+                </div>
 
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => handleCategoryIconClick(cat.id)}
-                  className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 hover:border-blue-400 shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between text-left group cursor-pointer relative overflow-hidden"
-                >
-                  {/* Category Card Top Row: Attractive Icon & Badge */}
-                  <div className="flex items-start justify-between gap-2 w-full">
-                    {/* Unique Gradient Icon Container */}
-                    <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${cat.gradient} flex items-center justify-center shadow-md ${cat.glow} group-hover:scale-110 transition-transform duration-300 shrink-0`}>
-                      {cat.subIcon}
-                    </div>
-
-                    {/* Count / Badge Pill */}
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 transition-colors">
-                      {count} {count === 1 ? 'Provider' : 'Providers'}
-                    </span>
-                  </div>
-
-                  {/* Category Title & Rates */}
-                  <div className="mt-3.5">
-                    <h3 className="font-black text-sm sm:text-base text-slate-900 group-hover:text-blue-600 transition-colors tracking-tight leading-snug">
-                      {cat.name}
-                    </h3>
-                    <p className="text-[11px] font-bold text-slate-500 mt-0.5 truncate">
-                      {cat.typicalCharge}
-                    </p>
-                  </div>
-
-                  {/* Bottom Action Hint */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-blue-600 group-hover:text-blue-700">
-                    <span>View Providers</span>
-                    <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                  </div>
-                </button>
-              );
-            })}
+                {/* Only the Relevant Category Name in Bold Below Each Icon */}
+                <span className="font-extrabold text-sm sm:text-base text-slate-900 group-hover:text-blue-600 transition-colors tracking-tight mt-3.5 text-center leading-snug">
+                  {cat.name}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       ) : (
