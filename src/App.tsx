@@ -1669,20 +1669,49 @@ export const App: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto">
+              {/* Row with "Select Location" beside "About Services" */}
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {/* Highlighted "Select Location" with modern location-pin icon & subtle background/border */}
+                <div className="relative flex-1 sm:flex-initial">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-blue-50/70 hover:bg-blue-100/60 border border-blue-200/90 hover:border-blue-300 rounded-xl shadow-2xs transition-all duration-150 cursor-pointer min-h-[38px]">
+                    <div className="w-5 h-5 rounded-md bg-blue-600/15 text-blue-600 flex items-center justify-center shrink-0">
+                      <MapPin className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-800 whitespace-nowrap truncate max-w-[130px] sm:max-w-[160px]">
+                      {serviceLocalityFilter === 'All' ? 'Select Location' : serviceLocalityFilter}
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-auto sm:ml-1" />
+                  </div>
+
+                  {/* Dropdown selector for Gondia Localities */}
+                  <select
+                    value={serviceLocalityFilter}
+                    onChange={(e) => setServiceLocalityFilter(e.target.value)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-xs"
+                    aria-label="Select Location in Gondia"
+                    title="Select Location in Gondia"
+                  >
+                    <option value="All">Select Location (All Gondia)</option>
+                    {GONDIA_LOCALITIES.filter(l => l !== 'All').map(loc => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* About Services button beside Select Location on the same row */}
                 <button
                   type="button"
                   onClick={() => setIsServicesDashboardOpen(true)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200/80"
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/90 shadow-2xs shrink-0 whitespace-nowrap min-h-[38px]"
                   title="View Services Overview & Dashboard Details"
                 >
-                  <Info className="w-3.5 h-3.5 text-blue-600" />
+                  <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                   <span>About Services</span>
                 </button>
               </div>
             </div>
 
-            {/* Large, Attractive Full-Width Row Button for Easy Access */}
+            {/* "Add Your Services" button placed directly below */}
             <button
               type="button"
               onClick={() => {
@@ -1695,7 +1724,7 @@ export const App: React.FC = () => {
               <div className="w-7 h-7 rounded-xl bg-slate-950 text-amber-400 flex items-center justify-center shadow-xs shrink-0 group-hover:scale-110 transition-transform">
                 <Plus className="w-4 h-4 stroke-[3]" />
               </div>
-              <span className="tracking-tight font-black text-slate-950">Add Your Service</span>
+              <span className="tracking-tight font-black text-slate-950">Add Your Services</span>
               <span className="hidden xs:inline-block text-xs font-bold text-slate-800 bg-slate-950/10 px-2.5 py-0.5 rounded-full ml-1">
                 Reach Local Tenants & Homeowners in Gondia
               </span>
@@ -1763,44 +1792,36 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Locality Filter Controls Bar */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700">Filter by Locality:</span>
-              </div>
-
-              {/* Locality selector */}
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <MapPin className="w-3.5 h-3.5 text-blue-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <select
-                    value={serviceLocalityFilter}
-                    onChange={(e) => setServiceLocalityFilter(e.target.value)}
-                    className="pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:border-blue-600 outline-none appearance-none cursor-pointer"
-                  >
-                    <option value="All">All Gondia Localities</option>
-                    {GONDIA_LOCALITIES.filter(l => l !== 'All').map(loc => (
-                      <option key={loc} value={loc}>{loc}</option>
-                    ))}
-                  </select>
+            {/* Active Locality / Category Filter Indicator */}
+            {(serviceLocalityFilter !== 'All' || selectedServiceCategory !== 'ALL') && (
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-blue-50/70 border border-blue-200/70 rounded-2xl text-xs animate-in fade-in">
+                <div className="flex items-center gap-2 text-slate-700 font-medium truncate">
+                  <span className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Filtered by:</span>
+                  {serviceLocalityFilter !== 'All' && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-blue-200 text-blue-700 font-bold text-xs shadow-2xs">
+                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                      {serviceLocalityFilter}
+                    </span>
+                  )}
+                  {selectedServiceCategory !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white border border-blue-200 text-slate-800 font-bold text-xs shadow-2xs">
+                      Category: {selectedServiceCategory}
+                    </span>
+                  )}
                 </div>
-
-                {/* Reset Filters button if applied */}
-                {(serviceLocalityFilter !== 'All' || selectedServiceCategory !== 'ALL') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setServiceLocalityFilter('All');
-                      setSelectedServiceCategory('ALL');
-                    }}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors shrink-0 cursor-pointer"
-                    title="Reset service filters"
-                  >
-                    Reset
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setServiceLocalityFilter('All');
+                    setSelectedServiceCategory('ALL');
+                  }}
+                  className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200/90 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                  title="Reset service filters"
+                >
+                  Reset All
+                </button>
               </div>
-            </div>
+            )}
 
             {/* Service Categories in Grid View with Modern Sub Icons & Inside Appropriate Owners Listed */}
             <ServiceCategoryGrid 
