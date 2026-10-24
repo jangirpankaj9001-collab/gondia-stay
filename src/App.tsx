@@ -1901,25 +1901,32 @@ export const App: React.FC = () => {
                   type="button"
                   onClick={() => setIsOwnerDashboardOpen(true)}
                   className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  title="View Owner Dashboard & Stats"
+                  title="View My Properties & Stats"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Dashboard Details</span>
+                  <span>My Properties</span>
                   <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-0.5">
                     {myProperties.length}
                   </span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={handleStartNewListing}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Post Listing</span>
-                </button>
               </div>
             </div>
+
+            {/* Large, Attractive Full-Width Row Button for "Add Your Property" matching "Add Your Service" style & size */}
+            <button
+              type="button"
+              onClick={handleStartNewListing}
+              className="w-full group relative overflow-hidden bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm sm:text-base py-3.5 px-5 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 flex items-center justify-center gap-2.5 active:scale-[0.99] cursor-pointer border border-amber-300/80"
+              title="Add your rental property in Gondia"
+            >
+              <div className="w-7 h-7 rounded-xl bg-slate-950 text-amber-400 flex items-center justify-center shadow-xs shrink-0 group-hover:scale-110 transition-transform">
+                <Plus className="w-4 h-4 stroke-[3]" />
+              </div>
+              <span className="tracking-tight font-black text-slate-950">Add Your Property</span>
+              <span className="hidden xs:inline-block text-xs font-bold text-slate-800 bg-slate-950/10 px-2.5 py-0.5 rounded-full ml-1">
+                Post Room, Flat or House in Gondia
+              </span>
+            </button>
 
             {/* Expanded Owner Dashboard Details Modal */}
             {isOwnerDashboardOpen && (
