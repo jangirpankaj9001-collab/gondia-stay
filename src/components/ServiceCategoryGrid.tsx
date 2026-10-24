@@ -18,7 +18,6 @@ import {
   Plus,
   X,
   SlidersHorizontal,
-  Search,
   ChevronRight,
   Pencil
 } from 'lucide-react';
@@ -362,29 +361,6 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                     </span>
                     <span>• Direct 0% Brokerage Connect</span>
                   </div>
-                </div>
-              </div>
-
-              {/* Category Search & Filter */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
-                <div className="relative flex-1 sm:w-56">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={`Search ${currentConfig.name}...`}
-                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-blue-600"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

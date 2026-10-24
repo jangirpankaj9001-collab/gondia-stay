@@ -1772,28 +1772,10 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Search & Locality Filter Controls Bar */}
+            {/* Locality Filter Controls Bar */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              
-              {/* Search input */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={serviceSearchQuery}
-                  onChange={(e) => setServiceSearchQuery(e.target.value)}
-                  placeholder="Search services, provider/owner name, electrician, plumber, tiffin, maid..."
-                  className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none"
-                />
-                {serviceSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setServiceSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">Filter by Locality:</span>
               </div>
 
               {/* Locality selector */}
@@ -1813,16 +1795,15 @@ export const App: React.FC = () => {
                 </div>
 
                 {/* Reset Filters button if applied */}
-                {(serviceSearchQuery || serviceLocalityFilter !== 'All' || selectedServiceCategory !== 'ALL') && (
+                {(serviceLocalityFilter !== 'All' || selectedServiceCategory !== 'ALL') && (
                   <button
                     type="button"
                     onClick={() => {
-                      setServiceSearchQuery('');
                       setServiceLocalityFilter('All');
                       setSelectedServiceCategory('ALL');
                     }}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors shrink-0"
-                    title="Reset all service filters"
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors shrink-0 cursor-pointer"
+                    title="Reset service filters"
                   >
                     Reset
                   </button>
