@@ -23,11 +23,22 @@ import {
 import { db, auth, isFirebaseConfigured } from './config';
 import { isAuthorizedAdminEmail } from './propertiesService';
 import { ServiceItem, ServiceCategory } from '../types';
-import { INITIAL_SERVICES } from '../data/initialData';
 
 export const SERVICES_COLLECTION = 'services';
 export const SERVICES_CACHE_KEY = 'gondia_stay_services_cache';
 export const DELETED_SERVICES_KEY = 'gondia_stay_deleted_services';
+
+// Legacy dummy service IDs to permanently filter out from local cache and Firestore
+export const DUMMY_SERVICE_IDS = new Set([
+  "srv_mess_01", "srv_mess_02", "srv_mess_03",
+  "srv_maid_01", "srv_maid_02",
+  "srv_housekeeping_01", "srv_housekeeping_02",
+  "srv_laundry_01", "srv_laundry_02",
+  "srv_elec_01", "srv_elec_02",
+  "srv_plumb_01", "srv_plumb_02",
+  "srv_water_01", "srv_water_02",
+  "srv_sec_01", "srv_sec_02"
+]);
 
 const getDeletedServiceIds = (): Set<string> => {
   try {
@@ -41,7 +52,7 @@ const getDeletedServiceIds = (): Set<string> => {
 };
 
 /**
- * Retrieves cached services from localStorage or returns verified initial services.
+ * Retrieves cached services from localStorage, filtering out deleted and dummy records.
  */
 export const getCachedServices = (): ServiceItem[] => {
   const deletedIds = getDeletedServiceIds();
@@ -50,22 +61,17 @@ export const getCachedServices = (): ServiceItem[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Filter out deleted IDs and normalize
-        const validCached = parsed.filter((s: any) => s && s.id && !deletedIds.has(s.id));
-        const existingIds = new Set(validCached.map((s: any) => s.id));
-        const merged = [...validCached];
-        INITIAL_SERVICES.forEach(initService => {
-          if (!existingIds.has(initService.id) && !deletedIds.has(initService.id)) {
-            merged.push(initService);
-          }
-        });
-        return merged;
+        // Filter out deleted IDs and any legacy dummy service IDs
+        const validCached = parsed.filter(
+          (s: any) => s && s.id && !deletedIds.has(s.id) && !DUMMY_SERVICE_IDS.has(s.id)
+        );
+        return validCached;
       }
     }
   } catch (err) {
     console.warn('[GondiaStay] Error reading services cache:', err);
   }
-  return INITIAL_SERVICES.filter(s => !deletedIds.has(s.id));
+  return [];
 };
 
 /**
@@ -96,7 +102,7 @@ export const subscribeToFirestoreServices = (
     const items: ServiceItem[] = [];
 
     snapshot.forEach((docSnap: any) => {
-      if (deletedIds.has(docSnap.id)) return;
+      if (deletedIds.has(docSnap.id) || DUMMY_SERVICE_IDS.has(docSnap.id)) return;
       const data = docSnap.data();
       const pName = (data.providerName || data.ownerName || '').trim();
       const pPhone = (data.phone || data.ownerPhone || '').trim();
@@ -142,16 +148,8 @@ export const subscribeToFirestoreServices = (
       });
     });
 
-    // If Firestore has services, use them; if brand new empty collection, merge/seed initial services
-    let merged = items;
-    if (items.length === 0 && !isAdmin) {
-      merged = INITIAL_SERVICES.filter(s => !deletedIds.has(s.id));
-    } else if (items.length > 0) {
-      // Merge with initial services to ensure all 8 categories are represented if not yet seeded
-      const existingIds = new Set(items.map(s => s.id));
-      const missingInitial = INITIAL_SERVICES.filter(init => !existingIds.has(init.id) && !deletedIds.has(init.id));
-      merged = [...items, ...missingInitial];
-    }
+    // Exclusively use real Firestore services
+    const merged = items.filter(s => !DUMMY_SERVICE_IDS.has(s.id));
 
     // Sort: Featured first, then newest
     merged.sort((a, b) => {

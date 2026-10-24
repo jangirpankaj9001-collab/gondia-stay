@@ -17,7 +17,7 @@ import {
   User,
   sendEmailVerification
 } from 'firebase/auth';
-import { INITIAL_TIFFINS, INITIAL_SERVICES } from '../data/initialData';
+import { INITIAL_TIFFINS } from '../data/initialData';
 import { 
   auth,
   isFirebaseConfigured
