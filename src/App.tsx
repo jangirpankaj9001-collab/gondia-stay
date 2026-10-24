@@ -3590,17 +3590,6 @@ export const App: React.FC = () => {
                           {rejectedServices.length}
                         </span>
                       </button>
-
-                      <div className="ml-auto">
-                        <button
-                          type="button"
-                          onClick={() => setIsAddServiceModalOpen(true)}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Add Service</span>
-                        </button>
-                      </div>
                     </div>
 
                     {(() => {
