@@ -1711,21 +1711,6 @@ export const App: React.FC = () => {
               </span>
             </button>
 
-            {/* Small Floating Corner Button for Services Section */}
-            <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40">
-              <button
-                type="button"
-                onClick={() => setIsServicesDashboardOpen(true)}
-                className="group flex items-center gap-2 bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-500 text-white pl-3.5 pr-4 py-2.5 rounded-full shadow-xl hover:shadow-2xl border border-white/20 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
-                title="Open Services Dashboard & Overview"
-              >
-                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
-                  <Wrench className="w-3.5 h-3.5 text-amber-300" />
-                </div>
-                <span className="text-xs font-black tracking-tight">Services Hub</span>
-              </button>
-            </div>
-
             {/* Expanded Services Dashboard Details Modal */}
             {isServicesDashboardOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
