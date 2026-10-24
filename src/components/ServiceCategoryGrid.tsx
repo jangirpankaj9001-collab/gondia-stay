@@ -223,30 +223,14 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     : [];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-6">
       
       {/* =========================================================================
           VIEW 1: MODERN RESPONSIVE 2-4 COLUMN GRID OF CLICKABLE SUBCATEGORY ICONS
           Appears when activeDedicatedCategory is null
          ========================================================================= */}
       {!activeDedicatedCategory ? (
-        <div className="space-y-3 sm:space-y-4">
-          
-          {/* Section Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <span>Explore Service Categories</span>
-                <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-                  8 Gondia Services
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Tap any category icon to view verified local service providers, direct phone, and WhatsApp contacts
-              </p>
-            </div>
-          </div>
-
+        <div>
           {/* Clean 2–4 Column Grid of Subcategory Icons */}
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3.5 sm:gap-5">
             {SUBCATEGORIES.map(cat => (
