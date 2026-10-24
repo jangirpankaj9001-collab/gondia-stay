@@ -1665,7 +1665,7 @@ export const App: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    Home & Student Services
+                    Services for You
                   </h1>
                   <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 uppercase tracking-wider">
                     Gondia
