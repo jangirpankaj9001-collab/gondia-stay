@@ -74,6 +74,7 @@ import { TiffinCard } from './components/TiffinCard';
 import { ServiceCard } from './components/ServiceCard';
 import { ServiceCategoryGrid } from './components/ServiceCategoryGrid';
 import { AddServiceModal } from './components/AddServiceModal';
+import { AddPropertyModal } from './components/AddPropertyModal';
 import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
 import { GondiaMap } from './components/GondiaMap';
@@ -177,6 +178,15 @@ export const App: React.FC = () => {
   const [serviceToEdit, setServiceToEdit] = useState<ServiceItem | null>(null);
   const [isServicesDashboardOpen, setIsServicesDashboardOpen] = useState(false);
   const [isOwnerDashboardOpen, setIsOwnerDashboardOpen] = useState(false);
+  const [isAddPropertyModalOpen, setIsAddPropertyModalOpen] = useState(false);
+
+  // Sync external post listing triggers to open AddPropertyModal
+  useEffect(() => {
+    if (ownerSubTab === 'new') {
+      setIsAddPropertyModalOpen(true);
+      setOwnerSubTab('listings');
+    }
+  }, [ownerSubTab, setOwnerSubTab]);
 
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
@@ -1088,8 +1098,7 @@ export const App: React.FC = () => {
       fingerprint: `existing_${url}`
     }));
     setSelectedPhotos(existingItems);
-    setOwnerSubTab('new');
-    window.scrollTo({ top: 300, behavior: 'smooth' });
+    setIsAddPropertyModalOpen(true);
   };
 
   const handleStartNewListing = () => {
@@ -1122,7 +1131,7 @@ export const App: React.FC = () => {
       longitude: 80.1945,
       photos: []
     });
-    setOwnerSubTab('new');
+    setIsAddPropertyModalOpen(true);
   };
 
   const toggleAmenity = (amenity: string) => {
@@ -2133,16 +2142,6 @@ export const App: React.FC = () => {
                   My Properties ({myProperties.length})
                 </button>
                 <button
-                  onClick={handleStartNewListing}
-                  className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all ${
-                    ownerSubTab === 'new'
-                      ? 'border-blue-600 text-blue-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {editingProperty ? 'Edit Listing' : 'Post New Listing'}
-                </button>
-                <button
                   onClick={() => setOwnerSubTab('moderation')}
                   className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
                     ownerSubTab === 'moderation'
@@ -2361,685 +2360,7 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Sub-tab 2: Post New Listing / Edit Form */}
-            {/* Requirement 1 & 2: Connected directly to Cloud Firestore */}
-            {/* Requirement 3: Set status to "pending" */}
-            {/* Requirement 11: Handle loading states and clear error reporting */}
-            {ownerSubTab === 'new' && (
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-                <div className="border-b border-slate-100 pb-4 mb-6">
-                  <h3 className="text-lg font-bold text-slate-900">
-                    {editingProperty ? `Edit Listing: ${editingProperty.title}` : 'Post Property Listing (0% Brokerage)'}
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {editingProperty 
-                      ? 'Update listing details. Any modifications will be saved immediately to Cloud Firestore.'
-                      : 'Submissions are saved directly to Cloud Firestore with status "pending". Listings appear publicly across all devices once approved by admin.'}
-                  </p>
-                </div>
-
-                {/* Inline Submission Error Display (Requirement 11) */}
-                {submissionError && (
-                  <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-2xl p-4 flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold">Error Saving Listing to Cloud Firestore:</div>
-                      <div className="text-rose-700 mt-0.5">{submissionError}</div>
-                      <div className="mt-2 flex gap-2">
-                        {isAdminAuthenticated && (
-                          <button
-                            type="button"
-                            onClick={() => setIsFirebaseModalOpen(true)}
-                            className="px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-lg text-[11px] cursor-pointer"
-                          >
-                            Check Firebase Settings
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setSubmissionError(null)}
-                          className="px-2.5 py-1 bg-white border border-rose-300 text-rose-800 rounded-lg text-[11px]"
-                        >
-                          Dismiss
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <form onSubmit={handleSaveListing} className="space-y-4">
-                  {/* Basic Info */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                      Property Title *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Spacious 2BHK Family Flat with Balcony near Railway Station"
-                      value={formData.title}
-                      onChange={(e) => {
-                        setFormData({ ...formData, title: e.target.value });
-                        if (submissionError) setSubmissionError(null);
-                      }}
-                      className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Gondia Locality *
-                      </label>
-                      <select
-                        value={formData.locality}
-                        onChange={(e) => {
-                          const newLoc = e.target.value;
-                          const coords = GONDIA_LOCALITY_COORDS[newLoc];
-                          setFormData({ 
-                            ...formData, 
-                            locality: newLoc,
-                            ...(coords ? { latitude: coords.lat, longitude: coords.lng } : {})
-                          });
-                        }}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600 font-semibold"
-                      >
-                        {GONDIA_LOCALITIES.filter(l => l !== 'All').map(loc => (
-                          <option key={loc} value={loc}>{loc}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Property Category *
-                      </label>
-                      <select
-                        value={formData.propertyType}
-                        onChange={(e) => setFormData({ ...formData, propertyType: e.target.value as PropertyType })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600 font-semibold"
-                      >
-                        {PROPERTY_TYPES.filter(t => t.type !== 'ALL').map(pt => (
-                          <option key={pt.type} value={pt.type}>{pt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Requirement 3: Accommodation Type Selector */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                      Accommodation Type *
-                    </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {ACCOMMODATION_TYPES.map(acc => {
-                        const isSelected = formData.accommodationType === acc.type;
-                        return (
-                          <button
-                            type="button"
-                            key={acc.type}
-                            onClick={() => {
-                              setFormData(prev => ({
-                                ...prev,
-                                accommodationType: acc.type,
-                                bedrooms: acc.defaultBedrooms,
-                                propertyType: acc.type === 'ROOM' ? 'ROOM' : acc.type === 'PG' ? 'PG' : acc.type === 'INDEPENDENT_HOUSE' ? 'INDEPENDENT_HOUSE' : 'FLAT'
-                              }));
-                            }}
-                            className={`p-2.5 text-xs rounded-xl border text-center font-bold transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            <div>{acc.label}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                      Detailed Address & Landmark *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Flat 302, Shanti Heights, Near Gayatri Mandir, Civil Lines"
-                      value={formData.address}
-                      onChange={(e) => {
-                        setFormData({ ...formData, address: e.target.value });
-                        if (submissionError) setSubmissionError(null);
-                      }}
-                      className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                    />
-                  </div>
-
-                  {/* Requirement 2 & 3: Accurate Map Location in Gondia */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                        Accurate Map Location in Gondia *
-                      </label>
-                      <span className="text-[11px] text-blue-600 font-bold">
-                        Tap map or drag pin to your building
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Tenants explore stays by location and use Google directions. Never guess—pinpoint the exact building location on the interactive Gondia map below.
-                    </p>
-                    <GondiaMap
-                      mode="picker"
-                      pickerLocation={{ lat: formData.latitude, lng: formData.longitude }}
-                      onPickerLocationChange={(pos) => {
-                        setFormData(prev => ({
-                          ...prev,
-                          latitude: pos.lat,
-                          longitude: pos.lng,
-                          locality: pos.locality || prev.locality
-                        }));
-                      }}
-                      heightClass="h-64 sm:h-72"
-                    />
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 font-mono">
-                      <span>Coordinates: {formData.latitude.toFixed(4)}° N, {formData.longitude.toFixed(4)}° E</span>
-                      <span className="text-emerald-700 font-sans font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Accurate Coordinates Set
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Property Photos Upload Section */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-xs font-bold text-slate-800 block">
-                          Property Photos *
-                        </label>
-                        <p className="text-[11px] text-slate-500">
-                          Select multiple photos directly from your phone gallery. Photos are automatically resized & compressed (target 200–400 KB) for quick uploads without visual quality loss.
-                        </p>
-                      </div>
-                      {selectedPhotos.length > 0 && (
-                        <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                          {selectedPhotos.length} {selectedPhotos.length === 1 ? 'Photo' : 'Photos'}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Optimization & duplicate protection summary banner */}
-                    {hasNewPhotos && (
-                      <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                            <Zap className="w-4 h-4 text-amber-300" />
-                          </div>
-                          <div>
-                            <div className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
-                              <span>{anyPhotoOptimizing ? 'Compressing & Resizing Photos...' : 'Smart Optimization Active (Target 200–400 KB)'}</span>
-                              {anyPhotoOptimizing && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
-                            </div>
-                            <p className="text-[11px] text-emerald-800">
-                              {totalOriginalBytes > totalOptimizedBytes && totalOptimizedBytes > 0
-                                ? `${formatBytes(totalOriginalBytes)} optimized to ${formatBytes(totalOptimizedBytes)} (${Math.round(((totalOriginalBytes - totalOptimizedBytes) / totalOriginalBytes) * 100)}% bandwidth saved for fast upload)`
-                                : 'Prevents duplicates and scales camera photos smoothly'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
-                          <span className="text-[10px] font-bold text-emerald-800 bg-white/90 border border-emerald-200 px-2 py-0.5 rounded-full">
-                            High Visual Quality
-                          </span>
-                          <span className="text-[10px] font-bold text-blue-800 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-full">
-                            Duplicate Protected
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Hidden file input */}
-                    <input
-                      type="file"
-                      id="property-photo-picker"
-                      multiple
-                      accept="image/*"
-                      onChange={handlePhotoSelect}
-                      className="hidden"
-                    />
-
-                    {/* Upload / Add Photos Action Button */}
-                    <label
-                      htmlFor="property-photo-picker"
-                      className="flex flex-col sm:flex-row items-center justify-center gap-3 p-5 border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50 rounded-2xl cursor-pointer transition-all group text-center sm:text-left"
-                    >
-                      <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs shrink-0">
-                        <UploadCloud className="w-6 h-6" />
-                      </div>
-                      <div className="space-y-0.5">
-                        <div className="text-xs font-extrabold text-blue-700 flex items-center justify-center sm:justify-start gap-1.5">
-                          <ImagePlus className="w-4 h-4" />
-                          <span>{selectedPhotos.length > 0 ? 'Upload More Photos from Gallery' : 'Upload Photos from Phone Gallery'}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500">
-                          Tap here to browse photos. Select multiple angles (hall, bedrooms, kitchen, washroom). Photos are resized & compressed automatically to 200–400 KB.
-                        </p>
-                      </div>
-                    </label>
-
-                    {/* Photo Upload Error Alert */}
-                    {photoUploadError && (
-                      <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                        <span>{photoUploadError}</span>
-                      </div>
-                    )}
-
-                    {/* Active Upload Progress Banner */}
-                    {isUploadingPhotos && uploadProgress && (
-                      <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 space-y-2">
-                        <div className="flex items-center justify-between text-xs font-bold text-blue-900">
-                          <span className="flex items-center gap-1.5">
-                            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                            {uploadProgress.phase === 'optimizing'
-                              ? 'Optimizing and preparing photos (target 200–400 KB)...'
-                              : `Uploading photo to Cloudinary: ${uploadProgress.fileName}`}
-                          </span>
-                          <span>{uploadProgress.percent}% ({Math.min(uploadProgress.total, uploadProgress.completed + 1)} of {uploadProgress.total})</span>
-                        </div>
-                        <div className="w-full h-2 bg-blue-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-blue-600 rounded-full transition-all duration-200"
-                            style={{ width: `${uploadProgress.percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Photo Previews Grid */}
-                    {selectedPhotos.length > 0 && (
-                      <div className="space-y-2 pt-1">
-                        <div className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                          <span>Photo Previews (Tap 'Cover' to choose the primary image)</span>
-                          <span className="text-slate-400 font-normal">First photo is shown on cards</span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                          {selectedPhotos.map((photo, idx) => (
-                            <div 
-                              key={photo.id}
-                              className="relative aspect-4/3 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 group shadow-2xs"
-                            >
-                              <img 
-                                src={photo.url} 
-                                alt={photo.name}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = '/hero_gondia_stays.jpg';
-                                }}
-                              />
-
-                              {/* Gradient overlay on hover */}
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none" />
-
-                              {/* Cover Badge or Make Cover Button */}
-                              {idx === 0 ? (
-                                <span className="absolute top-1.5 left-1.5 bg-blue-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1">
-                                  <Sparkles className="w-3 h-3 text-amber-300" /> Cover Photo
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMakeCoverPhoto(idx)}
-                                  className="absolute top-1.5 left-1.5 bg-black/60 hover:bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs transition-colors"
-                                  title="Make this the cover photo"
-                                >
-                                  Make Cover
-                                </button>
-                              )}
-
-                              {/* Remove Photo Button */}
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePhoto(photo.id)}
-                                className="absolute top-1.5 right-1.5 p-1 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white shadow-xs transition-transform hover:scale-110 active:scale-95 cursor-pointer"
-                                title="Remove photo"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-
-                              {/* Per-Photo Optimization / Compression Badge */}
-                              {photo.isOptimizing ? (
-                                <span className="absolute bottom-6 left-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 backdrop-blur-xs">
-                                  <Loader2 className="w-2.5 h-2.5 animate-spin" /> Optimizing...
-                                </span>
-                              ) : photo.optimizedSize && photo.originalSize && photo.originalSize > photo.optimizedSize ? (
-                                <span className="absolute bottom-6 left-1.5 bg-emerald-700/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 backdrop-blur-xs shadow-xs">
-                                  <Zap className="w-2.5 h-2.5 text-amber-300" /> {photo.optimizedSizeFormatted}
-                                  <span className="text-emerald-200 text-[9px]">(-{photo.savedPercentage}%)</span>
-                                </span>
-                              ) : photo.isExisting ? (
-                                <span className="absolute bottom-6 left-1.5 bg-slate-800/80 text-slate-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">
-                                  Saved
-                                </span>
-                              ) : photo.originalSizeFormatted ? (
-                                <span className="absolute bottom-6 left-1.5 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">
-                                  {photo.originalSizeFormatted}
-                                </span>
-                              ) : null}
-
-                              {/* Bottom caption */}
-                              <div className="absolute bottom-1.5 left-2 right-2 text-white text-[10px] font-medium truncate pointer-events-none">
-                                {photo.name}
-                              </div>
-                            </div>
-                          ))}
-
-                          {/* Quick Add More Tile */}
-                          <label
-                            htmlFor="property-photo-picker"
-                            className="aspect-4/3 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 flex flex-col items-center justify-center p-3 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors"
-                            title="Add more photos"
-                          >
-                            <Plus className="w-6 h-6 mb-1" />
-                            <span className="text-[11px] font-bold">Add Photo</span>
-                          </label>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Pricing */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Monthly Rent (₹) *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        min="500"
-                        value={formData.monthlyRent}
-                        onChange={(e) => setFormData({ ...formData, monthlyRent: Number(e.target.value) })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600 font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Security Deposit (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.securityDeposit}
-                        onChange={(e) => setFormData({ ...formData, securityDeposit: Number(e.target.value) })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-600 font-bold"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Requirement 3: Dynamic Accommodation Specs & Living Spaces */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        {formData.accommodationType === 'ROOM' 
-                          ? 'Available Separate Rooms *' 
-                          : 'Bedrooms (BHK Count) *'}
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={formData.bedrooms}
-                        onChange={(e) => setFormData({ ...formData, bedrooms: Math.max(1, Number(e.target.value)) })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold"
-                      />
-                      <span className="text-[10px] text-slate-400 mt-1 block">
-                        {formData.accommodationType === 'ROOM' 
-                          ? 'Number of separate rooms for rent' 
-                          : 'Number of dedicated bedrooms'}
-                      </span>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Bathrooms / Washrooms *
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={formData.bathrooms}
-                        onChange={(e) => setFormData({ ...formData, bathrooms: Math.max(1, Number(e.target.value)) })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold"
-                      />
-                      <span className="text-[10px] text-slate-400 mt-1 block">
-                        Dedicated or attached washrooms
-                      </span>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Furnishing Status *
-                      </label>
-                      <select
-                        value={formData.furnishing}
-                        onChange={(e) => setFormData({ ...formData, furnishing: e.target.value as FurnishingStatus })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold"
-                      >
-                        <option value="FURNISHED">Fully Furnished</option>
-                        <option value="SEMI_FURNISHED">Semi Furnished</option>
-                        <option value="UNFURNISHED">Unfurnished</option>
-                      </select>
-                      <span className="text-[10px] text-slate-400 mt-1 block">
-                        Beds, wardrobes, fans, lights
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Requirement 3: Kitchen & Living Room Availability */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Kitchen Availability *
-                      </label>
-                      <select
-                        value={formData.kitchenAvailable}
-                        onChange={(e) => setFormData({ ...formData, kitchenAvailable: e.target.value as KitchenAvailability })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold"
-                      >
-                        <option value="PRIVATE">Private Dedicated Kitchen</option>
-                        <option value="SHARED">Shared Kitchen with Others</option>
-                        <option value="NOT_AVAILABLE">No Kitchen / Not Available</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                        Hall / Living Room *
-                      </label>
-                      <select
-                        value={formData.hallAvailable ? 'YES' : 'NO'}
-                        onChange={(e) => setFormData({ ...formData, hallAvailable: e.target.value === 'YES' })}
-                        className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold"
-                      >
-                        <option value="YES">Living Room / Hall Included</option>
-                        <option value="NO">No Hall (Room / Bedroom Only)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Requirement 3: Suitable Tenants Multi-Select */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                      Suitable Tenants *
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { id: 'ALL', label: 'All Tenants Welcome' },
-                        { id: 'STUDENTS', label: 'Students' },
-                        { id: 'WORKING_PROFESSIONALS', label: 'Working Professionals' },
-                        { id: 'FAMILIES', label: 'Families' }
-                      ].map(st => {
-                        const isSelected = formData.suitableTenants.includes(st.id as SuitableTenantType);
-                        return (
-                          <button
-                            type="button"
-                            key={st.id}
-                            onClick={() => {
-                              let updated: SuitableTenantType[];
-                              if (st.id === 'ALL') {
-                                updated = ['ALL'];
-                              } else {
-                                const withoutAll = formData.suitableTenants.filter(t => t !== 'ALL');
-                                if (isSelected) {
-                                  updated = withoutAll.filter(t => t !== st.id);
-                                  if (updated.length === 0) updated = ['ALL'];
-                                } else {
-                                  updated = [...withoutAll, st.id as SuitableTenantType];
-                                }
-                              }
-                              setFormData({ ...formData, suitableTenants: updated });
-                            }}
-                            className={`px-3 py-1.5 text-xs rounded-xl border font-bold transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {st.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Amenities Checklist */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-2">Amenities Included</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {availableAmenities.map(am => (
-                        <button
-                          type="button"
-                          key={am}
-                          onClick={() => toggleAmenity(am)}
-                          className={`px-3 py-2 text-xs rounded-xl border text-left font-semibold flex items-center justify-between transition-colors ${
-                            formData.amenities.includes(am)
-                              ? 'bg-blue-50 border-blue-600 text-blue-700'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span>{am}</span>
-                          {formData.amenities.includes(am) && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Preferred Contact Mode */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1.5">
-                      Tenant Contact Preference
-                    </label>
-                    <div className="flex gap-3">
-                      {(['BOTH', 'WHATSAPP', 'PHONE'] as ContactMethod[]).map(method => (
-                        <label key={method} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="contactMethod"
-                            checked={formData.ownerPreferredContact === method}
-                            onChange={() => setFormData({ ...formData, ownerPreferredContact: method })}
-                            className="accent-blue-600"
-                          />
-                          <span>{method === 'BOTH' ? 'WhatsApp & Calls' : method === 'WHATSAPP' ? 'WhatsApp Only' : 'Phone Calls'}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Custom Landlord Contact Information */}
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        <span>Landlord Contact Identity (Saved in this Listing's Document)</span>
-                      </div>
-                      <span className="text-[10px] text-emerald-700 font-bold">Displayed directly on your listing card</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 block mb-1">Landlord Name *</label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.ownerName}
-                          onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                          placeholder="e.g. Ramesh Patel"
-                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 block mb-1">Contact Phone Number *</label>
-                        <input
-                          type="tel"
-                          required
-                          value={formData.ownerPhone}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setFormData(prev => ({
-                              ...prev,
-                              ownerPhone: val,
-                              ownerWhatsappNumber: prev.ownerWhatsappNumber ? prev.ownerWhatsappNumber : val
-                            }));
-                          }}
-                          placeholder="+91 98230 54321"
-                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 block mb-1">WhatsApp Number *</label>
-                        <input
-                          type="tel"
-                          required
-                          value={formData.ownerWhatsappNumber}
-                          onChange={(e) => setFormData({ ...formData, ownerWhatsappNumber: e.target.value })}
-                          placeholder="+91 98230 54321"
-                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setOwnerSubTab('listings')}
-                      className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || isUploadingPhotos}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
-                    >
-                      {(isSubmitting || isUploadingPhotos) && <Loader2 className="w-4 h-4 animate-spin" />}
-                      <span>
-                        {isUploadingPhotos 
-                          ? 'Uploading Photos to Storage...' 
-                          : isSubmitting 
-                            ? 'Saving Listing...' 
-                            : editingProperty 
-                              ? 'Update Listing' 
-                              : 'Submit for Admin Approval'}
-                      </span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {/* Sub-tab 3: Admin Approval Workflow */}
+            {/* Sub-tab 2: Admin Approval Workflow */}
             {/* Requirement 4: Real-time listener automatically updates admin dashboard */}
             {/* Requirement 5: Let admin approve or reject listings */}
             {/* Requirement 10: Never allow users to approve their own listings */}
@@ -4185,20 +3506,31 @@ export const App: React.FC = () => {
       )}
 
       {/* Floating Quick Action Button for Mobile: Post Property */}
-      {ownerSubTab !== 'new' && (
-        <button
-          onClick={() => {
-            setEditingProperty(null);
-            setCurrentEditToken(null);
-            openPostListing();
-          }}
-          className="md:hidden fixed bottom-20 right-4 sm:right-5 z-40 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 text-xs font-extrabold transition-all cursor-pointer border-2 border-white/80"
-          title="Post Property Listing in Gondia"
-        >
-          <Plus className="w-4 h-4 stroke-[3]" />
-          <span>Post Property</span>
-        </button>
-      )}
+      <button
+        onClick={() => {
+          handleStartNewListing();
+        }}
+        className="md:hidden fixed bottom-20 right-4 sm:right-5 z-40 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 text-xs font-extrabold transition-all cursor-pointer border-2 border-white/80"
+        title="Add Property Listing in Gondia"
+      >
+        <Plus className="w-4 h-4 stroke-[3]" />
+        <span>Post Property</span>
+      </button>
+
+      {/* Add / Edit Property Modal */}
+      <AddPropertyModal
+        isOpen={isAddPropertyModalOpen}
+        onClose={() => {
+          setIsAddPropertyModalOpen(false);
+          setEditingProperty(null);
+        }}
+        propertyToEdit={editingProperty}
+        onSaveProperty={saveProperty}
+        isAdmin={isAdminAuthenticated}
+        editToken={currentEditToken}
+        currentOwner={currentOwner}
+        onSuccessToast={showToast}
+      />
 
       {/* Add / Register Local Service Modal */}
       <AddServiceModal

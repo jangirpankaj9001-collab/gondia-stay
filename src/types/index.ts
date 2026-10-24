@@ -75,6 +75,7 @@ export interface PropertyListing {
   occupancyStatus?: OccupancyStatus;
   latitude: number;
   longitude: number;
+  description?: string;
   isFeatured?: boolean;
   isFavorite?: boolean;
   createdAt?: number;
