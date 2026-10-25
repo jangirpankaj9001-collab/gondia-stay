@@ -1309,28 +1309,17 @@ export const App: React.FC = () => {
           <div className="space-y-6">
             
             {/* Hero Banner with Direct Landlord Highlights */}
-            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 text-white shadow-xl">
-              <div className="absolute inset-0 opacity-25 mix-blend-overlay">
-                <img 
-                  src="/hero_gondia_stays.jpg" 
-                  alt="Gondia Stay" 
-                  className="w-full h-full object-cover" 
-                />
-              </div>
-
-              <div className="relative z-10 p-6 sm:p-10 max-w-3xl space-y-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/30 backdrop-blur-md">
-                  <ShieldCheck className="w-3.5 h-3.5" />
+            {/* Hero Banner with Direct Landlord Highlights */}
+            <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-blue-600 text-white shadow-lg">
+              <div className="relative z-10 p-4 sm:p-7 md:p-8 max-w-3xl space-y-3">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 text-[11px] font-bold border border-emerald-400/30">
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                   <span>100% Verified Landlords in Gondia • 0% Brokerage</span>
                 </div>
 
-                <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">
+                <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-tight">
                   Find Rooms, Flats & Hostels in <span className="text-amber-400">Gondia</span>
                 </h1>
-
-                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed max-w-2xl">
-                  Connect directly with verified local property owners in Civil Lines, Ram Nagar, Kudwa Naka, and Rail Toly. Real-time Cloud Firestore synchronization across mobile & desktop.
-                </p>
 
                 {/* Functional Explore Search Bar */}
                 <form 
@@ -1338,20 +1327,15 @@ export const App: React.FC = () => {
                     e.preventDefault();
                     handleSearchSubmit();
                   }}
-                  className="pt-2 flex flex-col sm:flex-row gap-2 max-w-xl"
+                  className="pt-1 flex items-center gap-2 max-w-xl"
                 >
-                  <div className="relative flex-1">
-                    <button
-                      type="submit"
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                      title="Search properties across Gondia"
-                      aria-label="Search"
-                    >
-                      <Search className="w-4 h-4 stroke-[2.5]" />
-                    </button>
+                  <div className="relative flex-1 flex items-center bg-white rounded-xl shadow-xs border border-white/20 p-1">
+                    <div className="pl-2.5 pr-1.5 text-slate-400 flex items-center pointer-events-none shrink-0">
+                      <Search className="w-4 h-4" />
+                    </div>
                     <input 
                       type="text"
-                      placeholder="Search locality, flat, 1BHK, 2BHK, room, rent (e.g. 8000)..."
+                      placeholder="Search locality, flat, 1BHK, 2BHK, room, rent..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
@@ -1360,7 +1344,7 @@ export const App: React.FC = () => {
                           handleSearchSubmit();
                         }
                       }}
-                      className="w-full pl-10 pr-9 py-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-400 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-blue-400 shadow-md"
+                      className="w-full py-1.5 px-1 bg-transparent text-slate-900 placeholder:text-slate-400 text-xs font-semibold focus:outline-hidden"
                     />
                     {searchQuery.trim() && (
                       <button
@@ -1369,35 +1353,38 @@ export const App: React.FC = () => {
                           setSearchQuery('');
                           showToast('Search cleared');
                         }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                        className="p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors mr-1 cursor-pointer shrink-0"
                         title="Clear search"
                         aria-label="Clear search"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
                     )}
+                    <button
+                      type="submit"
+                      className="px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all shadow-xs active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
+                      title="Search"
+                      aria-label="Search"
+                    >
+                      <Search className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span className="hidden sm:inline">Search</span>
+                    </button>
                   </div>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
-                    title="Search across all Gondia localities and available properties"
-                  >
-                    <Search className="w-4 h-4 stroke-[2.5]" />
-                    <span>Search</span>
-                  </button>
+
                   <button 
                     type="button"
                     onClick={() => setShowFilterModal(true)}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
+                    className="h-10 px-3 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all border border-white/30 backdrop-blur-xs flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer shadow-xs"
+                    title="Filter properties"
                   >
-                    <SlidersHorizontal className="w-4 h-4" />
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
                     <span>Filters</span>
                   </button>
                 </form>
 
                 {/* Popular Quick Search Tags */}
-                <div className="pt-2 flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-bold text-blue-200 flex items-center gap-1">
+                <div className="pt-0.5 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-blue-100 flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-amber-300" />
                     Quick Search:
                   </span>
@@ -1415,7 +1402,7 @@ export const App: React.FC = () => {
                       key={tag.label}
                       type="button"
                       onClick={() => handleSearchSubmit(tag.query)}
-                      className={`text-[11px] px-2.5 py-1 rounded-full font-bold transition-all cursor-pointer backdrop-blur-xs ${
+                      className={`text-[10px] sm:text-[11px] px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full font-bold transition-all cursor-pointer backdrop-blur-xs ${
                         searchQuery.toLowerCase() === tag.query.toLowerCase()
                           ? 'bg-amber-400 text-slate-900 shadow-xs'
                           : 'bg-white/15 text-white hover:bg-white/25 border border-white/20'
