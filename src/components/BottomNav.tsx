@@ -7,111 +7,53 @@ export interface ServicesHouseIconProps {
   isActive?: boolean;
 }
 
-export const ServicesHouseIcon: React.FC<ServicesHouseIconProps> = ({ 
-  className = "w-[33px] h-[33px]",
+export const ServicesGridIcon: React.FC<ServicesHouseIconProps> = ({ 
+  className = "w-[26px] h-[26px]",
   isActive = false 
 }) => {
   return (
-    <div className={`relative inline-flex items-center justify-center transition-all duration-200 ${isActive ? 'scale-105' : 'hover:scale-105'}`}>
+    <div className={`relative inline-flex items-center justify-center transition-transform duration-200 ${isActive ? 'scale-105' : 'hover:scale-105'}`}>
       <svg 
-        viewBox="0 0 36 36" 
+        viewBox="0 0 24 24" 
         fill="none" 
         xmlns="http://www.w3.org/2000/svg"
-        className={`${className} transition-all`}
+        className={className}
         aria-hidden="true"
       >
-        <defs>
-          <filter id="services-icon-glow" x="-15%" y="-15%" width="130%" height="130%">
-            <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" floodColor="#0F172A" floodOpacity="0.18" />
-          </filter>
-        </defs>
+        {/* 1. Top-Left: Blue (#2563EB) with white utensils icon */}
+        <rect x="1.2" y="1.2" width="10.2" height="10.2" rx="2.5" fill="#2563EB" />
+        {/* Fork */}
+        <path d="M4.2 3.4v1.8c0 .4.3.7.7.7v3.3h.8v-3.3c.4 0 .7-.3.7-.7v-1.8h-.4v1.4h-.3v-1.4h-.3v1.4h-.3v-1.4h-.9z" fill="#FFFFFF" />
+        {/* Spoon */}
+        <path d="M7.9 3.4c-.8 0-1.3.6-1.3 1.4 0 .6.3 1.1.8 1.3v3.1h.8v-3.1c.5-.2.8-.7.8-1.3 0-.8-.5-1.4-1.3-1.4z" fill="#FFFFFF" />
 
-        {/* Outer Shadow & White House Frame Container */}
-        <g filter="url(#services-icon-glow)">
-          {/* Chimney on Right Slope */}
-          <rect x="25.2" y="7" width="3.2" height="6.5" rx="1.2" fill="#1565C0" />
-          <rect x="24.4" y="6" width="4.8" height="1.8" rx="0.9" fill="#1976D2" />
-
-          {/* White House Body Background */}
-          <path 
-            d="M6 15V29C6 30.66 7.34 32 9 32H27C28.66 32 30 30.66 30 29V15L18 5.8L6 15Z" 
-            fill="#FFFFFF" 
-            stroke="#CBD5E1" 
-            strokeWidth="1" 
-          />
-
-          {/* Royal Blue Pitched Roof */}
-          <path 
-            d="M18 4.2C18.5 4.2 19 4.5 19.4 4.8L32.2 14.8C32.8 15.3 32.6 16.4 31.8 16.4H28.8L18 8L7.2 16.4H4.2C3.4 16.4 3.2 15.3 3.8 14.8L16.6 4.8C17 4.5 17.5 4.2 18 4.2Z" 
-            fill="#1E88E5" 
-          />
-        </g>
-
-        {/* 1. Top-Left: Food & Dining (Warm Coral-Orange) */}
+        {/* 2. Top-Right: Green (#16A34A) with white shirt icon */}
+        <rect x="12.6" y="1.2" width="10.2" height="10.2" rx="2.5" fill="#16A34A" />
+        {/* Shirt */}
         <path 
-          d="M7.8 17.5L16.5 10.8C17 10.4 17.5 10.8 17.5 11.4V21.5C17.5 22 17.1 22.4 16.6 22.4H8.8C8.3 22.4 7.8 22 7.8 21.5V17.5Z" 
-          fill="#FF5722" 
-        />
-        {/* Cutlery (White Fork & Spoon) */}
-        <g>
-          {/* Fork */}
-          <path 
-            d="M10.2 13.5v2.2c0 .4.3.7.7.7v3.2h.7v-3.2c.4 0 .7-.3.7-.7v-2.2h-.4v1.6h-.3v-1.6h-.3v1.6h-.3v-1.6h-.8z" 
-            fill="#FFFFFF" 
-          />
-          {/* Spoon */}
-          <path 
-            d="M14.5 13.5c-.7 0-1.2.6-1.2 1.3 0 .5.3 1 .8 1.1v3.7h.8v-3.7c.5-.1.8-.6.8-1.1 0-.7-.5-1.3-1.2-1.3z" 
-            fill="#FFFFFF" 
-          />
-        </g>
-
-        {/* 2. Top-Right: Maintenance & Repair (Golden Amber) */}
-        <path 
-          d="M28.2 17.5L19.5 10.8C19 10.4 18.5 10.8 18.5 11.4V21.5C18.5 22 18.9 22.4 19.4 22.4H27.2C27.7 22.4 28.2 22 28.2 21.5V17.5Z" 
-          fill="#FFB300" 
-        />
-        {/* Wrench (White) */}
-        <path 
-          d="M25.4 14.2l-2.6 2.6c-.3.3-.8.3-1.1 0l-.4-.4c-.3-.3-.3-.8 0-1.1l2.6-2.6c-.2-.4-.1-.9.2-1.2.4-.4 1-.5 1.4-.3l-.7.7.6.6.7-.7c.2.4.1 1-.3 1.4z" 
+          d="M16.5 3.5l-1.8 1.1-.9 1.8 1.4.7.7-1.1v3.4h3.6v-3.4l.7 1.1 1.4-.7-.9-1.8-1.8-1.1c-.4.5-1.9.5-2.4 0z" 
           fill="#FFFFFF" 
         />
 
-        {/* 3. Bottom-Left: Laundry & Washing (Vibrant Blue) */}
-        <rect x="7.8" y="23.2" width="9.7" height="7.3" rx="2" fill="#1E88E5" />
-        {/* Front-Load Washing Machine (White) */}
-        <g>
-          <rect x="9.6" y="24.2" width="6.1" height="5.4" rx="1" fill="none" stroke="#FFFFFF" strokeWidth="0.8" />
-          <line x1="10.2" y1="25.5" x2="15.1" y2="25.5" stroke="#FFFFFF" strokeWidth="0.5" />
-          <circle cx="14" cy="24.8" r="0.3" fill="#FFFFFF" />
-          <circle cx="14.8" cy="24.8" r="0.3" fill="#FFFFFF" />
-          <circle cx="12.65" cy="27.35" r="1.3" fill="none" stroke="#FFFFFF" strokeWidth="0.8" />
-          <circle cx="12.65" cy="27.35" r="0.65" fill="#90CAF9" />
-        </g>
-
-        {/* 4. Bottom-Right: Housekeeping & Cleaning (Vibrant Emerald Green) */}
-        <rect x="18.5" y="23.2" width="9.7" height="7.3" rx="2" fill="#00C853" />
-        {/* Broom & Sparkles (White) */}
-        <g>
-          <path d="M22.5 27.2l1.6-1.6 1.8 1.8-1 1.2-2.4-1.4z" fill="#FFFFFF" />
-          <line x1="21" y1="24.2" x2="23.2" y2="26.6" stroke="#FFFFFF" strokeWidth="0.8" strokeLinecap="round" />
-          {/* Sparkles */}
-          <path d="M26.2 24.5c0 .7-.6 1.2-1.2 1.2.6 0 1.2.5 1.2 1.2 0-.7.6-1.2 1.2-1.2-.6 0-1.2-.5-1.2-1.2z" fill="#FFFFFF" />
-          <path d="M27.8 27.2c0 .4-.3.7-.7.7.4 0 .7.3.7.7 0-.4.3-.7.7-.7-.4 0-.7-.3-.7-.7z" fill="#FFFFFF" />
-        </g>
-
-        {/* Clear Crisp White House Contour Stroke */}
+        {/* 3. Bottom-Left: Orange (#F97316) with white lightning bolt */}
+        <rect x="1.2" y="12.6" width="10.2" height="10.2" rx="2.5" fill="#F97316" />
+        {/* Lightning Bolt */}
         <path 
-          d="M6 15V29C6 30.66 7.34 32 9 32H27C28.66 32 30 30.66 30 29V15L18 5.8L6 15Z" 
-          fill="none" 
-          stroke="#FFFFFF" 
-          strokeWidth="1.5" 
-          strokeLinejoin="round" 
+          d="M7.1 14.3l-2.7 3.6h1.8l-1.0 3.3 3.0-4.0h-1.8l.7-2.9z" 
+          fill="#FFFFFF" 
         />
+
+        {/* 4. Bottom-Right: Teal (#16A6A1) with white water droplets */}
+        <rect x="12.6" y="12.6" width="10.2" height="10.2" rx="2.5" fill="#16A6A1" />
+        {/* Water Droplets */}
+        <path d="M16.7 14.6c-.3.4-1.8 2.3-1.8 3.8 0 1.0.8 1.8 1.8 1.8s1.8-.8 1.8-1.8c0-1.5-1.5-3.4-1.8-3.8z" fill="#FFFFFF" />
+        <path d="M19.4 15.6c-.2.3-1.2 1.6-1.2 2.6 0 .7.5 1.2 1.2 1.2s1.2-.5 1.2-1.2c0-1.0-1.0-2.3-1.2-2.6z" fill="#FFFFFF" />
       </svg>
     </div>
   );
 };
+
+export const ServicesHouseIcon = ServicesGridIcon;
 
 export const BottomNav: React.FC = () => {
   const { activeTab, navigateTo, favorites } = useApp();
@@ -141,19 +83,17 @@ export const BottomNav: React.FC = () => {
 
         <button
           onClick={() => navigateTo('services')}
-          className={`flex flex-col items-center py-0.5 px-2 rounded-xl transition-all duration-200 ${
-            activeTab === 'services' || activeTab === 'tiffin' ? 'text-blue-600 font-black' : 'text-slate-500 hover:text-slate-700'
+          className={`flex flex-col items-center py-1 px-2.5 rounded-lg transition-colors ${
+            activeTab === 'services' || activeTab === 'tiffin' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <div className={`relative transition-transform duration-200 ${
-            activeTab === 'services' || activeTab === 'tiffin' ? '-translate-y-1' : ''
-          }`}>
-            <ServicesHouseIcon 
-              className="w-[33px] h-[33px] sm:w-[35px] sm:h-[35px]" 
+          <div className="flex items-center justify-center w-5 h-5">
+            <ServicesGridIcon 
+              className="w-[26px] h-[26px] shrink-0" 
               isActive={activeTab === 'services' || activeTab === 'tiffin'} 
             />
           </div>
-          <span className="text-[11px] mt-0.5 font-bold">Services</span>
+          <span className="text-[11px] mt-0.5">Services</span>
         </button>
 
         <button
