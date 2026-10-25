@@ -1918,10 +1918,10 @@ export const App: React.FC = () => {
                   type="button"
                   onClick={() => setIsOwnerDashboardOpen(true)}
                   className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  title="View My Properties & Stats"
+                  title="View My Dashboard & Stats"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5 text-blue-400" />
-                  <span>My Properties</span>
+                  <span>My Dashboard</span>
                   <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-0.5">
                     {myProperties.length}
                   </span>
