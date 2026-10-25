@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
+import { useBackHandler } from '../context/AppContext';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -186,6 +187,11 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     setSearchQuery('');
     setLocalityFilter('All');
   };
+
+  // Android Phone Back-Button & Browser History Handlers:
+  // Close visiting card preview modal first, or exit dedicated category view back to main grid
+  useBackHandler(Boolean(selectedVisitingCard), () => setSelectedVisitingCard(null), 'visiting-card-preview');
+  useBackHandler(Boolean(activeDedicatedCategory), handleBackToGrid, 'service-subcategory-view');
 
   // If a dedicated category is selected, get its configuration
   const currentConfig = activeDedicatedCategory 

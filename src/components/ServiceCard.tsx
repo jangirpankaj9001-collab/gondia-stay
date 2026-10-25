@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
+import { useBackHandler } from '../context/AppContext';
 
 interface ServiceCardProps {
   service: ServiceItem;
@@ -41,6 +42,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
 }) => {
   const [showVisitingCardModal, setShowVisitingCardModal] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+
+  // Close visiting card or photo preview first when pressing Android back button
+  useBackHandler(showVisitingCardModal, () => setShowVisitingCardModal(false), 'service-visiting-card');
+  useBackHandler(Boolean(selectedPhoto), () => setSelectedPhoto(null), 'service-photo-preview');
 
   const categoryMeta = SERVICE_CATEGORIES.find(c => c.id === service.category) || {
     id: service.category,

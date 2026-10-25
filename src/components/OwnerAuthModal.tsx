@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Key, UserCheck, AlertCircle, Loader2, Zap, ShieldCheck } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useApp, useBackHandler } from '../context/AppContext';
 
 interface OwnerAuthModalProps {
   isOpen: boolean;
@@ -15,6 +15,8 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
 }) => {
   const { loginOwnerWithEmailPassword, registerOwnerWithEmailPassword, isOwnerAuthenticated, authUser, logoutOwner } = useApp();
   
+  useBackHandler(isOpen, onClose, 'owner-auth-modal');
+
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

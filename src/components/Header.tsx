@@ -16,7 +16,7 @@ import {
   Plus,
   Wrench
 } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useApp, useBackHandler } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp } from '../utils/contact';
 
 export const Header: React.FC = () => {
@@ -40,6 +40,10 @@ export const Header: React.FC = () => {
 
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close open menus first when pressing Android back button
+  useBackHandler(mobileMenuOpen, () => setMobileMenuOpen(false), 'mobile-menu');
+  useBackHandler(showOwnerMenu, () => setShowOwnerMenu(false), 'owner-menu');
 
   const pendingCount = properties.filter(p => (p.status || '').toLowerCase() === 'pending').length;
 

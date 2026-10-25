@@ -13,6 +13,7 @@ import {
 import { TiffinService } from '../types';
 import { openWhatsApp } from '../utils/contact';
 import { ContactModal } from './ContactModal';
+import { useBackHandler } from '../context/AppContext';
 
 interface TiffinCardProps {
   tiffin: TiffinService;
@@ -20,6 +21,9 @@ interface TiffinCardProps {
 
 export const TiffinCard: React.FC<TiffinCardProps> = ({ tiffin }) => {
   const [showContactModal, setShowContactModal] = useState(false);
+
+  // Close contact modal on Android Back button
+  useBackHandler(showContactModal, () => setShowContactModal(false), 'tiffin-contact-modal');
 
   const defaultMsg = `Hello ${tiffin.ownerName}, I saw your '${tiffin.name}' mess listing in ${tiffin.locality}, Gondia on Gondia Stay. Can I get details regarding monthly tiffin/food service?`;
 

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { formatDisplayPhone, openWhatsApp, dialPhone } from '../utils/contact';
 import { ContactMethod } from '../types';
+import { useBackHandler } from '../context/AppContext';
 
 interface ContactModalProps {
   ownerName: string;
@@ -30,6 +31,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   onClose
 }) => {
   const [isRevealed, setIsRevealed] = useState(false);
+
+  // Close Contact Modal when Android back button is pressed
+  useBackHandler(true, onClose, 'contact-modal');
 
   const defaultMsg = isMess 
     ? `Hello ${ownerName}, I saw your '${itemTitle}' mess listing in Gondia on Gondia Stay app. Can I get details regarding monthly tiffin service?`

@@ -66,7 +66,7 @@ import {
   getCachedPhotoUrl
 } from './firebase/storageService';
 import { fetchPropertyDirect } from './firebase/propertiesService';
-import { useApp, isAuthorizedAdminEmail } from './context/AppContext';
+import { useApp, useBackHandler, isAuthorizedAdminEmail } from './context/AppContext';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { PropertyCard } from './components/PropertyCard';
@@ -138,6 +138,7 @@ export const App: React.FC = () => {
     toggleFeatured,
     approveProperty,
     navigateTo,
+    goBack,
     showToast,
     resetFilters,
     loginAdminWithEmailPassword,
@@ -179,6 +180,16 @@ export const App: React.FC = () => {
   const [isServicesDashboardOpen, setIsServicesDashboardOpen] = useState(false);
   const [isOwnerDashboardOpen, setIsOwnerDashboardOpen] = useState(false);
   const [isAddPropertyModalOpen, setIsAddPropertyModalOpen] = useState(false);
+
+  // Android Phone Back-Button & Browser History Handlers for Dialogs & Modals
+  useBackHandler(showFilterModal, () => setShowFilterModal(false), 'filter-modal');
+  useBackHandler(isAddPropertyModalOpen, () => setIsAddPropertyModalOpen(false), 'add-property-modal');
+  useBackHandler(isAddServiceModalOpen, () => setIsAddServiceModalOpen(false), 'add-service-modal');
+  useBackHandler(isServicesDashboardOpen, () => setIsServicesDashboardOpen(false), 'services-dashboard');
+  useBackHandler(isOwnerDashboardOpen, () => setIsOwnerDashboardOpen(false), 'owner-dashboard');
+  useBackHandler(showPrivateLinkModal, () => setShowPrivateLinkModal(false), 'private-link-modal');
+  useBackHandler(ownerSubTab === 'moderation', () => setOwnerSubTab('listings'), 'admin-moderation');
+  useBackHandler(isFirebaseModalOpen, () => setIsFirebaseModalOpen(false), 'firebase-modal');
 
   // Sync external post listing triggers to open AddPropertyModal
   useEffect(() => {
@@ -468,6 +479,7 @@ export const App: React.FC = () => {
     whatsappNumber: currentOwner.whatsappNumber || currentOwner.phone,
     email: currentOwner.email || ''
   });
+  useBackHandler(isEditingOwnerProfile, () => setIsEditingOwnerProfile(false), 'edit-owner-profile');
 
   useEffect(() => {
     setOwnerProfileForm({
@@ -3060,8 +3072,8 @@ export const App: React.FC = () => {
             
             {/* Back Button */}
             <button
-              onClick={() => navigateTo('explore')}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors"
+              onClick={() => goBack()}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Listings in Gondia

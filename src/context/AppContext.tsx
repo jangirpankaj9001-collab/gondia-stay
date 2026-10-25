@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   PropertyListing, 
   TiffinService, 
@@ -90,6 +90,8 @@ interface AppContextType {
   toggleFeatured: (propertyId: string) => void;
   approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
   navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
+  goBack: () => void;
+  registerOverlay: (name: string, onBack: () => void) => () => void;
   showToast: (msg: string) => void;
   resetFilters: () => void;
   loginAdminWithEmailPassword: (email: string, pass: string) => Promise<{ success: boolean; error?: string; needsVerification?: boolean }>;
@@ -869,22 +871,158 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return isAdminAuthenticated;
   };
 
-  const navigateTo = (tab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => {
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const selectedPropertyRef = useRef(selectedProperty);
+  selectedPropertyRef.current = selectedProperty;
+  const propertiesRef = useRef(properties);
+  propertiesRef.current = properties;
+
+  const overlayStackRef = useRef<Array<{ id: string; name: string; onBack: () => void }>>([]);
+  const isHandlingBackRef = useRef<boolean>(false);
+
+  const registerOverlay = useCallback((name: string, onBack: () => void) => {
+    const id = `${name}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    overlayStackRef.current.push({ id, name, onBack });
+
+    const currentDepth = (window.history.state?.depth ?? 0);
+    window.history.pushState(
+      {
+        app: 'gondia',
+        type: 'overlay',
+        overlayId: id,
+        overlayName: name,
+        tab: activeTabRef.current,
+        depth: currentDepth + 1
+      },
+      ''
+    );
+
+    return () => {
+      const idx = overlayStackRef.current.findIndex(e => e.id === id);
+      if (idx !== -1) {
+        overlayStackRef.current.splice(idx, 1);
+        if (!isHandlingBackRef.current) {
+          if (window.history.state?.overlayId === id) {
+            isHandlingBackRef.current = true;
+            window.history.back();
+            setTimeout(() => {
+              isHandlingBackRef.current = false;
+            }, 60);
+          }
+        }
+      }
+    };
+  }, []);
+
+  const navigateTo = useCallback((tab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => {
     if (property) {
       setSelectedProperty(property);
     }
     const targetTab = tab === 'tiffin' ? 'services' : tab;
+
+    if (targetTab === activeTabRef.current && (!property || property.id === selectedPropertyRef.current?.id)) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const currentDepth = (window.history.state?.depth ?? 0);
+    const nextDepth = currentDepth + 1;
+
+    window.history.pushState(
+      {
+        app: 'gondia',
+        type: 'screen',
+        tab: targetTab,
+        propertyId: property?.id || null,
+        fromTab: activeTabRef.current,
+        depth: nextDepth
+      },
+      ''
+    );
+
     setActiveTab(targetTab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, []);
+
+  const goBack = useCallback(() => {
+    if (overlayStackRef.current.length > 0) {
+      window.history.back();
+      return;
+    }
+
+    if (window.history.state && (window.history.state.depth ?? 0) > 0) {
+      window.history.back();
+    } else {
+      if (activeTabRef.current !== 'explore') {
+        navigateTo('explore');
+      }
+    }
+  }, [navigateTo]);
+
+  useEffect(() => {
+    // Initialize root history state if needed
+    if (!window.history.state || window.history.state.app !== 'gondia') {
+      window.history.replaceState({ app: 'gondia', type: 'screen', tab: activeTab, depth: 0 }, '');
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (isHandlingBackRef.current) {
+        isHandlingBackRef.current = false;
+        return;
+      }
+
+      // Priority 1: Close active overlay / dialog / menu if open
+      if (overlayStackRef.current.length > 0) {
+        const topOverlay = overlayStackRef.current.pop();
+        if (topOverlay) {
+          isHandlingBackRef.current = true;
+          try {
+            topOverlay.onBack();
+          } finally {
+            setTimeout(() => {
+              isHandlingBackRef.current = false;
+            }, 60);
+          }
+          return;
+        }
+      }
+
+      // Priority 2: In-app screen / tab navigation
+      const state = event.state;
+      if (state && state.app === 'gondia' && state.tab) {
+        if (state.tab !== activeTabRef.current) {
+          setActiveTab(state.tab);
+          if (state.tab === 'detail' && state.propertyId) {
+            const prop = propertiesRef.current.find(p => p.id === state.propertyId);
+            if (prop) setSelectedProperty(prop);
+          } else if (activeTabRef.current === 'detail') {
+            setSelectedProperty(null);
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      } else {
+        // Returned to root or outside state
+        if (activeTabRef.current !== 'explore') {
+          setActiveTab('explore');
+          setSelectedProperty(null);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   const [ownerSubTab, setOwnerSubTab] = useState<'listings' | 'new' | 'moderation'>('listings');
 
   const openPostListing = useCallback(() => {
     setOwnerSubTab('new');
-    setActiveTab('owner');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+    navigateTo('owner');
+  }, [navigateTo]);
 
   const resetFilters = () => {
     setSearchQuery('');
@@ -944,6 +1082,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleFeatured,
       approveProperty,
       navigateTo,
+      goBack,
+      registerOverlay,
       showToast,
       resetFilters,
       loginAdminWithEmailPassword,
@@ -968,4 +1108,19 @@ export const useApp = () => {
     throw new Error('useApp must be used within an AppProvider');
   }
   return context;
+};
+
+/**
+ * Hook to handle Android phone Back button and browser history for modals, dialogs, drawers, and overlays.
+ * When enabled, pushing back on Android phone will close this overlay first instead of closing the app.
+ */
+export const useBackHandler = (enabled: boolean, onBack: () => void, name?: string) => {
+  const { registerOverlay } = useApp();
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+
+  useEffect(() => {
+    if (!enabled) return;
+    return registerOverlay(name || 'overlay', () => onBackRef.current());
+  }, [enabled, name, registerOverlay]);
 };
