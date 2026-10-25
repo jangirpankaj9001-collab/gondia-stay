@@ -8,7 +8,6 @@ import {
   ShieldCheck, 
   ChefHat, 
   Sparkles,
-  ArrowLeft,
   Star, 
   MapPin, 
   Phone, 
@@ -266,37 +265,25 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
            ========================================================================= */
         <div className="space-y-6 animate-fadeIn">
           
-          {/* Top Bar: Back Button & Subcategory Quick Selector */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={handleBackToGrid}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl border border-slate-200 shadow-2xs transition-colors self-start cursor-pointer group"
-            >
-              <ArrowLeft className="w-4 h-4 text-slate-500 group-hover:-translate-x-0.5 transition-transform" />
-              <span>← All Service Categories</span>
-            </button>
-
-            {/* Quick Switcher Pills for all 8 categories */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {SUBCATEGORIES.map(cat => {
-                const isCurrent = cat.id === activeDedicatedCategory;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => handleCategoryIconClick(cat.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                      isCurrent
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-                    }`}
-                  >
-                    {cat.name}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Subcategory Quick Selector */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {SUBCATEGORIES.map(cat => {
+              const isCurrent = cat.id === activeDedicatedCategory;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => handleCategoryIconClick(cat.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                    isCurrent
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              );
+            })}
           </div>
 
           {/* Dedicated Category Header Banner */}
