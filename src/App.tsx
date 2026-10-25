@@ -1664,21 +1664,31 @@ export const App: React.FC = () => {
             
             {/* Compact Header - keeps subcategories grid immediately visible without scrolling */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    Services for You
-                  </h1>
-                  <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 uppercase tracking-wider">
-                    Gondia
-                  </span>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                    0% Commission
-                  </span>
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/assets/aistudio/IMG-20261025-WA0007_25af6bd0.jpg" 
+                  alt="Gondia Services" 
+                  className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-2xl shadow-md border border-slate-100 shrink-0" 
+                  onError={(e) => {
+                    e.currentTarget.src = '/ic_services_unified.jpg';
+                  }}
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      Services for You
+                    </h1>
+                    <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 uppercase tracking-wider">
+                      Gondia
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      0% Commission
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Verified daily tiffin, cooks, cleaning, repairs, laundry & chilled RO water across Gondia
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Verified daily tiffin, cooks, cleaning, repairs, laundry & chilled RO water across Gondia
-                </p>
               </div>
 
               {/* Row with "Select Location" beside "About Services" */}
