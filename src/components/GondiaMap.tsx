@@ -193,6 +193,9 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
 
     if (pickerMarkerRef.current) {
       pickerMarkerRef.current.setLatLng([lat, lng]);
+      if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains([lat, lng])) {
+        mapInstanceRef.current.panTo([lat, lng]);
+      }
     } else {
       const marker = L.marker([lat, lng], {
         icon: pickerIcon,

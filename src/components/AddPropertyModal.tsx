@@ -20,8 +20,10 @@ import {
   Bath,
   IndianRupee,
   Calendar,
-  Check
+  Check,
+  Crosshair
 } from 'lucide-react';
+import { GondiaMap } from './GondiaMap';
 import {
   PropertyListing,
   PropertyType,
@@ -128,6 +130,13 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [amenities, setAmenities] = useState<string[]>(['24/7 Water', 'Wi-Fi']);
   const [description, setDescription] = useState<string>('');
 
+  // Map Pinpoint Coordinates
+  const [pickerLocation, setPickerLocation] = useState<{ lat: number; lng: number }>({
+    lat: GONDIA_LOCALITY_COORDS['Civil Lines']?.lat || 21.4602,
+    lng: GONDIA_LOCALITY_COORDS['Civil Lines']?.lng || 80.1945
+  });
+  const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
+
   // Landlord Contact
   const [ownerName, setOwnerName] = useState(currentOwner?.name || '');
   const [ownerPhone, setOwnerPhone] = useState(currentOwner?.phone || '');
@@ -159,7 +168,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     if (propertyToEdit) {
       setTitle(propertyToEdit.title || '');
       setAddress(propertyToEdit.address || '');
-      setLocality(propertyToEdit.locality || GONDIA_LOCALITIES[1] || 'Civil Lines');
+      const loc = propertyToEdit.locality || GONDIA_LOCALITIES[1] || 'Civil Lines';
+      setLocality(loc);
       setPropertyType(propertyToEdit.propertyType || 'FLAT');
       setAccommodationType(propertyToEdit.accommodationType || '1_BHK');
       setMonthlyRent(propertyToEdit.monthlyRent ?? 8000);
@@ -174,6 +184,13 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setOccupancyStatus((propertyToEdit.occupancyStatus as any) || 'AVAILABLE');
       setAmenities(propertyToEdit.amenities || ['24/7 Water', 'Wi-Fi']);
       setDescription(propertyToEdit.description || '');
+
+      // Restore exact latitude and longitude or fallback to locality center
+      const hasCoords = typeof propertyToEdit.latitude === 'number' && typeof propertyToEdit.longitude === 'number' && propertyToEdit.latitude !== 0;
+      const initialLat = hasCoords ? propertyToEdit.latitude : (GONDIA_LOCALITY_COORDS[loc]?.lat || 21.4602);
+      const initialLng = hasCoords ? propertyToEdit.longitude : (GONDIA_LOCALITY_COORDS[loc]?.lng || 80.1945);
+      setPickerLocation({ lat: initialLat, lng: initialLng });
+      setHasCustomPin(hasCoords);
 
       setOwnerName(propertyToEdit.ownerName || currentOwner?.name || '');
       setOwnerPhone(propertyToEdit.ownerPhone || currentOwner?.phone || '');
@@ -193,7 +210,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     } else {
       setTitle('');
       setAddress('');
-      setLocality(GONDIA_LOCALITIES[1] || 'Civil Lines');
+      const defaultLoc = GONDIA_LOCALITIES[1] || 'Civil Lines';
+      setLocality(defaultLoc);
       setPropertyType('FLAT');
       setAccommodationType('1_BHK');
       setMonthlyRent(8000);
@@ -209,6 +227,10 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setAmenities(['24/7 Water', 'Wi-Fi']);
       setDescription('');
 
+      const defaultCoords = GONDIA_LOCALITY_COORDS[defaultLoc] || { lat: 21.4602, lng: 80.1945 };
+      setPickerLocation(defaultCoords);
+      setHasCustomPin(false);
+
       setOwnerName(currentOwner?.name || '');
       setOwnerPhone(currentOwner?.phone || '');
       setOwnerWhatsappNumber(currentOwner?.whatsappNumber || currentOwner?.phone || '');
@@ -220,6 +242,25 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setSavedPropertyInfo(null);
     }
   }, [isOpen, propertyToEdit, currentOwner]);
+
+  const handleLocalityChange = (newLocality: string) => {
+    setLocality(newLocality);
+    // If owner hasn't custom-dragged pin, center map on chosen locality
+    if (!hasCustomPin) {
+      const coords = GONDIA_LOCALITY_COORDS[newLocality];
+      if (coords) {
+        setPickerLocation({ lat: coords.lat, lng: coords.lng });
+      }
+    }
+  };
+
+  const handlePickerLocationChange = (loc: { lat: number; lng: number; locality?: string }) => {
+    setPickerLocation({ lat: loc.lat, lng: loc.lng });
+    setHasCustomPin(true);
+    if (loc.locality && GONDIA_LOCALITIES.includes(loc.locality)) {
+      setLocality(loc.locality);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -448,7 +489,12 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         finalPhotoUrls = ['/hero_gondia_stays.jpg'];
       }
 
-      const coords = GONDIA_LOCALITY_COORDS[locality] || { lat: 21.4602, lng: 80.1945 };
+      const finalLat = typeof pickerLocation?.lat === 'number' && !isNaN(pickerLocation.lat)
+        ? pickerLocation.lat
+        : (GONDIA_LOCALITY_COORDS[locality]?.lat ?? 21.4602);
+      const finalLng = typeof pickerLocation?.lng === 'number' && !isNaN(pickerLocation.lng)
+        ? pickerLocation.lng
+        : (GONDIA_LOCALITY_COORDS[locality]?.lng ?? 80.1945);
 
       if (propertyToEdit) {
         // Edit existing listing
@@ -479,8 +525,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerPhone: ownerPhone.trim(),
           ownerWhatsappNumber: (ownerWhatsappNumber || ownerPhone).trim(),
           ownerPreferredContact,
-          latitude: coords.lat,
-          longitude: coords.lng
+          latitude: finalLat,
+          longitude: finalLng
         };
 
         await onSaveProperty(updated, true, editToken || undefined);
@@ -524,8 +570,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerPhone: ownerPhone.trim(),
           ownerWhatsappNumber: (ownerWhatsappNumber || ownerPhone).trim(),
           ownerPreferredContact,
-          latitude: coords.lat,
-          longitude: coords.lng,
+          latitude: finalLat,
+          longitude: finalLng,
           createdAt: Date.now()
         };
 
@@ -703,7 +749,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                     </label>
                     <select
                       value={locality}
-                      onChange={(e) => setLocality(e.target.value)}
+                      onChange={(e) => handleLocalityChange(e.target.value)}
                       className="w-full px-3.5 py-2.5 text-xs bg-slate-50 hover:bg-slate-50/80 focus:bg-white border border-slate-200 focus:border-blue-600 rounded-xl font-semibold outline-none transition-colors cursor-pointer"
                     >
                       {GONDIA_LOCALITIES.filter(l => l !== 'All').map(loc => (
@@ -964,12 +1010,12 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                 </div>
               </div>
 
-              {/* Section 4: Address & Description */}
+              {/* Section 4: Address & Map Pinpoint */}
               <div className="space-y-3.5">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                   <MapPin className="w-4 h-4 text-rose-600" />
                   <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
-                    4. Street Address & Description
+                    4. Street Address & Map Location
                   </h3>
                 </div>
 
@@ -985,6 +1031,61 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                     placeholder="e.g. Near Jain Mandir, Main Road, Civil Lines"
                     className="w-full px-3.5 py-2.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-600 rounded-xl font-semibold outline-none"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Enter house/flat number, building name, street, or prominent landmark.
+                  </p>
+                </div>
+
+                {/* Interactive Map Pinpoint on Gondia Map */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Crosshair className="w-3.5 h-3.5 text-blue-600" />
+                        Pinpoint on Map (Interactive Location)
+                      </label>
+                      <p className="text-[11px] text-slate-500">
+                        Tap anywhere on the map or drag the blue marker to pinpoint your property entrance in Gondia.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
+                        📍 {pickerLocation.lat.toFixed(4)}, {pickerLocation.lng.toFixed(4)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-xs relative">
+                    <GondiaMap
+                      mode="picker"
+                      pickerLocation={pickerLocation}
+                      onPickerLocationChange={handlePickerLocationChange}
+                      heightClass="h-60 sm:h-72"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                    <span>
+                      {hasCustomPin ? (
+                        <span className="text-emerald-600 font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Exact location pinned
+                        </span>
+                      ) : (
+                        <span>Centered at default {locality} coordinates</span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultCoords = GONDIA_LOCALITY_COORDS[locality] || { lat: 21.4602, lng: 80.1945 };
+                        setPickerLocation(defaultCoords);
+                        setHasCustomPin(false);
+                      }}
+                      className="text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                    >
+                      Reset to {locality} center
+                    </button>
+                  </div>
                 </div>
 
                 <div>
