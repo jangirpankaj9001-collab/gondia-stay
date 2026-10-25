@@ -13,11 +13,11 @@ import {
   X,
   Database,
   MessageCircle,
-  Plus,
-  Wrench
+  Plus
 } from 'lucide-react';
 import { useApp, useBackHandler } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp } from '../utils/contact';
+import { ServicesHouseIcon } from './BottomNav';
 
 export const Header: React.FC = () => {
   const { 
@@ -118,7 +118,7 @@ export const Header: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <Wrench className="w-4 h-4" />
+              <ServicesHouseIcon className="w-5 h-5" isActive={activeTab === 'services' || activeTab === 'tiffin'} />
               <span>Services</span>
               <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase">
                 Mess & More
@@ -321,7 +321,7 @@ export const Header: React.FC = () => {
             }`}
           >
             <div className="flex items-center gap-3">
-              <Wrench className="w-4 h-4 text-blue-600" />
+              <ServicesHouseIcon className="w-5 h-5" isActive={activeTab === 'services' || activeTab === 'tiffin'} />
               <span>Gondia Local Services</span>
             </div>
             <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
