@@ -15,17 +15,17 @@ export const BottomNav: React.FC = () => {
           }`}
         >
           <Building2 className="w-5 h-5" />
-          <span className="text-[11px] mt-0.5">Explore</span>
+          <span className="text-[11px] mt-0.5">Rentals</span>
         </button>
 
         <button
-          onClick={() => navigateTo('map')}
+          onClick={() => navigateTo('owner')}
           className={`flex flex-col items-center py-1 px-2.5 rounded-lg transition-colors ${
-            activeTab === 'map' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+            activeTab === 'owner' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <MapPin className="w-5 h-5" />
-          <span className="text-[11px] mt-0.5">Map</span>
+          <UserCheck className="w-5 h-5" />
+          <span className="text-[11px] mt-0.5">Owner</span>
         </button>
 
         <button
@@ -54,13 +54,13 @@ export const BottomNav: React.FC = () => {
         </button>
 
         <button
-          onClick={() => navigateTo('owner')}
+          onClick={() => navigateTo('map')}
           className={`flex flex-col items-center py-1 px-2.5 rounded-lg transition-colors ${
-            activeTab === 'owner' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
+            activeTab === 'map' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <UserCheck className="w-5 h-5" />
-          <span className="text-[11px] mt-0.5">Owner</span>
+          <MapPin className="w-5 h-5" />
+          <span className="text-[11px] mt-0.5">Map</span>
         </button>
       </div>
     </nav>
