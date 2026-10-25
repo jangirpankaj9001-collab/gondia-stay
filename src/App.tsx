@@ -68,7 +68,7 @@ import {
 import { fetchPropertyDirect } from './firebase/propertiesService';
 import { useApp, useBackHandler, isAuthorizedAdminEmail } from './context/AppContext';
 import { Header } from './components/Header';
-import { BottomNav } from './components/BottomNav';
+import { BottomNav, ServicesHouseIcon } from './components/BottomNav';
 import { PropertyCard } from './components/PropertyCard';
 import { TiffinCard } from './components/TiffinCard';
 import { ServiceCard } from './components/ServiceCard';
@@ -1665,14 +1665,7 @@ export const App: React.FC = () => {
             {/* Compact Header - keeps subcategories grid immediately visible without scrolling */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
               <div className="flex items-center gap-3">
-                <img 
-                  src="/assets/aistudio/IMG-20261025-WA0007_25af6bd0.jpg" 
-                  alt="Gondia Services" 
-                  className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-2xl shadow-md border border-slate-100 shrink-0" 
-                  onError={(e) => {
-                    e.currentTarget.src = '/ic_services_unified.jpg';
-                  }}
-                />
+                <ServicesHouseIcon className="w-12 h-12 sm:w-14 sm:h-14" />
                 <div>
                   <div className="flex items-center gap-2">
                     <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">

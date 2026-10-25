@@ -118,7 +118,7 @@ export const Header: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <ServicesHouseIcon className="w-5 h-5" isActive={activeTab === 'services' || activeTab === 'tiffin'} />
+              <ServicesHouseIcon className="w-6 h-6" isActive={activeTab === 'services' || activeTab === 'tiffin'} />
               <span>Services</span>
               <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase">
                 Mess & More
