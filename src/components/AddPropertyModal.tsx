@@ -136,6 +136,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     lng: GONDIA_LOCALITY_COORDS['Civil Lines']?.lng || 80.1945
   });
   const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
+  const [isLocating, setIsLocating] = useState<boolean>(false);
 
   // Landlord Contact
   const [ownerName, setOwnerName] = useState(currentOwner?.name || '');
@@ -260,6 +261,33 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     if (loc.locality && GONDIA_LOCALITIES.includes(loc.locality)) {
       setLocality(loc.locality);
     }
+  };
+
+  const handlePinpointMyLocation = () => {
+    if (!navigator.geolocation) {
+      if (onSuccessToast) onSuccessToast('Geolocation is not supported by your browser');
+      else alert('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setPickerLocation({ lat: latitude, lng: longitude });
+        setHasCustomPin(true);
+        setIsLocating(false);
+        if (onSuccessToast) onSuccessToast('Location pinned via device GPS!');
+      },
+      (err) => {
+        setIsLocating(false);
+        console.warn('Geolocation error:', err);
+        const errMsg = err.code === 1 ? 'Location permission denied' : 'Could not detect location';
+        if (onSuccessToast) onSuccessToast(errMsg);
+        else alert(errMsg);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   if (!isOpen) return null;
@@ -1031,28 +1059,31 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                     placeholder="e.g. Near Jain Mandir, Main Road, Civil Lines"
                     className="w-full px-3.5 py-2.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-600 rounded-xl font-semibold outline-none"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Enter house/flat number, building name, street, or prominent landmark.
-                  </p>
                 </div>
 
                 {/* Interactive Map Pinpoint on Gondia Map */}
                 <div className="space-y-2 pt-1">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <Crosshair className="w-3.5 h-3.5 text-blue-600" />
-                        Pinpoint on Map (Interactive Location)
-                      </label>
-                      <p className="text-[11px] text-slate-500">
-                        Tap anywhere on the map or drag the blue marker to pinpoint your property entrance in Gondia.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
-                        📍 {pickerLocation.lat.toFixed(4)}, {pickerLocation.lng.toFixed(4)}
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Crosshair className="w-3.5 h-3.5 text-blue-600" />
+                      Pinpoint on Map
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handlePinpointMyLocation}
+                      disabled={isLocating}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 shadow-2xs transition-all cursor-pointer disabled:opacity-60"
+                      title="Use device GPS to pinpoint property location"
+                    >
+                      {isLocating ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                          <span>Pinpointing...</span>
+                        </>
+                      ) : (
+                        <span>📍 Pinpoint My Location</span>
+                      )}
+                    </button>
                   </div>
 
                   <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-xs relative">
@@ -1062,29 +1093,6 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       onPickerLocationChange={handlePickerLocationChange}
                       heightClass="h-60 sm:h-72"
                     />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
-                    <span>
-                      {hasCustomPin ? (
-                        <span className="text-emerald-600 font-bold flex items-center gap-1">
-                          <Check className="w-3 h-3" /> Exact location pinned
-                        </span>
-                      ) : (
-                        <span>Centered at default {locality} coordinates</span>
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const defaultCoords = GONDIA_LOCALITY_COORDS[locality] || { lat: 21.4602, lng: 80.1945 };
-                        setPickerLocation(defaultCoords);
-                        setHasCustomPin(false);
-                      }}
-                      className="text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
-                    >
-                      Reset to {locality} center
-                    </button>
                   </div>
                 </div>
 
