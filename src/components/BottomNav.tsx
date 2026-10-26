@@ -71,7 +71,7 @@ export const BottomNav: React.FC = () => {
             className="w-5 h-5" 
             isActive={activeTab === 'services' || activeTab === 'tiffin'} 
           />
-          <span className="text-[11px] mt-0.5">Services</span>
+          <span className="text-[10px] sm:text-[11px] mt-0.5 whitespace-nowrap">Home Services</span>
         </button>
 
         <button

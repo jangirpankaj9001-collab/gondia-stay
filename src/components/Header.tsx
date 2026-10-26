@@ -119,7 +119,7 @@ export const Header: React.FC = () => {
               }`}
             >
               <ServicesHouseIcon className="w-6 h-6" isActive={activeTab === 'services' || activeTab === 'tiffin'} />
-              <span>Services</span>
+              <span>Home Services</span>
               <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase">
                 Mess & More
               </span>
@@ -322,7 +322,7 @@ export const Header: React.FC = () => {
           >
             <div className="flex items-center gap-3">
               <ServicesHouseIcon className="w-5 h-5" isActive={activeTab === 'services' || activeTab === 'tiffin'} />
-              <span>Gondia Local Services</span>
+              <span>Home Services</span>
             </div>
             <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
               Mess, Maid, Repair

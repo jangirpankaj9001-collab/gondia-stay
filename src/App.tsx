@@ -1681,7 +1681,7 @@ export const App: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                      Services for You
+                      Home Services for You
                     </h1>
                     <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 uppercase tracking-wider">
                       Gondia
@@ -1733,7 +1733,7 @@ export const App: React.FC = () => {
                   title="View Services Overview & Dashboard Details"
                 >
                   <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>About Services</span>
+                  <span>About Home Services</span>
                 </button>
               </div>
             </div>
@@ -1769,7 +1769,7 @@ export const App: React.FC = () => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold uppercase tracking-wider backdrop-blur-xs">
                           <Wrench className="w-3.5 h-3.5 text-amber-300" />
-                          Gondia Verified Local Services
+                          Gondia Verified Home Services
                         </span>
                         <span className="bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
                           0% Commission
@@ -2705,7 +2705,7 @@ export const App: React.FC = () => {
                         }`}
                       >
                         <Wrench className="w-4 h-4 text-amber-600" />
-                        <span>Local Services</span>
+                        <span>Home Services</span>
                         {(pendingServices.length > 0 || pendingEditServices.length > 0) && (
                           <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
                             {pendingServices.length + pendingEditServices.length} pending
