@@ -128,12 +128,24 @@ service cloud.firestore {
           ));
       }
 
+      // Function to check if caller is the authenticated owner of the property
+      function isPropertyOwner() {
+        return request.auth != null && (
+          (resource.data.ownerId != null && resource.data.ownerId == request.auth.uid)
+          || (resource.data.ownerEmail != null && request.auth.token.email != null && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        );
+      }
+
       // 3. Update:
       // - Verified Admin has full update privileges (approval, rejection, edits, occupancy, featured).
+      // - Authenticated owner can update permitted fields (including occupancyStatus).
       // - Owner with unguessable private edit link can update permitted listing fields (including occupancyStatus) via atomic batch matching verifiedToken in property_secrets.
-      // - Unauthenticated occupancy status updates are strictly prohibited.
+      // - Unauthenticated occupancy status updates without private edit key or ownership are strictly prohibited.
       // - Never exposes edit tokens in the public property document.
       allow update: if isAdmin() || (
+        isPropertyOwner()
+        && isValidOwnerUpdate()
+      ) || (
         exists(/databases/$(database)/documents/property_secrets/$(propertyId))
         && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
         && isValidOwnerUpdate()

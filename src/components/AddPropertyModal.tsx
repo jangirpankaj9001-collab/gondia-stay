@@ -907,35 +907,19 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1">
-                      Available From
-                    </label>
-                    <div className="relative">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={availableFrom}
-                        onChange={(e) => setAvailableFrom(e.target.value)}
-                        placeholder="Immediate / 1st of next month"
-                        className="w-full pl-8 pr-3 py-2.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-600 rounded-xl font-semibold outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-800 block mb-1">
-                      Occupancy Status
-                    </label>
-                    <select
-                      value={occupancyStatus}
-                      onChange={(e) => setOccupancyStatus(e.target.value as any)}
-                      className="w-full px-3.5 py-2.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-600 rounded-xl font-semibold outline-none cursor-pointer"
-                    >
-                      <option value="AVAILABLE">Available for Rent</option>
-                      <option value="OCCUPIED">Occupied / Rented</option>
-                    </select>
+                <div>
+                  <label className="text-xs font-bold text-slate-800 block mb-1">
+                    Available From
+                  </label>
+                  <div className="relative">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={availableFrom}
+                      onChange={(e) => setAvailableFrom(e.target.value)}
+                      placeholder="Immediate / 1st of next month"
+                      className="w-full pl-8 pr-3 py-2.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-600 rounded-xl font-semibold outline-none"
+                    />
                   </div>
                 </div>
               </div>

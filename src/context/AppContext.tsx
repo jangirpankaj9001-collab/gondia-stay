@@ -54,6 +54,7 @@ interface AppContextType {
   moderateServiceEdit: (serviceId: string, approve: boolean) => Promise<boolean>;
   deleteService: (serviceId: string) => Promise<boolean>;
   isServiceOwner: (service: ServiceItem) => boolean;
+  isPropertyOwner: (property: PropertyListing) => boolean;
   myServiceIds: string[];
   saveServiceId: (serviceId: string) => void;
   favorites: string[];
@@ -240,6 +241,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return false;
   }, [isAdminAuthenticated, myServiceIds, currentOwner.phone, authUser]);
+
+  const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
+    if (isAdminAuthenticated) return true;
+    if (myListingTokens[property.id]) return true;
+    if (authUser) {
+      if (property.ownerId === authUser.uid) return true;
+      if (property.ownerEmail && authUser.email && property.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) return true;
+      if (property.ownerId === 'owner_gondia_primary' && authUser.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com') return true;
+    }
+    if (property.ownerId === currentOwner.id) return true;
+    const pPhone = (property.ownerPhone || property.ownerWhatsappNumber || '').replace(/\D/g, '');
+    const oPhone = (currentOwner.phone || '').replace(/\D/g, '');
+    if (pPhone.length >= 10 && oPhone.length >= 10) {
+      if (pPhone.endsWith(oPhone.slice(-10)) || oPhone.endsWith(pPhone.slice(-10))) {
+        return true;
+      }
+    }
+    return false;
+  }, [isAdminAuthenticated, myListingTokens, authUser, currentOwner]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
@@ -445,6 +465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? { ...p, occupancyStatus, updatedAt: Date.now() }
         : p
     ));
+    setSelectedProperty(prev => (prev && prev.id === propertyId ? { ...prev, occupancyStatus, updatedAt: Date.now() } : prev));
 
     const tokenToUse = editToken || myListingTokens[propertyId];
 
@@ -1298,6 +1319,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       moderatePropertyEdit,
       moderateServiceEdit,
       isServiceOwner,
+      isPropertyOwner,
       myServiceIds,
       saveServiceId,
       setIsFirebaseModalOpen,

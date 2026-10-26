@@ -115,6 +115,7 @@ export const App: React.FC = () => {
     moderatePropertyEdit,
     moderateServiceEdit,
     isServiceOwner,
+    isPropertyOwner,
     favorites,
     currentOwner,
     searchQuery,
@@ -532,9 +533,9 @@ export const App: React.FC = () => {
         if (!isApproved(p.status)) return false;
       }
 
-      // Requirement 5: When occupied, exclude from available-property searches in explore tab
-      if (activeTab === 'explore') {
-        if (isOccupied(p.occupancyStatus) && !filterCriteria.includeOccupied) {
+      // Requirement: Occupied properties must be hidden from public Rentals (Explore & Map); Available properties reappear automatically
+      if (activeTab === 'explore' || activeTab === 'map') {
+        if (isOccupied(p.occupancyStatus)) {
           return false;
         }
       }
@@ -700,17 +701,8 @@ export const App: React.FC = () => {
   // Owner properties (can see their own listings regardless of status)
   const myProperties = useMemo(() => {
     if (isAdminAuthenticated) return properties;
-    return properties.filter(p => 
-      // Matched by private edit link token saved in localStorage
-      Boolean(myListingTokens[p.id]) ||
-      (authUser && (
-        p.ownerId === authUser.uid ||
-        (p.ownerEmail && p.ownerEmail.toLowerCase() === authUser.email?.toLowerCase()) ||
-        (p.ownerId === 'owner_gondia_primary' && authUser.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com')
-      )) ||
-      p.ownerId === currentOwner.id
-    );
-  }, [properties, currentOwner, authUser, isAdminAuthenticated, myListingTokens]);
+    return properties.filter(p => isPropertyOwner(p));
+  }, [properties, isAdminAuthenticated, isPropertyOwner]);
 
   // Properties grouped for Admin Moderation Workflow
   const pendingProperties = useMemo(() => {
@@ -2314,33 +2306,43 @@ export const App: React.FC = () => {
 
                         {/* Actions for owner */}
                         <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                          {/* Owner Mark as Rented / Occupied and Available for Rent */}
-                          <button
-                            type="button"
-                            onClick={() => updatePropertyOccupancy(
-                              property.id, 
-                              isOccupied(property.occupancyStatus) ? 'AVAILABLE' : 'OCCUPIED',
-                              myListingTokens[property.id]
-                            )}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer ${
-                              isOccupied(property.occupancyStatus)
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                : 'bg-rose-600 hover:bg-rose-700 text-white'
-                            }`}
-                            title="Toggle occupancy status in Cloud Firestore"
-                          >
-                            {isOccupied(property.occupancyStatus) ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Mark as Available for Rent</span>
-                              </>
-                            ) : (
-                              <>
-                                <Home className="w-3.5 h-3.5" />
-                                <span>Mark as Rented / Occupied</span>
-                              </>
-                            )}
-                          </button>
+                          {/* Owner & Admin Available / Occupied Toggle */}
+                          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isOccupied(property.occupancyStatus)) {
+                                  updatePropertyOccupancy(property.id, 'AVAILABLE', myListingTokens[property.id]);
+                                }
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                !isOccupied(property.occupancyStatus)
+                                  ? 'bg-emerald-600 text-white shadow-xs font-extrabold'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                              title="Mark Available: listing appears in public Rentals"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Available</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isOccupied(property.occupancyStatus)) {
+                                  updatePropertyOccupancy(property.id, 'OCCUPIED', myListingTokens[property.id]);
+                                }
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                isOccupied(property.occupancyStatus)
+                                  ? 'bg-rose-600 text-white shadow-xs font-extrabold'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                              title="Mark Occupied: listing hidden from public Rentals"
+                            >
+                              <Home className="w-3.5 h-3.5" />
+                              <span>Occupied</span>
+                            </button>
+                          </div>
 
                           {myListingTokens[property.id] && (
                             <button
@@ -2860,6 +2862,13 @@ export const App: React.FC = () => {
                                             <span>Proposed Edit Awaiting Reapproval</span>
                                           </span>
                                         )}
+                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                          isOccupied(prop.occupancyStatus)
+                                            ? 'bg-rose-700 text-white'
+                                            : 'bg-emerald-700 text-white'
+                                        }`}>
+                                          {isOccupied(prop.occupancyStatus) ? 'Occupied (Hidden)' : 'Available'}
+                                        </span>
                                         <span className="text-xs font-bold text-slate-500">{prop.locality}</span>
                                         {isOwnListing && (
                                           <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
@@ -2943,6 +2952,44 @@ export const App: React.FC = () => {
                                         )}
                                       </>
                                     )}
+
+                                    {/* Admin Available / Occupied Toggle */}
+                                    <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (isOccupied(prop.occupancyStatus)) {
+                                            updatePropertyOccupancy(prop.id, 'AVAILABLE');
+                                          }
+                                        }}
+                                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                          !isOccupied(prop.occupancyStatus)
+                                            ? 'bg-emerald-600 text-white shadow-xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                        title="Set Available: visible in public rentals"
+                                      >
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        <span>Available</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!isOccupied(prop.occupancyStatus)) {
+                                            updatePropertyOccupancy(prop.id, 'OCCUPIED');
+                                          }
+                                        }}
+                                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                          isOccupied(prop.occupancyStatus)
+                                            ? 'bg-rose-600 text-white shadow-xs font-extrabold'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                        title="Set Occupied: hidden from public rentals"
+                                      >
+                                        <Home className="w-3.5 h-3.5" />
+                                        <span>Occupied</span>
+                                      </button>
+                                    </div>
 
                                     <button
                                       type="button"
@@ -3598,7 +3645,78 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Requirement 5: Rental Occupancy Management & Landlord Contact Privacy */}
+                {/* Available / Occupied Toggle Banner for Owner and Admin */}
+                {(isAdminAuthenticated || isPropertyOwner(selectedProperty)) && (
+                  <div className="bg-slate-900 text-white rounded-3xl p-5 sm:p-6 shadow-md space-y-3 border border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`w-3 h-3 rounded-full ${isOccupied(selectedProperty.occupancyStatus) ? 'bg-rose-500 animate-pulse' : 'bg-emerald-400'}`} />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-300 bg-slate-800 px-2 py-0.5 rounded">
+                              {isAdminAuthenticated ? 'Admin Occupancy Control' : 'Owner Occupancy Control'}
+                            </span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                              isOccupied(selectedProperty.occupancyStatus)
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            }`}>
+                              {isOccupied(selectedProperty.occupancyStatus) ? 'Occupied (Hidden from Rentals)' : 'Available (Live in Rentals)'}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-white mt-1">
+                            {isOccupied(selectedProperty.occupancyStatus)
+                              ? 'Property is Occupied & Hidden from Public Rentals'
+                              : 'Property is Available & Visible in Public Rentals'}
+                          </h4>
+                        </div>
+                      </div>
+
+                      {/* Segmented Toggle Control */}
+                      <div className="flex items-center bg-slate-800 p-1 rounded-2xl border border-slate-700/80 self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (isOccupied(selectedProperty.occupancyStatus)) {
+                              await updatePropertyOccupancy(selectedProperty.id, 'AVAILABLE', myListingTokens[selectedProperty.id]);
+                            }
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            !isOccupied(selectedProperty.occupancyStatus)
+                              ? 'bg-emerald-600 text-white shadow-md font-extrabold'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                          title="Mark Available (visible in public rentals)"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Available</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!isOccupied(selectedProperty.occupancyStatus)) {
+                              await updatePropertyOccupancy(selectedProperty.id, 'OCCUPIED', myListingTokens[selectedProperty.id]);
+                            }
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isOccupied(selectedProperty.occupancyStatus)
+                              ? 'bg-rose-600 text-white shadow-md font-extrabold'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                          title="Mark Occupied (hidden from public rentals)"
+                        >
+                          <Home className="w-4 h-4" />
+                          <span>Occupied</span>
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Toggle between Available and Occupied. Changes take effect instantly without reapproval. Occupied properties are automatically hidden from public Rentals; Available properties reappear immediately.
+                    </p>
+                  </div>
+                )}
+
+                {/* Rental Occupancy Management & Landlord Contact Privacy */}
                 {isOccupied(selectedProperty.occupancyStatus) ? (
                   <div className="bg-rose-50 border-2 border-rose-200 rounded-3xl p-6 sm:p-7 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -3620,12 +3738,11 @@ export const App: React.FC = () => {
                       </div>
 
                       {/* Owner or Admin Can Mark Available Again */}
-                      {(currentOwner.id === selectedProperty.ownerId || isAdminAuthenticated) && (
+                      {(isPropertyOwner(selectedProperty) || isAdminAuthenticated) && (
                         <button
                           type="button"
                           onClick={async () => {
-                            await updatePropertyOccupancy(selectedProperty.id, 'AVAILABLE');
-                            showToast('Property marked as Available Again!');
+                            await updatePropertyOccupancy(selectedProperty.id, 'AVAILABLE', myListingTokens[selectedProperty.id]);
                           }}
                           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer shrink-0"
                         >
@@ -3677,12 +3794,11 @@ export const App: React.FC = () => {
                       </div>
 
                       {/* Owner or Admin Can Mark as Occupied */}
-                      {(myListingTokens[selectedProperty.id] || currentOwner.id === selectedProperty.ownerId || isAdminAuthenticated) && (
+                      {(isPropertyOwner(selectedProperty) || isAdminAuthenticated) && (
                         <button
                           type="button"
                           onClick={async () => {
                             await updatePropertyOccupancy(selectedProperty.id, 'OCCUPIED', myListingTokens[selectedProperty.id]);
-                            showToast('Property marked as Rented / Occupied!');
                           }}
                           className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shrink-0"
                         >

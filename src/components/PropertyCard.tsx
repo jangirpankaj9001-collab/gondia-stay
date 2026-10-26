@@ -40,11 +40,15 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
     toggleFavorite, 
     navigateTo, 
     toggleFeatured,
-    updatePropertyOccupancy
+    updatePropertyOccupancy,
+    isPropertyOwner,
+    isAdminAuthenticated,
+    myListingTokens
   } = useApp();
 
   const isFav = favorites.includes(property.id);
   const occupied = isOccupied(property.occupancyStatus);
+  const canManageOccupancy = Boolean(isAdminAuthenticated || isPropertyOwner(property) || isOwnerView);
 
   const mainPhoto = property.photos && property.photos.length > 0 
     ? property.photos[0] 
@@ -229,8 +233,67 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
           )}
         </div>
 
-        {/* Action Buttons: Tenant View vs Owner View */}
-        <div className="mt-3 pt-3 border-t border-slate-100">
+        {/* Action Buttons: Tenant View vs Owner/Admin View */}
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5">
+          {/* Owner & Admin Available / Occupied Toggle */}
+          {canManageOccupancy && (
+            <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${occupied ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'}`} />
+                  <span>Occupancy:</span>
+                  <strong className={occupied ? 'text-rose-700' : 'text-emerald-700'}>
+                    {occupied ? 'Occupied' : 'Available'}
+                  </strong>
+                </span>
+                <span className="text-[10px] text-slate-500 font-semibold bg-slate-200/70 px-1.5 py-0.5 rounded">
+                  {isAdminAuthenticated ? 'Admin Control' : 'Owner Control'}
+                </span>
+              </div>
+
+              {/* Segmented Toggle Control */}
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-200/80 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (occupied) {
+                      updatePropertyOccupancy(property.id, 'AVAILABLE', myListingTokens[property.id]);
+                    }
+                  }}
+                  className={`py-1.5 px-2 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    !occupied
+                      ? 'bg-emerald-600 text-white shadow-xs font-extrabold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+                  }`}
+                  title="Mark property as Available for rent (appears in public rentals)"
+                >
+                  <CheckCircle className={`w-3.5 h-3.5 ${!occupied ? 'text-white' : 'text-slate-400'}`} />
+                  <span>Available</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!occupied) {
+                      updatePropertyOccupancy(property.id, 'OCCUPIED', myListingTokens[property.id]);
+                    }
+                  }}
+                  className={`py-1.5 px-2 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    occupied
+                      ? 'bg-rose-600 text-white shadow-xs font-extrabold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+                  }`}
+                  title="Mark property as Occupied / Rented (hidden from public rentals)"
+                >
+                  <Home className={`w-3.5 h-3.5 ${occupied ? 'text-white' : 'text-slate-400'}`} />
+                  <span>Occupied</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {isOwnerView ? (
             /* Landlord controls */
             <div className="space-y-2">
@@ -241,34 +304,9 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                   occupied ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
                 }`}>
-                  {occupied ? 'Occupied' : 'Available'}
+                  {occupied ? 'Occupied (Hidden from public)' : 'Available (Live)'}
                 </span>
               </div>
-
-              {/* Requirement 5: Owner-only Mark as Rented / Occupied and Mark as Available Again */}
-              {isApproved(property.status) && (
-                <button
-                  type="button"
-                  onClick={() => updatePropertyOccupancy(property.id, occupied ? 'AVAILABLE' : 'OCCUPIED')}
-                  className={`w-full py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors shadow-xs ${
-                    occupied
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      : 'bg-rose-600 hover:bg-rose-700 text-white'
-                  }`}
-                >
-                  {occupied ? (
-                    <>
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>Mark as Available Again</span>
-                    </>
-                  ) : (
-                    <>
-                      <Home className="w-3.5 h-3.5" />
-                      <span>Mark as Rented / Occupied</span>
-                    </>
-                  )}
-                </button>
-              )}
 
               <div className="flex items-center justify-between gap-2">
                 <button
@@ -312,7 +350,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
           ) : (
             /* Tenant View: Check Occupancy Status */
             occupied ? (
-              /* Requirement 5: When occupied, hide owner contact number and WhatsApp button from tenant view */
+              /* When occupied, hide owner contact number and WhatsApp button from tenant view */
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse" />

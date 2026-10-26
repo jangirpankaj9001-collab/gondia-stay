@@ -537,9 +537,30 @@ export const updatePropertyOccupancyInFirestore = async (
     return;
   }
 
-  // If not admin, require private edit link token and commit verified batch
+  // If authenticated user is signed in, check if they own the property
+  if (auth?.currentUser) {
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        const isOwner = (data.ownerId && data.ownerId === auth.currentUser.uid) ||
+                        (data.ownerEmail && auth.currentUser.email && data.ownerEmail.toLowerCase() === auth.currentUser.email.toLowerCase());
+        if (isOwner) {
+          await updateDoc(docRef, {
+            occupancyStatus,
+            updatedAt: Date.now()
+          });
+          return;
+        }
+      }
+    } catch (authErr) {
+      console.warn('[GondiaStay] Auth owner check notice:', authErr);
+    }
+  }
+
+  // If not signed in as owner, require private edit link token and commit verified batch
   if (!editToken) {
-    throw new Error('Unauthorized: Occupancy updates require verified administrator access or the listing\'s private edit key.');
+    throw new Error('Unauthorized: Only the property owner or authorized administrator can change occupancy status.');
   }
 
   const batch = writeBatch(db);
