@@ -2419,6 +2419,92 @@ export const App: React.FC = () => {
                     </button>
                   </div>
                 )}
+
+                {/* My Home Services Section (if owner has registered any local services) */}
+                {(() => {
+                  const myOwnerServices = services.filter(s => isServiceOwner(s));
+                  if (myOwnerServices.length === 0) return null;
+                  return (
+                    <div className="pt-4 border-t border-slate-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                            <Wrench className="w-4 h-4 text-amber-500" />
+                            <span>My Home Services ({myOwnerServices.length})</span>
+                          </h3>
+                          <p className="text-[11px] text-slate-500">
+                            Your local business & home service listings in Gondia
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setServiceToEdit(null);
+                            setIsAddServiceModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Service</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        {myOwnerServices.map(srv => (
+                          <div 
+                            key={srv.id}
+                            className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img 
+                                src={srv.photos[0] || (srv.category === 'MESS_TIFFIN' ? '/hero_tiffin_mess.jpg' : '/hero_gondia_stays.jpg')}
+                                alt={srv.title}
+                                className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200"
+                              />
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                    isApproved(srv.status)
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : isPending(srv.status)
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : 'bg-rose-100 text-rose-800'
+                                  }`}>
+                                    {isApproved(srv.status) ? 'Approved • Live' : isPending(srv.status) ? 'Pending Verification' : 'Rejected'}
+                                  </span>
+                                  {srv.hasPendingEdit && (
+                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-amber-700" />
+                                      <span>Edit Pending Approval</span>
+                                    </span>
+                                  )}
+                                  <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                                    {srv.category}
+                                  </span>
+                                </div>
+                                <h4 className="text-sm font-bold text-slate-900 mt-0.5">{srv.title}</h4>
+                                <p className="text-xs text-slate-500">Rate: <span className="font-bold text-slate-700">{srv.charges}</span> • Tel: {formatDisplayPhone(srv.phone)}</p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setServiceToEdit(srv);
+                                setIsAddServiceModalOpen(true);
+                              }}
+                              className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200 self-end sm:self-center"
+                              title="Edit Service Listing"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>Edit Service</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -3986,6 +4072,9 @@ export const App: React.FC = () => {
         }}
         isAdmin={isAdminAuthenticated}
         serviceToEdit={serviceToEdit}
+        onServiceAdded={(newSrv: ServiceItem) => {
+          showToast(`Service "${newSrv.title}" registered successfully!`);
+        }}
         onServiceUpdated={(updated: ServiceItem) => {
           showToast(`Service "${updated.title}" successfully updated!`);
         }}

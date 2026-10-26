@@ -28,6 +28,7 @@ import {
 } from '../types';
 import { uploadServicePhoto, uploadMultipleServicePhotos } from '../firebase/storageService';
 import { saveServiceToFirestore, updateServiceInFirestore } from '../firebase/servicesService';
+import { useApp } from '../context/AppContext';
 
 interface AddServiceModalProps {
   isOpen: boolean;
@@ -46,6 +47,8 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   serviceToEdit = null,
   isAdmin = false
 }) => {
+  const { saveService, updateService, saveServiceId } = useApp();
+
   const [category, setCategory] = useState<ServiceCategory>('MESS_TIFFIN');
   const [title, setTitle] = useState('');
   const [providerName, setProviderName] = useState('');
@@ -62,62 +65,99 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   const [specialties, setSpecialties] = useState('');
   const [adminStatus, setAdminStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
 
-  // Populate or reset form fields when serviceToEdit changes
-  useEffect(() => {
-    if (serviceToEdit) {
-      setCategory(serviceToEdit.category || 'MESS_TIFFIN');
-      setTitle(serviceToEdit.title || '');
-      setProviderName(serviceToEdit.providerName || serviceToEdit.ownerName || '');
-      setPhone(serviceToEdit.phone || serviceToEdit.ownerPhone || '');
-      setWhatsappNumber(serviceToEdit.whatsappNumber || serviceToEdit.ownerWhatsappNumber || '');
-      setCharges(serviceToEdit.charges || '');
-      setChargeUnit(serviceToEdit.chargeUnit || 'service');
-      setDescription(serviceToEdit.description || '');
-      setSelectedAreas(serviceToEdit.serviceAreas && serviceToEdit.serviceAreas.length > 0 ? serviceToEdit.serviceAreas : ['All Gondia']);
-      setLocality(serviceToEdit.locality || 'Civil Lines');
-      setAddress(serviceToEdit.address || '');
-      setTiming(serviceToEdit.timing || '8:00 AM - 8:00 PM');
-      setExperienceYears(serviceToEdit.experienceYears ?? 5);
-      setSpecialties(Array.isArray(serviceToEdit.specialties) ? serviceToEdit.specialties.join(', ') : '');
-      setUploadedPhotos(Array.isArray(serviceToEdit.photos) ? [...serviceToEdit.photos] : []);
-      setBusinessCardPhoto(serviceToEdit.businessCardPhoto || '');
-      setAdminStatus((serviceToEdit.status as any) || 'approved');
-      setFormError(null);
-      setSubmissionSuccess(false);
-    } else {
-      setCategory('MESS_TIFFIN');
-      setTitle('');
-      setProviderName('');
-      setPhone('');
-      setWhatsappNumber('');
-      setCharges('');
-      setChargeUnit('month');
-      setDescription('');
-      setSelectedAreas(['All Gondia']);
-      setLocality('Civil Lines');
-      setAddress('');
-      setTiming('8:00 AM - 8:00 PM');
-      setExperienceYears(5);
-      setSpecialties('');
-      setUploadedPhotos([]);
-      setBusinessCardPhoto('');
-      setAdminStatus('pending');
-      setFormError(null);
-      setSubmissionSuccess(false);
-    }
-  }, [serviceToEdit, isOpen]);
-
-  // Photos state
+  // Photos state - declared before useEffect
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [businessCardPhoto, setBusinessCardPhoto] = useState<string>('');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadTarget, setUploadTarget] = useState<'photos' | 'card'>('photos');
+  const [previewModalPhoto, setPreviewModalPhoto] = useState<string | null>(null);
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
+
+  const prevOpenRef = useRef(false);
+  const activeServiceIdRef = useRef<string | null>(null);
+
+  // Populate or reset form fields when serviceToEdit changes or modal opens
+  useEffect(() => {
+    const justOpened = isOpen && !prevOpenRef.current;
+    const isDifferentService = (serviceToEdit?.id || null) !== activeServiceIdRef.current;
+    prevOpenRef.current = isOpen;
+
+    if (isOpen && (justOpened || isDifferentService)) {
+      activeServiceIdRef.current = serviceToEdit?.id || null;
+      if (serviceToEdit) {
+        // Load pending edit draft if exists and not admin, else current live listing
+        const source = (serviceToEdit.hasPendingEdit && serviceToEdit.pendingEdit && !isAdmin)
+          ? { ...serviceToEdit, ...serviceToEdit.pendingEdit }
+          : serviceToEdit;
+
+        setCategory(source.category || 'MESS_TIFFIN');
+        setTitle(source.title || '');
+        setProviderName(source.providerName || source.ownerName || '');
+        setPhone(source.phone || source.ownerPhone || '');
+        setWhatsappNumber(source.whatsappNumber || source.ownerWhatsappNumber || '');
+        setCharges(source.charges || '');
+        setChargeUnit(source.chargeUnit || 'service');
+        setDescription(source.description || '');
+        setSelectedAreas(source.serviceAreas && source.serviceAreas.length > 0 ? source.serviceAreas : ['All Gondia']);
+        setLocality(source.locality || 'Civil Lines');
+        setAddress(source.address || '');
+        setTiming(source.timing || '8:00 AM - 8:00 PM');
+        setExperienceYears(source.experienceYears ?? 5);
+        setSpecialties(Array.isArray(source.specialties) ? source.specialties.join(', ') : '');
+
+        // Preserve all existing photos and visiting card safely
+        const rawPhotos: string[] = Array.isArray(source.photos)
+          ? source.photos.filter((p: any) => typeof p === 'string' && p.trim().length > 0)
+          : [];
+
+        let initialCard = (typeof source.businessCardPhoto === 'string' && source.businessCardPhoto.trim().length > 0)
+          ? source.businessCardPhoto.trim()
+          : '';
+
+        // If no explicit businessCardPhoto, check if photos array has a secondary photo that served as visiting card
+        if (!initialCard && rawPhotos.length > 1) {
+          initialCard = rawPhotos[1];
+        }
+
+        const setupPhotos = initialCard
+          ? rawPhotos.filter(p => p !== initialCard)
+          : rawPhotos;
+
+        setUploadedPhotos(setupPhotos);
+        setBusinessCardPhoto(initialCard);
+        setAdminStatus((source.status as any) || 'approved');
+        setFormError(null);
+        setSubmissionSuccess(false);
+      } else {
+        setCategory('MESS_TIFFIN');
+        setTitle('');
+        setProviderName('');
+        setPhone('');
+        setWhatsappNumber('');
+        setCharges('');
+        setChargeUnit('month');
+        setDescription('');
+        setSelectedAreas(['All Gondia']);
+        setLocality('Civil Lines');
+        setAddress('');
+        setTiming('8:00 AM - 8:00 PM');
+        setExperienceYears(5);
+        setSpecialties('');
+        setUploadedPhotos([]);
+        setBusinessCardPhoto('');
+        setAdminStatus('pending');
+        setFormError(null);
+        setSubmissionSuccess(false);
+      }
+    } else if (!isOpen) {
+      activeServiceIdRef.current = null;
+    }
+  }, [serviceToEdit, isOpen, isAdmin]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cardInputRef = useRef<HTMLInputElement>(null);
@@ -276,8 +316,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ...(isAdmin ? { status: adminStatus } : {})
         };
 
-        const result = await updateServiceInFirestore(serviceToEdit.id, updatedServiceData, isAdmin);
+        const result = await updateService(serviceToEdit.id, updatedServiceData);
         if (result.success) {
+          saveServiceId(serviceToEdit.id);
           const isApprovedLive = serviceToEdit.status === 'approved' && !isAdmin;
           const updatedFull: ServiceItem = {
             ...serviceToEdit,
@@ -333,9 +374,10 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         specialties: specs
       };
 
-      const result = await saveServiceToFirestore(newService, isAdmin);
+      const result = await saveService(newService);
 
       if (result.success) {
+        saveServiceId(result.serviceId);
         setSubmissionSuccess(true);
         if (onServiceAdded) {
           onServiceAdded({
@@ -745,37 +787,45 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                 </div>
 
                 {/* Visiting Card Upload Box */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
                     {businessCardPhoto ? (
-                      <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-300 shrink-0">
+                      <div className="relative w-20 h-14 rounded-xl overflow-hidden border border-slate-300 shrink-0 bg-slate-100 shadow-2xs group">
                         <img 
                           src={businessCardPhoto} 
                           alt="Visiting Card" 
-                          className="w-full h-full object-cover" 
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" 
+                          onClick={() => setPreviewModalPhoto(businessCardPhoto)}
+                          title="Click to view full photo"
                         />
+                        {/* Explicit Delete Button only - does NOT trigger when image is tapped */}
                         <button
                           type="button"
-                          onClick={() => setBusinessCardPhoto('')}
-                          className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBusinessCardPhoto('');
+                          }}
+                          className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-transform active:scale-90 cursor-pointer"
+                          title="Remove Visiting Card"
+                          aria-label="Remove Visiting Card"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     ) : (
-                      <div className="w-12 h-10 rounded-lg bg-slate-200 text-slate-500 flex items-center justify-center shrink-0">
-                        <CreditCard className="w-5 h-5" />
+                      <div className="w-14 h-12 rounded-xl bg-slate-200 text-slate-500 flex items-center justify-center shrink-0">
+                        <CreditCard className="w-6 h-6" />
                       </div>
                     )}
                     <div>
                       <p className="text-xs font-bold text-slate-800">Visiting / Business Card Photo</p>
                       <p className="text-[11px] text-slate-500">
-                        {businessCardPhoto ? 'Card uploaded successfully' : 'Upload your paper card for higher customer trust'}
+                        {businessCardPhoto ? 'Card preserved (tap to inspect, red button to remove)' : 'Upload paper card for higher customer trust'}
                       </p>
                     </div>
                   </div>
 
-                  <div>
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                     <input 
                       type="file"
                       ref={cardInputRef}
@@ -791,16 +841,27 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       type="button"
                       disabled={isUploadingPhoto}
                       onClick={() => cardInputRef.current?.click()}
-                      className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      <span>{businessCardPhoto ? 'Change Card' : 'Upload Card'}</span>
+                      <span>{businessCardPhoto ? 'Replace Card' : 'Upload Card'}</span>
                     </button>
+                    {businessCardPhoto && (
+                      <button
+                        type="button"
+                        onClick={() => setBusinessCardPhoto('')}
+                        className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+                        title="Remove Card"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span className="hidden sm:inline">Remove</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {/* Additional Photos Upload Box */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-bold text-slate-800">Service / Work / Setup Photos</p>
@@ -830,7 +891,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       type="button"
                       disabled={isUploadingPhoto || uploadedPhotos.length >= 8}
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>{uploadedPhotos.length > 0 ? `Add More (${uploadedPhotos.length}/8)` : 'Add Photos'}</span>
@@ -858,21 +919,28 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
 
                   {/* Photo Thumbnails */}
                   {uploadedPhotos.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="flex flex-wrap gap-2.5 pt-1">
                       {uploadedPhotos.map((photoUrl, idx) => (
-                        <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 group">
+                        <div key={idx} className="relative w-18 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-2xs group">
                           <img 
                             src={photoUrl} 
                             alt={`Photo ${idx + 1}`} 
-                            className="w-full h-full object-cover" 
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" 
+                            onClick={() => setPreviewModalPhoto(photoUrl)}
+                            title="Click to view full photo"
                           />
+                          {/* Explicit Delete Button only - does NOT trigger when image is tapped */}
                           <button
                             type="button"
-                            onClick={() => setUploadedPhotos(prev => prev.filter((_, i) => i !== idx))}
-                            className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUploadedPhotos(prev => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-transform active:scale-90 cursor-pointer"
                             title="Remove photo"
+                            aria-label="Remove photo"
                           >
-                            <Trash2 className="w-4 h-4 text-rose-400" />
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       ))}
@@ -931,9 +999,35 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                 </button>
               </div>
             </form>
-          )}
         </div>
       </div>
+
+      {/* Enlarged Photo Preview Lightbox */}
+      {previewModalPhoto && (
+        <div 
+          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setPreviewModalPhoto(null)}
+        >
+          <div 
+            className="relative max-w-2xl max-h-[85vh] rounded-2xl overflow-hidden bg-slate-900 border border-slate-700 shadow-2xl p-2" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewModalPhoto(null)}
+              className="absolute top-3 right-3 p-1.5 rounded-full bg-black/70 hover:bg-black text-white transition-colors cursor-pointer z-10"
+              title="Close Preview"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img 
+              src={previewModalPhoto} 
+              alt="Enlarged Preview" 
+              className="max-h-[80vh] w-auto object-contain rounded-xl mx-auto"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

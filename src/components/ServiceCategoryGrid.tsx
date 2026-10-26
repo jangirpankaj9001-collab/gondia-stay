@@ -146,7 +146,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   onDelete,
   onEdit
 }) => {
-  const { isServiceOwner } = useApp();
+  const { isServiceOwner, saveServiceId, showToast } = useApp();
 
   // Currently opened category in dedicated view (null means grid of 8 icons is shown)
   const [activeDedicatedCategory, setActiveDedicatedCategory] = useState<ServiceCategory | null>(
@@ -165,6 +165,48 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     phone: string;
     locality: string;
   } | null>(null);
+
+  // Provider ownership verification state to unlock editing from any device
+  const [verifyingService, setVerifyingService] = useState<ServiceItem | null>(null);
+  const [verifyPhoneInput, setVerifyPhoneInput] = useState('');
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  const handleProviderEditClick = (provider: ServiceItem) => {
+    if (isAdmin || isServiceOwner(provider)) {
+      if (onEdit) onEdit(provider);
+      return;
+    }
+    // Need ownership verification via registered phone
+    setVerifyingService(provider);
+    setVerifyPhoneInput('');
+    setVerifyError(null);
+  };
+
+  const handleVerifyOwnershipSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifyingService) return;
+    const cleanInput = verifyPhoneInput.trim().replace(/\D/g, '');
+    if (cleanInput.length < 10) {
+      setVerifyError('Please enter a valid 10-digit mobile phone number.');
+      return;
+    }
+    const cleanProvPhone = (verifyingService.phone || verifyingService.ownerPhone || '').replace(/\D/g, '');
+    const cleanProvWhatsapp = (verifyingService.whatsappNumber || verifyingService.ownerWhatsappNumber || '').replace(/\D/g, '');
+
+    const inputLast10 = cleanInput.slice(-10);
+    const phoneMatch = cleanProvPhone.length >= 10 && cleanProvPhone.endsWith(inputLast10);
+    const whatsappMatch = cleanProvWhatsapp.length >= 10 && cleanProvWhatsapp.endsWith(inputLast10);
+
+    if (phoneMatch || whatsappMatch) {
+      saveServiceId(verifyingService.id);
+      showToast(`Provider verified! You can now edit "${verifyingService.title}".`);
+      const target = verifyingService;
+      setVerifyingService(null);
+      if (onEdit) onEdit(target);
+    } else {
+      setVerifyError('Phone number does not match this service listing. Only the verified provider or admin can edit this service.');
+    }
+  };
 
   // Helper to check if a service item belongs to a category (with COOK / MAID alias)
   const matchesSubcategory = (itemCategory: string, targetId: ServiceCategory): boolean => {
@@ -193,6 +235,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   // Android Phone Back-Button & Browser History Handlers:
   // Close visiting card preview modal first, or exit dedicated category view back to main grid
   useBackHandler(Boolean(selectedVisitingCard), () => setSelectedVisitingCard(null), 'visiting-card-preview');
+  useBackHandler(Boolean(verifyingService), () => setVerifyingService(null), 'verify-service-owner');
   useBackHandler(Boolean(activeDedicatedCategory), handleBackToGrid, 'service-subcategory-view');
 
   // If a dedicated category is selected, get its configuration
@@ -200,10 +243,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     ? SUBCATEGORIES.find(c => c.id === activeDedicatedCategory) || SUBCATEGORIES[0]
     : null;
 
-  // Filter approved providers for the dedicated view
+  // Filter approved providers (and owner's pending listings) for the dedicated view
   const dedicatedProviders = activeDedicatedCategory
     ? services.filter(service => {
-        if (!isAdmin && !isApproved(service.status)) return false;
+        if (!isAdmin && !isApproved(service.status) && !isServiceOwner(service)) return false;
         if (!matchesSubcategory(service.category, activeDedicatedCategory)) return false;
 
         // Locality filter
@@ -521,13 +564,13 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                             </button>
                           )}
                         </div>
-                      ) : onEdit && isServiceOwner(provider) ? (
+                      ) : onEdit ? (
                         <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
                           <button
                             type="button"
-                            onClick={() => onEdit(provider)}
+                            onClick={() => handleProviderEditClick(provider)}
                             className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
-                            title="Edit Your Service Listing"
+                            title="Edit Service Listing (Provider)"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             <span>Edit Service Listing</span>
@@ -613,6 +656,78 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                 Call Directly
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Provider Phone Verification Modal to Unlock Editing from Any Device */}
+      {verifyingService && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-extrabold text-slate-900">Verify Service Ownership</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVerifyingService(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-slate-800">
+                Service: <span className="font-extrabold text-blue-700">{verifyingService.title}</span>
+              </p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                To protect local listings, please enter the registered 10-digit mobile number for this service to unlock editing.
+              </p>
+            </div>
+
+            {verifyError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium">
+                {verifyError}
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyOwnershipSubmit} className="space-y-3 pt-1">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Registered 10-digit Phone Number *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  autoFocus
+                  value={verifyPhoneInput}
+                  onChange={(e) => setVerifyPhoneInput(e.target.value)}
+                  placeholder="e.g. 9823012345"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-semibold focus:bg-white focus:border-blue-600 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setVerifyingService(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Verify & Edit</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
