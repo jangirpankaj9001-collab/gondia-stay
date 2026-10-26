@@ -996,9 +996,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       </span>
                     </>
                   )}
-                </button>
               </div>
             </form>
+          )}
         </div>
       </div>
 
