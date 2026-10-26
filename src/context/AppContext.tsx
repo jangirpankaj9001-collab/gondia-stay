@@ -26,6 +26,7 @@ import {
   subscribeToFirestoreProperties, 
   savePropertyToFirestore, 
   moderatePropertyInFirestore, 
+  moderatePropertyEditInFirestore,
   deletePropertyFromFirestore,
   updatePropertyOccupancyInFirestore,
   saveOwnerProfileToFirestore,
@@ -38,6 +39,7 @@ import {
   saveServiceToFirestore,
   updateServiceInFirestore,
   moderateServiceInFirestore,
+  moderateServiceEditInFirestore,
   deleteServiceInFirestore,
   getCachedServices
 } from '../firebase/servicesService';
@@ -49,7 +51,11 @@ interface AppContextType {
   saveService: (service: Partial<ServiceItem>) => Promise<{ success: boolean; serviceId: string; error?: string }>;
   updateService: (serviceId: string, updatedFields: Partial<ServiceItem>) => Promise<{ success: boolean; error?: string }>;
   moderateService: (serviceId: string, approve: boolean) => Promise<boolean>;
+  moderateServiceEdit: (serviceId: string, approve: boolean) => Promise<boolean>;
   deleteService: (serviceId: string) => Promise<boolean>;
+  isServiceOwner: (service: ServiceItem) => boolean;
+  myServiceIds: string[];
+  saveServiceId: (serviceId: string) => void;
   favorites: string[];
   currentOwner: OwnerProfile;
   searchQuery: string;
@@ -89,6 +95,7 @@ interface AppContextType {
   deleteProperty: (propertyId: string) => Promise<void>;
   toggleFeatured: (propertyId: string) => void;
   approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
+  moderatePropertyEdit: (propertyId: string, approve: boolean) => Promise<boolean>;
   navigateTo: (tab: 'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail', property?: PropertyListing) => void;
   goBack: () => void;
   registerOverlay: (name: string, onBack: () => void) => () => void;
@@ -192,6 +199,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getListingToken = useCallback((propertyId: string): string | undefined => {
     return myListingTokens[propertyId];
   }, [myListingTokens]);
+
+  // Local storage mapping for services registered/managed by this provider/device
+  const [myServiceIds, setMyServiceIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('gondia_stay_my_service_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveServiceId = useCallback((serviceId: string) => {
+    setMyServiceIds(prev => {
+      if (prev.includes(serviceId)) return prev;
+      const updated = [...prev, serviceId];
+      localStorage.setItem('gondia_stay_my_service_ids', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const isServiceOwner = useCallback((service: ServiceItem): boolean => {
+    if (isAdminAuthenticated) return true;
+    if (myServiceIds.includes(service.id)) return true;
+    const sPhone = (service.phone || service.ownerPhone || '').replace(/\D/g, '');
+    const myPhone = (currentOwner.phone || '').replace(/\D/g, '');
+    if (myPhone.length >= 10 && sPhone.length >= 10) {
+      if (sPhone.endsWith(myPhone.slice(-10)) || myPhone.endsWith(sPhone.slice(-10))) {
+        return true;
+      }
+    }
+    if (authUser) {
+      if ((service as any).ownerId === authUser.uid) return true;
+      if (authUser.phoneNumber) {
+        const authPhone = authUser.phoneNumber.replace(/\D/g, '');
+        if (authPhone.length >= 10 && sPhone.length >= 10 && sPhone.endsWith(authPhone.slice(-10))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [isAdminAuthenticated, myServiceIds, currentOwner.phone, authUser]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
@@ -436,29 +484,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveListingToken(result.propertyId, result.editToken);
       }
 
-      // Ensure newly submitted listing is immediately in properties state with status 'pending'
-      // so it appears in the Admin Panel's Pending Review tab and Owner listings
-      const savedListing: PropertyListing = {
-        ...property,
-        id: result.propertyId,
-        status: isEdit ? (property.status || 'pending') : 'pending',
-        occupancyStatus: property.occupancyStatus || 'AVAILABLE',
-        createdAt: property.createdAt || Date.now(),
-        updatedAt: Date.now()
-      };
+      const targetExisting = properties.find(p => p.id === result.propertyId);
+      const isAlreadyApproved = Boolean(isEdit && targetExisting && targetExisting.status === 'approved' && !isAdminAuthenticated);
 
+      // Ensure newly submitted listing is updated in local state:
+      // For approved listing edited by non-admin: keep approved live listing intact, store in pendingEdit
+      // For admin or pending listing: update directly
       setProperties(prev => {
         const existingIdx = prev.findIndex(p => p.id === result.propertyId);
         if (existingIdx >= 0) {
+          const current = prev[existingIdx];
           const updated = [...prev];
-          updated[existingIdx] = { ...updated[existingIdx], ...savedListing };
+          if (isAlreadyApproved) {
+            updated[existingIdx] = {
+              ...current,
+              hasPendingEdit: true,
+              pendingEdit: {
+                ...property,
+                submittedAt: Date.now()
+              },
+              updatedAt: Date.now()
+            };
+          } else {
+            updated[existingIdx] = {
+              ...current,
+              ...property,
+              id: result.propertyId,
+              status: isEdit ? (current.status || 'pending') : 'pending',
+              hasPendingEdit: false,
+              pendingEdit: undefined,
+              updatedAt: Date.now()
+            };
+          }
           return updated;
         }
-        return [savedListing, ...prev];
+        const newListing: PropertyListing = {
+          ...property,
+          id: result.propertyId,
+          status: 'pending',
+          occupancyStatus: property.occupancyStatus || 'AVAILABLE',
+          createdAt: property.createdAt || Date.now(),
+          updatedAt: Date.now()
+        };
+        return [newListing, ...prev];
       });
 
       if (isEdit) {
-        showToast("Listing updated securely in Cloud Firestore!");
+        if (isAlreadyApproved) {
+          showToast("Proposed edits submitted for reapproval! Live listing remains visible to tenants.");
+        } else if (isAdminAuthenticated) {
+          showToast("Listing updated & published directly!");
+        } else {
+          showToast("Listing updated securely in Cloud Firestore!");
+        }
       } else {
         showToast("Listing submitted for review! Private edit link generated.");
       }
@@ -539,6 +617,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
+   * Admin Moderation: Approve or reject proposed edits for an already approved property.
+   */
+  const moderatePropertyEdit = async (propertyId: string, approve: boolean): Promise<boolean> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to moderate listing edits.");
+      return false;
+    }
+
+    const moderatorId = adminUser?.email || 'admin_moderator';
+
+    if (isFirebaseConfigured()) {
+      try {
+        await moderatePropertyEditInFirestore(propertyId, approve, moderatorId);
+      } catch (err: any) {
+        console.warn('Firestore moderation notice:', err);
+      }
+    }
+
+    // Immediately reflect approval/rejection of edit in local state
+    setProperties(prev => prev.map(p => {
+      if (p.id === propertyId) {
+        if (approve && p.pendingEdit) {
+          const { submittedAt, ...cleanPending } = p.pendingEdit as any;
+          return {
+            ...p,
+            ...cleanPending,
+            status: 'approved',
+            hasPendingEdit: false,
+            pendingEdit: undefined,
+            updatedAt: Date.now(),
+            moderatedAt: Date.now(),
+            moderatedBy: moderatorId
+          };
+        } else {
+          // Reject edit: discard pendingEdit, keep live listing approved & intact
+          return {
+            ...p,
+            hasPendingEdit: false,
+            pendingEdit: undefined,
+            updatedAt: Date.now(),
+            moderatedAt: Date.now(),
+            moderatedBy: moderatorId
+          };
+        }
+      }
+      return p;
+    }));
+
+    showToast(approve ? "Proposed property edits approved and published live!" : "Proposed property edits rejected. Live listing remains intact.");
+    return true;
+  };
+
+  /**
    * Submits a new local service to Cloud Firestore and updates local state.
    */
   const saveService = async (
@@ -546,6 +677,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<{ success: boolean; serviceId: string; error?: string }> => {
     const result = await saveServiceToFirestore(service, isAdminAuthenticated);
     if (result.success) {
+      saveServiceId(result.serviceId);
       showToast(isAdminAuthenticated ? "Service listing published!" : "Service submitted! Awaiting admin verification.");
       const cleanService: ServiceItem = {
         id: result.serviceId,
@@ -572,20 +704,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Admin action: updates all fields of an existing service in Cloud Firestore.
+   * Updates fields of an existing service in Cloud Firestore.
+   * - If caller is admin: publishes directly.
+   * - If caller is service provider of an approved listing: stores proposed changes in pendingEdit for admin reapproval.
    */
   const updateService = async (
     serviceId: string,
     updatedFields: Partial<ServiceItem>
   ): Promise<{ success: boolean; error?: string }> => {
-    if (!isAdminAuthenticated) {
-      showToast("Admin verification required to edit services.");
-      return { success: false, error: "Admin verification required." };
+    const targetService = services.find(s => s.id === serviceId);
+    if (!isAdminAuthenticated && targetService && !isServiceOwner(targetService)) {
+      showToast("Unauthorized: You can only edit your own service listing.");
+      return { success: false, error: "Unauthorized: You can only edit your own service listing." };
     }
-    const result = await updateServiceInFirestore(serviceId, updatedFields);
+
+    const result = await updateServiceInFirestore(serviceId, updatedFields, isAdminAuthenticated);
     if (result.success) {
-      setServices(prev => prev.map(s => s.id === serviceId ? { ...s, ...updatedFields } : s));
-      showToast("Service details updated in Cloud Firestore!");
+      const isApprovedLive = Boolean(targetService && targetService.status === 'approved' && !isAdminAuthenticated);
+
+      if (isApprovedLive) {
+        setServices(prev => prev.map(s => s.id === serviceId ? {
+          ...s,
+          hasPendingEdit: true,
+          pendingEdit: {
+            ...updatedFields,
+            submittedAt: Date.now()
+          },
+          updatedAt: Date.now()
+        } : s));
+        showToast("Proposed changes submitted for verification! Your live service remains visible to customers.");
+      } else {
+        setServices(prev => prev.map(s => s.id === serviceId ? {
+          ...s,
+          ...updatedFields,
+          hasPendingEdit: false,
+          pendingEdit: undefined,
+          updatedAt: Date.now()
+        } : s));
+        showToast(isAdminAuthenticated ? "Service updated and published directly!" : "Service details updated!");
+      }
     } else {
       showToast(result.error || "Failed to update service");
     }
@@ -605,6 +762,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (success) {
       setServices(prev => prev.map(s => s.id === serviceId ? { ...s, status: (approve ? 'approved' : 'rejected') as any } : s));
       showToast(approve ? "Service approved! Live for all visitors in Gondia." : "Service rejected.");
+    }
+    return success;
+  };
+
+  /**
+   * Admin Moderation: Approve or reject proposed edits on an approved service listing.
+   */
+  const moderateServiceEdit = async (serviceId: string, approve: boolean): Promise<boolean> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to moderate service edits.");
+      return false;
+    }
+    const adminEmail = adminUser?.email || 'admin';
+    const success = await moderateServiceEditInFirestore(serviceId, approve, adminEmail);
+    if (success) {
+      setServices(prev => prev.map(s => {
+        if (s.id === serviceId) {
+          if (approve && s.pendingEdit) {
+            const { submittedAt, ...merged } = s.pendingEdit as any;
+            return {
+              ...s,
+              ...merged,
+              status: 'approved',
+              hasPendingEdit: false,
+              pendingEdit: undefined,
+              updatedAt: Date.now(),
+              moderatedAt: Date.now(),
+              moderatedBy: adminEmail
+            };
+          } else {
+            // Reject proposed edit: live approved service remains untouched
+            return {
+              ...s,
+              hasPendingEdit: false,
+              pendingEdit: undefined,
+              updatedAt: Date.now(),
+              moderatedAt: Date.now(),
+              moderatedBy: adminEmail
+            };
+          }
+        }
+        return s;
+      }));
+      showToast(approve ? "Proposed service edits approved and published live!" : "Proposed service edits rejected. Live listing remains intact.");
     }
     return success;
   };
@@ -1094,6 +1295,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       registerOwnerWithEmailPassword,
       logoutOwner,
       verifyAdminPasscode,
+      moderatePropertyEdit,
+      moderateServiceEdit,
+      isServiceOwner,
+      myServiceIds,
+      saveServiceId,
       setIsFirebaseModalOpen,
       clearFirestoreError
     }}>

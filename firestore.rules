@@ -83,7 +83,9 @@ service cloud.firestore {
           'longitude',
           'occupancyStatus',
           'isFeatured',
-          'updatedAt'
+          'updatedAt',
+          'hasPendingEdit',
+          'pendingEdit'
         ]);
       }
 
@@ -272,8 +274,54 @@ service cloud.firestore {
         )
       );
 
-      // 3. Update: Strictly restricted to authenticated administrator for approval, rejection, or updates.
-      allow update: if isAdmin();
+      // Helper function to check permitted fields for service provider update
+      function hasOnlyPermittedServiceUpdateKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'category',
+          'providerName',
+          'ownerName',
+          'phone',
+          'ownerPhone',
+          'whatsappNumber',
+          'ownerWhatsappNumber',
+          'charges',
+          'chargeUnit',
+          'priceNumeric',
+          'description',
+          'serviceAreas',
+          'locality',
+          'city',
+          'address',
+          'photos',
+          'businessCardPhoto',
+          'timing',
+          'experienceYears',
+          'specialties',
+          'status',
+          'updatedAt',
+          'hasPendingEdit',
+          'pendingEdit'
+        ]);
+      }
+
+      function isValidProviderServiceUpdate() {
+        return hasOnlyPermittedServiceUpdateKeys()
+          && (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'PENDING'] || ('status' in resource.data && request.resource.data.status == resource.data.status))
+          && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          && (!('title' in request.resource.data) || (
+            request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 200
+          ))
+          && (!('phone' in request.resource.data) || (
+            request.resource.data.phone is string
+            && request.resource.data.phone.size() >= 5
+          ));
+      }
+
+      // 3. Update: Verified admin can update/publish directly, or service providers can update pending listing or submit pendingEdit for reapproval
+      allow update: if isAdmin() || isValidProviderServiceUpdate();
 
       // 4. Delete: Strictly restricted to authenticated administrator.
       allow delete: if isAdmin();

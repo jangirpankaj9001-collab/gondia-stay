@@ -82,6 +82,9 @@ export interface PropertyListing {
   updatedAt?: number;
   moderatedAt?: number;
   moderatedBy?: string;
+  hasPendingEdit?: boolean;
+  pendingEdit?: Partial<PropertyListing>;
+  submittedAt?: number;
 }
 
 export interface TiffinService {
@@ -240,6 +243,9 @@ export interface ServiceItem {
   updatedAt?: number;
   moderatedAt?: number;
   moderatedBy?: string;
+  hasPendingEdit?: boolean;
+  pendingEdit?: Partial<ServiceItem>;
+  submittedAt?: number;
 }
 
 export type SortOption = 

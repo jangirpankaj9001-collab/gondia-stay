@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Plus,
   Pencil,
-  XCircle
+  XCircle,
+  Info
 } from 'lucide-react';
 import { 
   ServiceCategory, 
@@ -275,12 +276,23 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ...(isAdmin ? { status: adminStatus } : {})
         };
 
-        const result = await updateServiceInFirestore(serviceToEdit.id, updatedServiceData);
+        const result = await updateServiceInFirestore(serviceToEdit.id, updatedServiceData, isAdmin);
         if (result.success) {
+          const isApprovedLive = serviceToEdit.status === 'approved' && !isAdmin;
           const updatedFull: ServiceItem = {
             ...serviceToEdit,
-            ...updatedServiceData,
-            status: (isAdmin ? adminStatus : serviceToEdit.status) as any
+            ...(isApprovedLive ? {
+              hasPendingEdit: true,
+              pendingEdit: {
+                ...updatedServiceData,
+                submittedAt: Date.now()
+              }
+            } : {
+              ...updatedServiceData,
+              status: (isAdmin ? adminStatus : serviceToEdit.status) as any,
+              hasPendingEdit: false,
+              pendingEdit: undefined
+            })
           };
           if (onServiceUpdated) {
             onServiceUpdated(updatedFull);
@@ -430,6 +442,19 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ) : (
             /* Form view */
             <form onSubmit={handleSubmit} className="space-y-5">
+
+              {/* Provider Reapproval Notice for Approved Listings */}
+              {serviceToEdit && !isAdmin && serviceToEdit.status === 'approved' && (
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-extrabold block mb-0.5">Editing Live Approved Listing</strong>
+                    <span className="leading-relaxed">
+                      Your current live service listing remains fully active and visible to customers in Gondia. Your proposed changes will be submitted for admin verification and will replace the live data once approved.
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Admin Moderation Status Selector */}
               {isAdmin && (
@@ -894,7 +919,13 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-white" />
-                      <span>{isAdmin ? 'Publish Service Listing' : 'Submit for Verification'}</span>
+                      <span>
+                        {isAdmin
+                          ? (serviceToEdit ? 'Publish Changes Directly' : 'Publish Service Listing')
+                          : (serviceToEdit && serviceToEdit.status === 'approved'
+                              ? 'Submit Changes for Reapproval'
+                              : 'Submit for Verification')}
+                      </span>
                     </>
                   )}
                 </button>

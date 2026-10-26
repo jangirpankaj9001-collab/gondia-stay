@@ -96,7 +96,9 @@ export const subscribeToFirestoreProperties = (
         occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any,
         createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
         latitude: typeof data.latitude === 'number' ? data.latitude : 21.4556,
-        longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960
+        longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960,
+        hasPendingEdit: Boolean(data.hasPendingEdit),
+        pendingEdit: data.pendingEdit || undefined
       });
     });
 
@@ -289,8 +291,12 @@ export const savePropertyToFirestore = async (
 
     try {
       if (isUserAdmin) {
-        // Admin update path
-        await updateDoc(docRef, updatePayload);
+        // Admin update path: publishes directly and clears pending edit
+        await updateDoc(docRef, {
+          ...updatePayload,
+          hasPendingEdit: false,
+          pendingEdit: null
+        });
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         return {
           propertyId: property.id,
@@ -303,9 +309,32 @@ export const savePropertyToFirestore = async (
         throw new Error('Private edit link token required to update this listing.');
       }
 
+      // Check if this property is currently approved in Firestore
+      const existingSnap = await getDoc(docRef);
+      const isCurrentlyApproved = existingSnap.exists() && (existingSnap.data()?.status || '').toLowerCase() === 'approved';
+
       // Secure batch update: updates property details while verifying editToken in property_secrets
       const batch = writeBatch(db);
-      batch.update(docRef, updatePayload);
+
+      if (isCurrentlyApproved) {
+        // KEEP APPROVED LISTING LIVE & UNCHANGED! Store proposed changes in pendingEdit
+        batch.update(docRef, {
+          hasPendingEdit: true,
+          pendingEdit: {
+            ...updatePayload,
+            submittedAt: Date.now()
+          },
+          updatedAt: Date.now()
+        });
+      } else {
+        // If property is pending/rejected, update directly and keep pending
+        batch.update(docRef, {
+          ...updatePayload,
+          status: 'pending',
+          hasPendingEdit: false,
+          pendingEdit: null
+        });
+      }
       
       const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, property.id);
       batch.update(secretRef, {
@@ -317,7 +346,7 @@ export const savePropertyToFirestore = async (
       const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken);
       batch.set(tokenRef, {
         propertyId: property.id,
-        propertyData: updatePayload,
+        propertyData: isCurrentlyApproved ? { ...(existingSnap.data() || {}), pendingEdit: updatePayload } : updatePayload,
         updatedAt: Date.now()
       }, { merge: true });
 
@@ -557,6 +586,60 @@ export const moderatePropertyInFirestore = async (
     moderatedBy: moderatorId,
     updatedAt: Date.now()
   });
+};
+
+/**
+ * Approves or rejects proposed edits for an already approved property.
+ * When approving: merges pendingEdit into live listing, clears pendingEdit and hasPendingEdit.
+ * When rejecting: discards pendingEdit without touching live listing data.
+ * ONLY verified admin can call this.
+ */
+export const moderatePropertyEditInFirestore = async (
+  propertyId: string,
+  approve: boolean,
+  moderatorId: string
+): Promise<void> => {
+  if (!db || !isFirebaseConfigured()) {
+    throw new Error('Cloud Firestore is not connected.');
+  }
+
+  if (
+    !auth?.currentUser ||
+    !isAuthorizedAdminEmail(auth.currentUser.email)
+  ) {
+    throw new Error('Unauthorized: Only verified administrator can moderate listing edits.');
+  }
+
+  const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) {
+    throw new Error('Property listing not found.');
+  }
+
+  const data = snap.data();
+  const pendingEdit = data.pendingEdit;
+
+  if (approve && pendingEdit) {
+    const { submittedAt, ...fieldsToMerge } = pendingEdit;
+    await updateDoc(docRef, {
+      ...fieldsToMerge,
+      status: 'approved',
+      hasPendingEdit: false,
+      pendingEdit: null,
+      moderatedAt: Date.now(),
+      moderatedBy: moderatorId,
+      updatedAt: Date.now()
+    });
+  } else {
+    // Reject proposed edit: discard pendingEdit, live approved listing remains completely intact
+    await updateDoc(docRef, {
+      hasPendingEdit: false,
+      pendingEdit: null,
+      moderatedAt: Date.now(),
+      moderatedBy: moderatorId,
+      updatedAt: Date.now()
+    });
+  }
 };
 
 /**

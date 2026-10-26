@@ -17,11 +17,12 @@ import {
   Plus,
   X,
   SlidersHorizontal,
-  Pencil
+  Pencil,
+  Clock
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
-import { useBackHandler } from '../context/AppContext';
+import { useBackHandler, useApp } from '../context/AppContext';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -145,6 +146,8 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   onDelete,
   onEdit
 }) => {
+  const { isServiceOwner } = useApp();
+
   // Currently opened category in dedicated view (null means grid of 8 icons is shown)
   const [activeDedicatedCategory, setActiveDedicatedCategory] = useState<ServiceCategory | null>(
     selectedCategory !== 'ALL' ? selectedCategory : null
@@ -348,10 +351,16 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                         )}
 
                         {/* Top Badges overlay */}
-                        <div className="absolute top-3 left-3 flex items-center gap-2">
+                        <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
                           <span className="bg-slate-900/85 backdrop-blur-md text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
                             {currentConfig?.name}
                           </span>
+                          {provider.hasPendingEdit && (
+                            <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-950" />
+                              <span>Edit Pending</span>
+                            </span>
+                          )}
                           {provider.isFeatured && (
                             <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
                               Featured
@@ -471,15 +480,15 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                         </button>
                       )}
 
-                      {/* Admin Moderation Controls if in admin mode */}
-                      {isAdmin && (
+                      {/* Admin Moderation or Provider Controls */}
+                      {isAdmin ? (
                         <div className="pt-2 flex items-center gap-1.5 border-t border-slate-100">
                           {onEdit && (
                             <button
                               type="button"
                               onClick={() => onEdit(provider)}
                               className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
-                              title="Edit service details"
+                              title="Edit service details (Admin Direct Publish)"
                             >
                               <Pencil className="w-3.5 h-3.5" />
                               <span>Edit</span>
@@ -512,7 +521,25 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                             </button>
                           )}
                         </div>
-                      )}
+                      ) : onEdit && isServiceOwner(provider) ? (
+                        <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => onEdit(provider)}
+                            className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
+                            title="Edit Your Service Listing"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Edit Service Listing</span>
+                          </button>
+                          {provider.hasPendingEdit && (
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-1 rounded-lg border border-amber-300 shrink-0 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-amber-700" />
+                              <span>Edit Pending</span>
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 );

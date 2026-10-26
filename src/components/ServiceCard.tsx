@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
-import { useBackHandler } from '../context/AppContext';
+import { useBackHandler, useApp } from '../context/AppContext';
 
 interface ServiceCardProps {
   service: ServiceItem;
@@ -40,6 +40,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   onDelete,
   onEdit
 }) => {
+  const { isServiceOwner } = useApp();
+  const canEdit = Boolean(onEdit && (isAdmin || isServiceOwner(service)));
   const [showVisitingCardModal, setShowVisitingCardModal] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
@@ -145,8 +147,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
             </div>
           )}
 
-          {/* Pending Status Banner if unapproved */}
-          {!isApproved(service.status) && (
+          {/* Pending Status Banner if unapproved or has pending edit */}
+          {!isApproved(service.status) ? (
             <div className="absolute top-12 right-3">
               <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm ${
                 isPending(service.status)
@@ -156,7 +158,14 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {isPending(service.status) ? 'Pending Approval' : 'Rejected'}
               </span>
             </div>
-          )}
+          ) : service.hasPendingEdit ? (
+            <div className="absolute top-12 right-3">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm bg-amber-400 text-slate-950 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-slate-950" />
+                <span>Edit Pending</span>
+              </span>
+            </div>
+          ) : null}
 
           {/* Bottom Price / Charges Tag */}
           <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
@@ -282,15 +291,15 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               </a>
             </div>
 
-            {/* Admin Moderation Controls if in moderation mode */}
-            {isAdmin && (
+            {/* Admin or Provider Controls */}
+            {isAdmin ? (
               <div className="pt-2 flex items-center gap-2 border-t border-slate-100">
                 {onEdit && (
                   <button
                     type="button"
                     onClick={() => onEdit(service)}
                     className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                    title="Edit Service Details"
+                    title="Edit Service Details (Admin Direct Publish)"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                     <span>Edit</span>
@@ -326,7 +335,25 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                   </button>
                 )}
               </div>
-            )}
+            ) : canEdit ? (
+              <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => onEdit && onEdit(service)}
+                  className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
+                  title="Edit Your Service Listing"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit Service Listing</span>
+                </button>
+                {service.hasPendingEdit && (
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-1 rounded-lg border border-amber-300 shrink-0 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-700" />
+                    <span>Edit Pending</span>
+                  </span>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

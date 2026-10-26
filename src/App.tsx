@@ -109,8 +109,12 @@ export const App: React.FC = () => {
     tiffinServices,
     services,
     saveService,
+    updateService,
     moderateService,
     deleteService,
+    moderatePropertyEdit,
+    moderateServiceEdit,
+    isServiceOwner,
     favorites,
     currentOwner,
     searchQuery,
@@ -167,9 +171,9 @@ export const App: React.FC = () => {
   const [showPrivateLinkModal, setShowPrivateLinkModal] = useState<boolean>(false);
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
   const [copiedPropId, setCopiedPropId] = useState<string | null>(null);
-  const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'pending_edits' | 'approved' | 'rejected'>('pending');
   const [adminModerationSection, setAdminModerationSection] = useState<'properties' | 'services'>('properties');
-  const [adminServiceModerationFilter, setAdminServiceModerationFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [adminServiceModerationFilter, setAdminServiceModerationFilter] = useState<'pending' | 'pending_edits' | 'approved' | 'rejected'>('pending');
   
   // Services Section States
   const [selectedServiceCategory, setSelectedServiceCategory] = useState<'ALL' | ServiceCategory>('ALL');
@@ -713,6 +717,10 @@ export const App: React.FC = () => {
     return properties.filter(p => isPending(p.status));
   }, [properties]);
 
+  const pendingEditProperties = useMemo(() => {
+    return properties.filter(p => Boolean(p.hasPendingEdit && p.pendingEdit));
+  }, [properties]);
+
   const approvedProperties = useMemo(() => {
     return properties.filter(p => isApproved(p.status));
   }, [properties]);
@@ -724,6 +732,10 @@ export const App: React.FC = () => {
   // Gondia Services grouped for Admin Moderation & Public display
   const pendingServices = useMemo(() => {
     return services.filter(s => isPending(s.status));
+  }, [services]);
+
+  const pendingEditServices = useMemo(() => {
+    return services.filter(s => Boolean(s.hasPendingEdit && s.pendingEdit));
   }, [services]);
 
   const approvedServices = useMemo(() => {
@@ -1195,6 +1207,27 @@ export const App: React.FC = () => {
       await approveProperty(propId, approve);
     } finally {
       setModeratingPropId(null);
+    }
+  };
+
+  const handleModeratePropertyEdit = async (propId: string, approve: boolean) => {
+    setModeratingPropId(propId);
+    try {
+      await moderatePropertyEdit(propId, approve);
+      showToast(approve ? 'Property edits approved and published live!' : 'Property edits rejected. Live listing preserved.');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to moderate property edit');
+    } finally {
+      setModeratingPropId(null);
+    }
+  };
+
+  const handleModerateServiceEdit = async (serviceId: string, approve: boolean) => {
+    try {
+      await moderateServiceEdit(serviceId, approve);
+      showToast(approve ? 'Service edits approved and published live!' : 'Service edits rejected. Live listing preserved.');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to moderate service edit');
     }
   };
 
@@ -2237,6 +2270,13 @@ export const App: React.FC = () => {
                                 </span>
                               )}
 
+                              {property.hasPendingEdit && (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                                  <Clock className="w-3 h-3 text-amber-700" />
+                                  <span>Proposed Edit Pending Reapproval</span>
+                                </span>
+                              )}
+
                               {property.isFeatured && (
                                 <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                                   <Sparkles className="w-3 h-3 text-amber-600" /> Featured
@@ -2646,9 +2686,9 @@ export const App: React.FC = () => {
                       >
                         <Building2 className="w-4 h-4 text-blue-600" />
                         <span>Rental Properties</span>
-                        {pendingProperties.length > 0 && (
+                        {(pendingProperties.length > 0 || pendingEditProperties.length > 0) && (
                           <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                            {pendingProperties.length} pending
+                            {pendingProperties.length + pendingEditProperties.length} pending
                           </span>
                         )}
                       </button>
@@ -2664,9 +2704,9 @@ export const App: React.FC = () => {
                       >
                         <Wrench className="w-4 h-4 text-amber-600" />
                         <span>Local Services</span>
-                        {pendingServices.length > 0 && (
+                        {(pendingServices.length > 0 || pendingEditServices.length > 0) && (
                           <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                            {pendingServices.length} pending
+                            {pendingServices.length + pendingEditServices.length} pending
                           </span>
                         )}
                       </button>
@@ -2687,11 +2727,29 @@ export const App: React.FC = () => {
                             }`}
                           >
                             <Clock className="w-3.5 h-3.5" />
-                            <span>Pending Review</span>
+                            <span>New Submissions</span>
                             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
                               adminModerationFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
                             }`}>
                               {pendingProperties.length}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAdminModerationFilter('pending_edits')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              adminModerationFilter === 'pending_edits'
+                                ? 'bg-orange-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Pending Edits</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                              adminModerationFilter === 'pending_edits' ? 'bg-orange-800 text-white' : pendingEditProperties.length > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {pendingEditProperties.length}
                             </span>
                           </button>
 
@@ -2713,31 +2771,33 @@ export const App: React.FC = () => {
                             </span>
                           </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setAdminModerationFilter('rejected')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                          adminModerationFilter === 'rejected'
-                            ? 'bg-rose-600 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>Rejected</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                          adminModerationFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
-                        }`}>
-                          {rejectedProperties.length}
-                        </span>
-                      </button>
-                    </div>
+                          <button
+                            type="button"
+                            onClick={() => setAdminModerationFilter('rejected')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              adminModerationFilter === 'rejected'
+                                ? 'bg-rose-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Rejected</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                              adminModerationFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              {rejectedProperties.length}
+                            </span>
+                          </button>
+                        </div>
 
                     {(() => {
                       const displayedList = adminModerationFilter === 'pending'
                         ? pendingProperties
-                        : adminModerationFilter === 'approved'
-                          ? approvedProperties
-                          : rejectedProperties;
+                        : adminModerationFilter === 'pending_edits'
+                          ? pendingEditProperties
+                          : adminModerationFilter === 'approved'
+                            ? approvedProperties
+                            : rejectedProperties;
 
                       if (displayedList.length === 0) {
                         return (
@@ -2746,9 +2806,11 @@ export const App: React.FC = () => {
                             <p className="text-sm font-bold text-slate-800">
                               {adminModerationFilter === 'pending'
                                 ? 'No pending submissions awaiting review.'
-                                : adminModerationFilter === 'approved'
-                                  ? 'No approved listings yet.'
-                                  : 'No rejected listings.'}
+                                : adminModerationFilter === 'pending_edits'
+                                  ? 'No proposed property edits awaiting reapproval.'
+                                  : adminModerationFilter === 'approved'
+                                    ? 'No approved listings yet.'
+                                    : 'No rejected listings.'}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
                               All listings in Cloud Firestore are synchronized in real-time.
@@ -2761,104 +2823,227 @@ export const App: React.FC = () => {
                         <div className="space-y-3">
                           {displayedList.map(prop => {
                             const isOwnListing = prop.ownerId === currentOwner.id;
+                            const isEditReview = adminModerationFilter === 'pending_edits';
+                            const pEdit = prop.pendingEdit;
+
                             return (
-                              <div key={prop.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-3.5">
-                                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                                    <img 
-                                      src={prop.photos[0] || '/hero_gondia_stays.jpg'} 
-                                      alt={prop.title}
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
-                                    />
-                                    {prop.photos && prop.photos.length > 1 && (
-                                      <span className="absolute bottom-1 right-1 bg-black/75 text-white text-[9px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5">
-                                        <Camera className="w-2.5 h-2.5" /> {prop.photos.length}
-                                      </span>
+                              <div key={prop.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between gap-4">
+                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                  <div className="flex items-start gap-3.5">
+                                    <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200 mt-0.5">
+                                      <img 
+                                        src={(pEdit?.photos && pEdit.photos[0]) || prop.photos[0] || '/hero_gondia_stays.jpg'} 
+                                        alt={prop.title}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
+                                      />
+                                      {prop.photos && prop.photos.length > 1 && (
+                                        <span className="absolute bottom-1 right-1 bg-black/75 text-white text-[9px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5">
+                                          <Camera className="w-2.5 h-2.5" /> {prop.photos.length}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                          isApproved(prop.status)
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : isPending(prop.status)
+                                              ? 'bg-amber-100 text-amber-800'
+                                              : 'bg-rose-100 text-rose-800'
+                                        }`}>
+                                          {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : 'Rejected'}
+                                        </span>
+                                        {prop.hasPendingEdit && (
+                                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 flex items-center gap-1">
+                                            <Pencil className="w-3 h-3 text-orange-700" />
+                                            <span>Proposed Edit Awaiting Reapproval</span>
+                                          </span>
+                                        )}
+                                        <span className="text-xs font-bold text-slate-500">{prop.locality}</span>
+                                        {isOwnListing && (
+                                          <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                                            Your Submission
+                                          </span>
+                                        )}
+                                        {prop.isFeatured && (
+                                          <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                                            <Sparkles className="w-3 h-3 text-amber-600" /> Featured
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h4 className="text-sm font-bold text-slate-900">{prop.title}</h4>
+                                      <p className="text-xs text-slate-500">{prop.address}</p>
+                                      <div className="text-xs text-slate-600 font-medium pt-0.5">
+                                        Owner: <span className="font-bold">{prop.ownerName}</span> ({formatDisplayPhone(prop.ownerPhone)}) • Rent: <span className="font-extrabold text-blue-700">₹{prop.monthlyRent}/mo</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Action Buttons */}
+                                  <div className="flex items-center gap-2 shrink-0 flex-wrap self-end md:self-auto">
+                                    {isEditReview ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleModeratePropertyEdit(prop.id, true)}
+                                          disabled={moderatingPropId === prop.id}
+                                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                          title="Approve proposed edits and update live listing"
+                                        >
+                                          {moderatingPropId === prop.id ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <CheckCircle2 className="w-4 h-4" />
+                                          )}
+                                          <span>Approve Edits</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleModeratePropertyEdit(prop.id, false)}
+                                          disabled={moderatingPropId === prop.id}
+                                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                          title="Reject proposed edits and discard without affecting live listing"
+                                        >
+                                          <XCircle className="w-4 h-4" />
+                                          <span>Reject Edits</span>
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        {adminModerationFilter !== 'approved' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleModerate(prop.id, true)}
+                                            disabled={moderatingPropId === prop.id}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                            title="Approve property listing and make publicly visible"
+                                          >
+                                            {moderatingPropId === prop.id ? (
+                                              <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                              <CheckCircle2 className="w-4 h-4" />
+                                            )}
+                                            <span>Approve</span>
+                                          </button>
+                                        )}
+
+                                        {adminModerationFilter !== 'rejected' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleModerate(prop.id, false)}
+                                            disabled={moderatingPropId === prop.id}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                            title="Reject property listing (hidden from public)"
+                                          >
+                                            <XCircle className="w-4 h-4" />
+                                            <span>Reject</span>
+                                          </button>
+                                        )}
+                                      </>
                                     )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditClick(prop)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Admin Direct Edit Listing"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                      <span>Edit</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm(`Permanently delete "${prop.title}" from Cloud Firestore?`)) {
+                                          deleteProperty(prop.id);
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Permanently Delete Listing"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Delete</span>
+                                    </button>
                                   </div>
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                                        isApproved(prop.status)
-                                          ? 'bg-emerald-100 text-emerald-800'
-                                          : isPending(prop.status)
-                                            ? 'bg-amber-100 text-amber-800'
-                                            : 'bg-rose-100 text-rose-800'
-                                      }`}>
-                                        {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : 'Rejected'}
+                                </div>
+
+                                {/* Proposed Changes Diff / Comparison Box */}
+                                {pEdit && (
+                                  <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-xl space-y-2 text-xs">
+                                    <div className="flex items-center justify-between gap-2 border-b border-amber-200/70 pb-1.5">
+                                      <span className="font-extrabold text-amber-900 flex items-center gap-1.5">
+                                        <Pencil className="w-3.5 h-3.5 text-amber-700" />
+                                        <span>Proposed Changes by Landlord (Pending Reapproval)</span>
                                       </span>
-                                      <span className="text-xs font-bold text-slate-500">{prop.locality}</span>
-                                      {isOwnListing && (
-                                        <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                                          Your Submission
-                                        </span>
-                                      )}
-                                      {prop.isFeatured && (
-                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                                          <Sparkles className="w-3 h-3 text-amber-600" /> Featured
-                                        </span>
+                                      {!isEditReview && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setAdminModerationFilter('pending_edits')}
+                                          className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                                        >
+                                          Review in Pending Edits tab →
+                                        </button>
                                       )}
                                     </div>
-                                    <h4 className="text-sm font-bold text-slate-900">{prop.title}</h4>
-                                    <p className="text-xs text-slate-500">{prop.address}</p>
-                                    <div className="text-xs text-slate-600 font-medium pt-0.5">
-                                      Owner: <span className="font-bold">{prop.ownerName}</span> ({formatDisplayPhone(prop.ownerPhone)}) • Rent: <span className="font-extrabold text-blue-700">₹{prop.monthlyRent}/mo</span>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-slate-700 pt-1">
+                                      {pEdit.title && pEdit.title !== prop.title && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Title:</span>
+                                          <span className="text-emerald-700 font-bold">{pEdit.title}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {prop.title}</span>
+                                        </div>
+                                      )}
+                                      {pEdit.monthlyRent !== undefined && pEdit.monthlyRent !== prop.monthlyRent && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Rent:</span>
+                                          <span className="text-emerald-700 font-extrabold">₹{pEdit.monthlyRent}/month</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: ₹{prop.monthlyRent}/month</span>
+                                        </div>
+                                      )}
+                                      {pEdit.securityDeposit !== undefined && pEdit.securityDeposit !== prop.securityDeposit && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Deposit:</span>
+                                          <span className="text-emerald-700 font-bold">₹{pEdit.securityDeposit}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: ₹{prop.securityDeposit}</span>
+                                        </div>
+                                      )}
+                                      {pEdit.locality && pEdit.locality !== prop.locality && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Locality:</span>
+                                          <span className="text-emerald-700 font-bold">{pEdit.locality}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {prop.locality}</span>
+                                        </div>
+                                      )}
+                                      {pEdit.address && pEdit.address !== prop.address && (
+                                        <div className="sm:col-span-2">
+                                          <span className="font-semibold text-slate-500 block">Proposed Address:</span>
+                                          <span className="text-emerald-700 font-medium">{pEdit.address}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {prop.address}</span>
+                                        </div>
+                                      )}
+                                      {pEdit.furnishing && pEdit.furnishing !== prop.furnishing && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Furnishing:</span>
+                                          <span className="text-emerald-700 font-medium">{pEdit.furnishing}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {prop.furnishing}</span>
+                                        </div>
+                                      )}
+                                      {pEdit.photos && pEdit.photos.length > 0 && (
+                                        <div className="sm:col-span-2 md:col-span-3">
+                                          <span className="font-semibold text-slate-500 block">Proposed Photos ({pEdit.photos.length}):</span>
+                                          <div className="flex items-center gap-2 mt-1 overflow-x-auto py-1">
+                                            {pEdit.photos.map((pUrl, idx) => (
+                                              <img key={idx} src={pUrl} alt="Proposed" className="w-12 h-12 rounded-lg object-cover border border-amber-300 shrink-0" />
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                                  {adminModerationFilter !== 'approved' && (
-                                    <button
-                                      onClick={() => handleModerate(prop.id, true)}
-                                      disabled={moderatingPropId === prop.id}
-                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                      title="Approve property listing and make publicly visible"
-                                    >
-                                      {moderatingPropId === prop.id ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                      ) : (
-                                        <CheckCircle2 className="w-4 h-4" />
-                                      )}
-                                      <span>Approve</span>
-                                    </button>
-                                  )}
-
-                                  {adminModerationFilter !== 'rejected' && (
-                                    <button
-                                      onClick={() => handleModerate(prop.id, false)}
-                                      disabled={moderatingPropId === prop.id}
-                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                      title="Reject property listing (hidden from public)"
-                                    >
-                                      <XCircle className="w-4 h-4" />
-                                      <span>Reject</span>
-                                    </button>
-                                  )}
-
-                                  <button
-                                    onClick={() => handleEditClick(prop)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                    title="Admin Edit Listing"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                    <span>Edit</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => {
-                                      if (window.confirm(`Permanently delete "${prop.title}" from Cloud Firestore?`)) {
-                                        deleteProperty(prop.id);
-                                      }
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                    title="Permanently Delete Listing"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete</span>
-                                  </button>
-                                </div>
+                                )}
                               </div>
                             );
                           })}
@@ -2883,11 +3068,29 @@ export const App: React.FC = () => {
                         }`}
                       >
                         <Clock className="w-3.5 h-3.5" />
-                        <span>Pending Review</span>
+                        <span>New Submissions</span>
                         <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
                           adminServiceModerationFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
                         }`}>
                           {pendingServices.length}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminServiceModerationFilter('pending_edits')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          adminServiceModerationFilter === 'pending_edits'
+                            ? 'bg-orange-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Pending Edits</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          adminServiceModerationFilter === 'pending_edits' ? 'bg-orange-800 text-white' : pendingEditServices.length > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {pendingEditServices.length}
                         </span>
                       </button>
 
@@ -2931,9 +3134,11 @@ export const App: React.FC = () => {
                     {(() => {
                       const displayedServices = adminServiceModerationFilter === 'pending'
                         ? pendingServices
-                        : adminServiceModerationFilter === 'approved'
-                          ? approvedServices
-                          : rejectedServices;
+                        : adminServiceModerationFilter === 'pending_edits'
+                          ? pendingEditServices
+                          : adminServiceModerationFilter === 'approved'
+                            ? approvedServices
+                            : rejectedServices;
 
                       if (displayedServices.length === 0) {
                         return (
@@ -2942,9 +3147,11 @@ export const App: React.FC = () => {
                             <p className="text-sm font-bold text-slate-800">
                               {adminServiceModerationFilter === 'pending'
                                 ? 'No pending services awaiting verification.'
-                                : adminServiceModerationFilter === 'approved'
-                                  ? 'No approved services yet.'
-                                  : 'No rejected services.'}
+                                : adminServiceModerationFilter === 'pending_edits'
+                                  ? 'No proposed service edits awaiting reapproval.'
+                                  : adminServiceModerationFilter === 'approved'
+                                    ? 'No approved services yet.'
+                                    : 'No rejected services.'}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
                               All service listings in Cloud Firestore are synchronized in real-time.
@@ -2957,89 +3164,202 @@ export const App: React.FC = () => {
                         <div className="space-y-3">
                           {displayedServices.map(srv => {
                             const catMeta = SERVICE_CATEGORIES.find(c => c.id === srv.category);
+                            const isEditReview = adminServiceModerationFilter === 'pending_edits';
+                            const sEdit = srv.pendingEdit;
+
                             return (
-                              <div key={srv.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-3.5">
-                                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                                    <img 
-                                      src={srv.photos[0] || (srv.category === 'MESS_TIFFIN' ? '/hero_tiffin_mess.jpg' : '/hero_gondia_stays.jpg')} 
-                                      alt={srv.title}
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
-                                    />
+                              <div key={srv.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between gap-4">
+                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                  <div className="flex items-start gap-3.5">
+                                    <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200 mt-0.5">
+                                      <img 
+                                        src={(sEdit?.photos && sEdit.photos[0]) || srv.photos[0] || (srv.category === 'MESS_TIFFIN' ? '/hero_tiffin_mess.jpg' : '/hero_gondia_stays.jpg')} 
+                                        alt={srv.title}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => { e.currentTarget.src = '/hero_gondia_stays.jpg'; }}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                          isApproved(srv.status)
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : isPending(srv.status)
+                                              ? 'bg-amber-100 text-amber-800'
+                                              : 'bg-rose-100 text-rose-800'
+                                        }`}>
+                                          {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
+                                        </span>
+                                        {srv.hasPendingEdit && (
+                                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 flex items-center gap-1">
+                                            <Pencil className="w-3 h-3 text-orange-700" />
+                                            <span>Proposed Edit Awaiting Reapproval</span>
+                                          </span>
+                                        )}
+                                        <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                                          {catMeta?.label || srv.category}
+                                        </span>
+                                        <span className="text-xs font-semibold text-slate-500">{srv.locality || 'Gondia'}</span>
+                                      </div>
+                                      <h4 className="text-sm font-bold text-slate-900">{srv.title}</h4>
+                                      <p className="text-xs text-slate-500 line-clamp-1">{srv.description}</p>
+                                      <div className="text-xs text-slate-600 font-medium pt-0.5">
+                                        Provider: <span className="font-bold text-slate-800">{srv.providerName}</span> ({formatDisplayPhone(srv.phone)}) • Charges: <span className="font-extrabold text-blue-700">{srv.charges}</span>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                                        isApproved(srv.status)
-                                          ? 'bg-emerald-100 text-emerald-800'
-                                          : isPending(srv.status)
-                                            ? 'bg-amber-100 text-amber-800'
-                                            : 'bg-rose-100 text-rose-800'
-                                      }`}>
-                                        {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
-                                      </span>
-                                      <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
-                                        {catMeta?.label || srv.category}
-                                      </span>
-                                      <span className="text-xs font-semibold text-slate-500">{srv.locality || 'Gondia'}</span>
-                                    </div>
-                                    <h4 className="text-sm font-bold text-slate-900">{srv.title}</h4>
-                                    <p className="text-xs text-slate-500 line-clamp-1">{srv.description}</p>
-                                    <div className="text-xs text-slate-600 font-medium pt-0.5">
-                                      Provider: <span className="font-bold text-slate-800">{srv.providerName}</span> ({formatDisplayPhone(srv.phone)}) • Charges: <span className="font-extrabold text-blue-700">{srv.charges}</span>
-                                    </div>
+
+                                  <div className="flex items-center gap-2 shrink-0 flex-wrap self-end md:self-auto">
+                                    {isEditReview ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleModerateServiceEdit(srv.id, true)}
+                                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                          title="Approve proposed service edits and publish live"
+                                        >
+                                          <CheckCircle2 className="w-4 h-4" />
+                                          <span>Approve Edits</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleModerateServiceEdit(srv.id, false)}
+                                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                          title="Reject proposed edits and discard without affecting live listing"
+                                        >
+                                          <XCircle className="w-4 h-4" />
+                                          <span>Reject Edits</span>
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        {adminServiceModerationFilter !== 'approved' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => moderateService(srv.id, true)}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                            title="Approve service and publish live"
+                                          >
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            <span>Approve</span>
+                                          </button>
+                                        )}
+
+                                        {adminServiceModerationFilter !== 'rejected' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => moderateService(srv.id, false)}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                            title="Reject service listing"
+                                          >
+                                            <XCircle className="w-4 h-4" />
+                                            <span>Reject</span>
+                                          </button>
+                                        )}
+                                      </>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setServiceToEdit(srv);
+                                        setIsAddServiceModalOpen(true);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Admin Direct Edit service details"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                      <span>Edit</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm(`Permanently delete "${srv.title}" from Cloud Firestore?`)) {
+                                          deleteService(srv.id);
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                                      title="Delete service"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Delete</span>
+                                    </button>
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                                  <button
-                                    onClick={() => {
-                                      setServiceToEdit(srv);
-                                      setIsAddServiceModalOpen(true);
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                    title="Edit service details"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                    <span>Edit</span>
-                                  </button>
-
-                                  {adminServiceModerationFilter !== 'approved' && (
-                                    <button
-                                      onClick={() => moderateService(srv.id, true)}
-                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                      title="Approve service and publish live"
-                                    >
-                                      <CheckCircle2 className="w-4 h-4" />
-                                      <span>Approve</span>
-                                    </button>
-                                  )}
-
-                                  {adminServiceModerationFilter !== 'rejected' && (
-                                    <button
-                                      onClick={() => moderateService(srv.id, false)}
-                                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                      title="Reject service listing"
-                                    >
-                                      <XCircle className="w-4 h-4" />
-                                      <span>Reject</span>
-                                    </button>
-                                  )}
-
-                                  <button
-                                    onClick={() => {
-                                      if (window.confirm(`Permanently delete "${srv.title}" from Cloud Firestore?`)) {
-                                        deleteService(srv.id);
-                                      }
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                                    title="Delete service"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete</span>
-                                  </button>
-                                </div>
+                                {/* Proposed Changes Diff / Comparison Box */}
+                                {sEdit && (
+                                  <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-xl space-y-2 text-xs">
+                                    <div className="flex items-center justify-between gap-2 border-b border-amber-200/70 pb-1.5">
+                                      <span className="font-extrabold text-amber-900 flex items-center gap-1.5">
+                                        <Pencil className="w-3.5 h-3.5 text-amber-700" />
+                                        <span>Proposed Changes by Service Provider (Pending Reapproval)</span>
+                                      </span>
+                                      {!isEditReview && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setAdminServiceModerationFilter('pending_edits')}
+                                          className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                                        >
+                                          Review in Pending Edits tab →
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-slate-700 pt-1">
+                                      {sEdit.title && sEdit.title !== srv.title && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Title:</span>
+                                          <span className="text-emerald-700 font-bold">{sEdit.title}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {srv.title}</span>
+                                        </div>
+                                      )}
+                                      {sEdit.charges && sEdit.charges !== srv.charges && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Charges:</span>
+                                          <span className="text-emerald-700 font-extrabold">{sEdit.charges}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {srv.charges}</span>
+                                        </div>
+                                      )}
+                                      {sEdit.locality && sEdit.locality !== srv.locality && (
+                                        <div>
+                                          <span className="font-semibold text-slate-500 block">Proposed Locality:</span>
+                                          <span className="text-emerald-700 font-bold">{sEdit.locality}</span>
+                                          <span className="text-slate-400 text-[10px] block line-through">Live: {srv.locality || 'Gondia'}</span>
+                                        </div>
+                                      )}
+                                      {sEdit.description && sEdit.description !== srv.description && (
+                                        <div className="sm:col-span-2">
+                                          <span className="font-semibold text-slate-500 block">Proposed Description:</span>
+                                          <span className="text-emerald-700 font-medium">{sEdit.description}</span>
+                                        </div>
+                                      )}
+                                      {sEdit.serviceAreas && sEdit.serviceAreas.length > 0 && (
+                                        <div className="sm:col-span-2">
+                                          <span className="font-semibold text-slate-500 block">Proposed Service Areas:</span>
+                                          <span className="text-emerald-700 font-medium">{sEdit.serviceAreas.join(', ')}</span>
+                                        </div>
+                                      )}
+                                      {sEdit.specialties && sEdit.specialties.length > 0 && (
+                                        <div className="sm:col-span-2">
+                                          <span className="font-semibold text-slate-500 block">Proposed Specialties:</span>
+                                          <span className="text-emerald-700 font-medium">{sEdit.specialties.join(' • ')}</span>
+                                        </div>
+                                      )}
+                                      {sEdit.photos && sEdit.photos.length > 0 && (
+                                        <div className="sm:col-span-2">
+                                          <span className="font-semibold text-slate-500 block">Proposed Photos ({sEdit.photos.length}):</span>
+                                          <div className="flex items-center gap-2 mt-1 overflow-x-auto py-1">
+                                            {sEdit.photos.map((pUrl, idx) => (
+                                              <img key={idx} src={pUrl} alt="Proposed" className="w-12 h-12 rounded-lg object-cover border border-amber-300 shrink-0" />
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

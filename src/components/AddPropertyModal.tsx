@@ -21,7 +21,8 @@ import {
   IndianRupee,
   Calendar,
   Check,
-  Crosshair
+  Crosshair,
+  Info
 } from 'lucide-react';
 import { GondiaMap } from './GondiaMap';
 import {
@@ -678,12 +679,18 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
               </div>
               <div className="space-y-1.5 max-w-md mx-auto">
                 <h3 className="text-xl font-black text-slate-900">
-                  {propertyToEdit ? 'Property Listing Updated!' : 'Property Submitted Successfully!'}
+                  {propertyToEdit
+                    ? (!isAdmin && propertyToEdit.status === 'approved'
+                        ? 'Proposed Changes Submitted for Reapproval!'
+                        : 'Property Listing Updated!')
+                    : 'Property Submitted Successfully!'}
                 </h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   {isAdmin
-                    ? 'Your property listing has been saved directly to Cloud Firestore.'
-                    : 'Your property has been submitted with status "Pending". It will appear publicly on GondiaStay across all devices as soon as verified by our administrator.'}
+                    ? 'Your property listing has been saved & published directly to Cloud Firestore.'
+                    : (propertyToEdit && propertyToEdit.status === 'approved'
+                        ? 'Your live approved listing remains fully active and visible to tenants across Gondia. Proposed changes will be reviewed by an administrator before updating the live listing.'
+                        : 'Your property has been submitted with status "Pending". It will appear publicly on GondiaStay across all devices as soon as verified by our administrator.')}
                 </p>
               </div>
 
@@ -712,6 +719,19 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ) : (
             /* PROPERTY FORM VIEW */
             <form onSubmit={handleSubmit} className="space-y-5">
+
+              {/* Provider Reapproval Notice for Approved Listings */}
+              {propertyToEdit && !isAdmin && propertyToEdit.status === 'approved' && (
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-extrabold block mb-0.5">Editing Approved Live Listing</strong>
+                    <span className="leading-relaxed">
+                      Your current live listing remains fully visible to tenants across Gondia. Proposed changes will be submitted separately for admin reapproval and will replace live data only after being approved.
+                    </span>
+                  </div>
+                </div>
+              )}
               
               {/* Error Alert */}
               {formError && (
@@ -1315,7 +1335,11 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       : isSubmitting
                         ? 'Saving Listing...'
                         : propertyToEdit
-                          ? 'Update Listing'
+                          ? (isAdmin
+                              ? 'Save & Publish Directly'
+                              : (propertyToEdit.status === 'approved'
+                                  ? 'Submit Changes for Reapproval'
+                                  : 'Update Listing'))
                           : 'Submit for Admin Approval'}
                   </span>
                 </button>

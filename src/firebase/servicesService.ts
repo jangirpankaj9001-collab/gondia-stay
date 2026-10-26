@@ -12,6 +12,7 @@
 import { 
   collection, 
   doc, 
+  getDoc,
   setDoc, 
   updateDoc, 
   deleteDoc, 
@@ -144,7 +145,9 @@ export const subscribeToFirestoreServices = (
         createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
         updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : Date.now(),
         moderatedAt: typeof data.moderatedAt === 'number' ? data.moderatedAt : undefined,
-        moderatedBy: typeof data.moderatedBy === 'string' ? data.moderatedBy : undefined
+        moderatedBy: typeof data.moderatedBy === 'string' ? data.moderatedBy : undefined,
+        hasPendingEdit: Boolean(data.hasPendingEdit),
+        pendingEdit: data.pendingEdit || undefined
       });
     });
 
@@ -341,13 +344,24 @@ export const saveServiceToFirestore = async (
 };
 
 /**
- * Admin action: Updates any or all fields of an existing service in Firestore.
- * Preserves existing document ID without creating duplicate records.
+ * Updates an existing service in Firestore.
+ * - If called by verified admin: publishes edits directly and clears any pendingEdit.
+ * - If called by service provider on an already approved listing: stores proposed changes in pendingEdit
+ *   and marks hasPendingEdit: true. The approved listing remains live and unchanged until admin approves.
+ * - If called on a pending listing: updates listing fields directly and keeps status pending.
  */
 export const updateServiceInFirestore = async (
   serviceId: string,
-  updatedFields: Partial<ServiceItem>
+  updatedFields: Partial<ServiceItem>,
+  isAdminCaller: boolean = false
 ): Promise<{ success: boolean; error?: string }> => {
+  const isRealAdminAuth = Boolean(
+    isAdminCaller &&
+    auth?.currentUser &&
+    auth.currentUser.email &&
+    isAuthorizedAdminEmail(auth.currentUser.email)
+  );
+
   const cleanProvider = (updatedFields.providerName || updatedFields.ownerName || '').trim();
   const cleanPhone = (updatedFields.phone || updatedFields.ownerPhone || '').trim();
   const cleanWhatsapp = (updatedFields.whatsappNumber || updatedFields.ownerWhatsappNumber || cleanPhone).trim();
@@ -380,14 +394,71 @@ export const updateServiceInFirestore = async (
     sanitized.specialties = updatedFields.specialties;
   }
 
+  // Check if target service is currently approved
+  let isCurrentlyApproved = false;
+  if (db && isFirebaseConfigured()) {
+    try {
+      const docRef = doc(db, SERVICES_COLLECTION, serviceId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        isCurrentlyApproved = (snap.data().status || '').toLowerCase() === 'approved';
+      }
+    } catch (e) {
+      console.warn('[GondiaStay] Error checking service status in Firestore:', e);
+    }
+  } else {
+    const cached = getCachedServices().find(s => s.id === serviceId);
+    isCurrentlyApproved = (cached?.status || '').toLowerCase() === 'approved';
+  }
+
+  let finalPayload: any;
+
+  if (isRealAdminAuth) {
+    // Admin direct update & publish
+    finalPayload = {
+      ...sanitized,
+      hasPendingEdit: false,
+      pendingEdit: null,
+      updatedAt: Date.now()
+    };
+  } else if (isCurrentlyApproved) {
+    // Provider editing approved service: keep live listing untouched! Store in pendingEdit
+    const pendingData = {
+      ...sanitized,
+      submittedAt: Date.now()
+    };
+    finalPayload = {
+      hasPendingEdit: true,
+      pendingEdit: pendingData,
+      updatedAt: Date.now()
+    };
+  } else {
+    // Provider editing pending service: update directly, remain pending
+    finalPayload = {
+      ...sanitized,
+      status: 'pending',
+      hasPendingEdit: false,
+      pendingEdit: null,
+      updatedAt: Date.now()
+    };
+  }
+
   // Update local cache immediately for responsive zero-lag UI
   try {
     const cached = getCachedServices();
     const updated = cached.map(s => {
       if (s.id === serviceId) {
+        if (!isRealAdminAuth && isCurrentlyApproved) {
+          return {
+            ...s,
+            hasPendingEdit: true,
+            pendingEdit: finalPayload.pendingEdit,
+            updatedAt: Date.now()
+          };
+        }
         return {
           ...s,
-          ...sanitized
+          ...finalPayload
         };
       }
       return s;
@@ -401,8 +472,7 @@ export const updateServiceInFirestore = async (
 
   try {
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
-    // Use setDoc with merge: true to avoid "No document to update" errors if editing an initial template
-    await setDoc(docRef, sanitized, { merge: true });
+    await setDoc(docRef, finalPayload, { merge: true });
     return { success: true };
   } catch (err: any) {
     console.error('[GondiaStay] Error updating service in Firestore:', err);
@@ -410,6 +480,78 @@ export const updateServiceInFirestore = async (
       success: false,
       error: err?.message || 'Failed to update service in Firestore.'
     };
+  }
+};
+
+/**
+ * Admin action: approves or rejects proposed edits for an already approved service.
+ * When approving: merges pendingEdit into the root document, clears pendingEdit and hasPendingEdit.
+ * When rejecting: discards pendingEdit without modifying the live approved service!
+ */
+export const moderateServiceEditInFirestore = async (
+  serviceId: string,
+  approve: boolean,
+  adminEmail?: string
+): Promise<boolean> => {
+  if (!db || !isFirebaseConfigured()) {
+    return true;
+  }
+
+  try {
+    const docRef = doc(db, SERVICES_COLLECTION, serviceId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      return false;
+    }
+
+    const data = snap.data();
+    const pendingEdit = data.pendingEdit;
+
+    let updatePayload: any;
+
+    if (approve && pendingEdit) {
+      const { submittedAt, ...fieldsToMerge } = pendingEdit;
+      updatePayload = {
+        ...fieldsToMerge,
+        status: 'approved',
+        hasPendingEdit: false,
+        pendingEdit: null,
+        moderatedAt: Date.now(),
+        moderatedBy: adminEmail || 'admin',
+        updatedAt: Date.now()
+      };
+    } else {
+      // Discard proposed edits; live approved service stays completely untouched
+      updatePayload = {
+        hasPendingEdit: false,
+        pendingEdit: null,
+        moderatedAt: Date.now(),
+        moderatedBy: adminEmail || 'admin',
+        updatedAt: Date.now()
+      };
+    }
+
+    await setDoc(docRef, updatePayload, { merge: true });
+
+    // Update local cache
+    try {
+      const cached = getCachedServices();
+      const updated = cached.map(s => {
+        if (s.id === serviceId) {
+          return {
+            ...s,
+            ...updatePayload
+          };
+        }
+        return s;
+      });
+      localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
+    } catch {}
+
+    return true;
+  } catch (err) {
+    console.error('[GondiaStay] Error moderating service edit in Firestore:', err);
+    return false;
   }
 };
 
