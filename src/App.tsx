@@ -1442,10 +1442,18 @@ export const App: React.FC = () => {
 
             {/* Locality Chips */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap pl-1">
-                Area:
-              </span>
-              {GONDIA_LOCALITIES.map(loc => (
+              <button
+                type="button"
+                onClick={() => setSelectedLocality('All')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                  selectedLocality === 'All' || selectedLocality === 'All Gondia'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                All Gondia
+              </button>
+              {GONDIA_LOCALITIES.filter(loc => loc !== 'All' && loc !== 'All Gondia').map(loc => (
                 <button
                   key={loc}
                   onClick={() => setSelectedLocality(loc)}
