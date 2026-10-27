@@ -78,6 +78,7 @@ import { AddPropertyModal } from './components/AddPropertyModal';
 import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
 import { GondiaMap } from './components/GondiaMap';
+import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { 
   PropertyListing, 
   PropertyType, 
@@ -185,6 +186,18 @@ export const App: React.FC = () => {
   const [isServicesDashboardOpen, setIsServicesDashboardOpen] = useState(false);
   const [isOwnerDashboardOpen, setIsOwnerDashboardOpen] = useState(false);
   const [isAddPropertyModalOpen, setIsAddPropertyModalOpen] = useState(false);
+
+  // Global Delete Confirmation Dialog state
+  const [deleteConfirmState, setDeleteConfirmState] = useState<{
+    isOpen: boolean;
+    itemType: 'property' | 'service';
+    itemTitle?: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    itemType: 'property',
+    onConfirm: () => {},
+  });
 
   // Android Phone Back-Button & Browser History Handlers for Dialogs & Modals
   useBackHandler(showFilterModal, () => setShowFilterModal(false), 'filter-modal');
@@ -2401,9 +2414,15 @@ export const App: React.FC = () => {
 
                           <button
                             onClick={() => {
-                              if (window.confirm(`Permanently delete "${property.title}"?`)) {
-                                deleteProperty(property.id);
-                              }
+                              setDeleteConfirmState({
+                                isOpen: true,
+                                itemType: 'property',
+                                itemTitle: property.title,
+                                onConfirm: () => {
+                                  deleteProperty(property.id);
+                                  setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+                                }
+                              });
                             }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                             title="Delete Listing"
@@ -3098,9 +3117,15 @@ export const App: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (window.confirm(`Permanently delete "${prop.title}" from Cloud Firestore?`)) {
-                                          deleteProperty(prop.id);
-                                        }
+                                        setDeleteConfirmState({
+                                          isOpen: true,
+                                          itemType: 'property',
+                                          itemTitle: prop.title,
+                                          onConfirm: () => {
+                                            deleteProperty(prop.id);
+                                            setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+                                          }
+                                        });
                                       }}
                                       className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                                       title="Permanently Delete Listing"
@@ -4086,6 +4111,15 @@ export const App: React.FC = () => {
         onServiceUpdated={(updated: ServiceItem) => {
           showToast(`Service "${updated.title}" successfully updated!`);
         }}
+      />
+
+      {/* Delete Confirmation Modal for Properties and Services */}
+      <DeleteConfirmationModal
+        isOpen={deleteConfirmState.isOpen}
+        itemType={deleteConfirmState.itemType}
+        itemTitle={deleteConfirmState.itemTitle}
+        onConfirm={deleteConfirmState.onConfirm}
+        onCancel={() => setDeleteConfirmState(prev => ({ ...prev, isOpen: false }))}
       />
 
       {/* Global Toast Notification */}

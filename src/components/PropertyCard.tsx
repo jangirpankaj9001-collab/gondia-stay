@@ -49,6 +49,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
   const isFav = favorites.includes(property.id);
   const occupied = isOccupied(property.occupancyStatus);
   const canManageOccupancy = Boolean(isAdminAuthenticated || isPropertyOwner(property) || isOwnerView);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const mainPhoto = property.photos && property.photos.length > 0 
     ? property.photos[0] 
@@ -337,7 +338,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
                 {onDelete && (
                   <button
                     type="button"
-                    onClick={() => onDelete(property)}
+                    onClick={() => setShowDeleteConfirm(true)}
                     className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold flex items-center gap-1"
                     title="Delete listing"
                   >
@@ -404,6 +405,20 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteConfirm}
+        itemType="property"
+        itemTitle={property.title}
+        onConfirm={() => {
+          if (onDelete) {
+            onDelete(property);
+          }
+          setShowDeleteConfirm(false);
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 };

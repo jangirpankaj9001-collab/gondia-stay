@@ -24,6 +24,7 @@ import {
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface ServiceCardProps {
   service: ServiceItem;
@@ -43,6 +44,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   const { isServiceOwner } = useApp();
   const canEdit = Boolean(onEdit && (isAdmin || isServiceOwner(service)));
   const [showVisitingCardModal, setShowVisitingCardModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
   // Close visiting card or photo preview first when pressing Android back button
@@ -328,7 +330,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {onDelete && (
                   <button
                     type="button"
-                    onClick={() => onDelete(service.id)}
+                    onClick={() => setShowDeleteConfirm(true)}
                     className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer"
                   >
                     Delete
@@ -400,6 +402,20 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteConfirm}
+        itemType="service"
+        itemTitle={service.title}
+        onConfirm={() => {
+          if (onDelete) {
+            onDelete(service.id);
+          }
+          setShowDeleteConfirm(false);
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 };

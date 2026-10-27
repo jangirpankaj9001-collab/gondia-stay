@@ -23,6 +23,7 @@ import {
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -170,6 +171,9 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   const [verifyingService, setVerifyingService] = useState<ServiceItem | null>(null);
   const [verifyPhoneInput, setVerifyPhoneInput] = useState('');
   const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  // Delete confirmation dialog state
+  const [serviceToDelete, setServiceToDelete] = useState<ServiceItem | null>(null);
 
   const handleProviderEditClick = (provider: ServiceItem) => {
     if (isAdmin || isServiceOwner(provider)) {
@@ -557,7 +561,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           {onDelete && (
                             <button
                               type="button"
-                              onClick={() => onDelete(provider.id)}
+                              onClick={() => setServiceToDelete(provider)}
                               className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Delete
@@ -731,6 +735,20 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationModal
+        isOpen={Boolean(serviceToDelete)}
+        itemType="service"
+        itemTitle={serviceToDelete?.title}
+        onConfirm={() => {
+          if (serviceToDelete && onDelete) {
+            onDelete(serviceToDelete.id);
+            setServiceToDelete(null);
+          }
+        }}
+        onCancel={() => setServiceToDelete(null)}
+      />
     </div>
   );
 };
