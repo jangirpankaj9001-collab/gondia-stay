@@ -711,17 +711,12 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
 
       {/* Bottom Footer Details (Explore Mode) */}
       {mode === 'explore' && (
-        <div className="bg-white/95 px-3.5 py-2 border-t border-slate-200/80 text-[11px] text-slate-600 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 z-10">
+        <div className="bg-white/95 px-3.5 py-2 border-t border-slate-200/80 text-[11px] text-slate-600 flex items-center justify-between gap-1 z-10">
           <div className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
             <span className="font-bold text-slate-800">
               {properties.length} Approved Stays in Gondia
             </span>
-            <span className="text-slate-400">•</span>
-            <span className="text-slate-500">Rent shown as ₹6k, ₹20k, ₹30k</span>
-          </div>
-          <div className="text-slate-400 text-[10px]">
-            HD Clear Roads & Localities • Tap markers for instant details
           </div>
         </div>
       )}
