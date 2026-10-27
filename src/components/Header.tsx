@@ -346,12 +346,10 @@ export const Header: React.FC = () => {
           </button>
           <button
             onClick={() => { navigateTo('owner'); setMobileMenuOpen(false); }}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
-              activeTab === 'owner' && ownerSubTab !== 'moderation' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'
-            }`}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <UserCheck className="w-4 h-4" />
+              <UserCheck className="w-4 h-4 text-slate-600" />
               Owner Dashboard
             </div>
             {pendingCount > 0 && !isAdminAuthenticated && (
