@@ -29,7 +29,7 @@ import {
 import { uploadServicePhoto, uploadMultipleServicePhotos } from '../firebase/storageService';
 import { saveServiceToFirestore, updateServiceInFirestore } from '../firebase/servicesService';
 import { useApp } from '../context/AppContext';
-import { isValidIndianMobileNumber } from '../utils/contact';
+import { isValidIndianMobileNumber, normalizeIndianMobileNumber } from '../utils/contact';
 
 interface AddServiceModalProps {
   isOpen: boolean;
@@ -291,6 +291,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         allPhotos.push(businessCardPhoto);
       }
 
+      const cleanPhone = normalizeIndianMobileNumber(phone) || phone.trim().replace(/\D/g, '');
       const formattedPhone = cleanPhone.startsWith('91') ? `+${cleanPhone}` : `+91${cleanPhone.slice(-10)}`;
       const formattedWhatsapp = whatsappNumber.trim() ? (
         whatsappNumber.replace(/\D/g, '').startsWith('91') 
