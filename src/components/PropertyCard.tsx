@@ -21,6 +21,7 @@ import {
 import { PropertyListing, isOccupied, isApproved } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp, dialPhone } from '../utils/contact';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface PropertyCardProps {
   property: PropertyListing;
