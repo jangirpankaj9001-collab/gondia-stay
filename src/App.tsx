@@ -1812,7 +1812,7 @@ export const App: React.FC = () => {
                         Home, Mess & Student Services in Gondia
                       </h2>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mt-2">
-                        Discover authentic daily Mess & Tiffin services, police-verified maids, housekeeping deep cleaners, laundry, licensed electricians, plumbers, chilled RO water cans, and security guards across Gondia.
+                        Discover authentic daily Mess & Tiffin services, verified maids, housekeeping deep cleaners, laundry, licensed electricians, plumbers, chilled RO water cans, and security guards across Gondia.
                       </p>
                     </div>
 
