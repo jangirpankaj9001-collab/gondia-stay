@@ -41,21 +41,21 @@ export const formatCompactRent = (amount: number): string => {
   return `₹${amount}`;
 };
 
-// Tile layer presets for crisp, sharp cartography
+// Free, reliable OpenStreetMap-compatible tile layer presets (NO API key required)
 const TILE_LAYERS = {
-  voyager: {
-    name: 'Clear Streets (HD)',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/" target="_blank" rel="noreferrer">CARTO</a>'
-  },
   osm: {
-    name: 'OpenStreetMap (Classic)',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    name: 'OpenStreetMap (Standard)',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     subdomains: 'abc',
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors • GondiaStay'
+  },
+  hot: {
+    name: 'Humanitarian OSM (High Contrast)',
+    url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+    subdomains: 'abc',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors • Style: HOT'
   }
 };
 
@@ -76,7 +76,7 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
   const pickerMarkerRef = useRef<L.Marker | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
 
-  const [activeLayerKey, setActiveLayerKey] = useState<'voyager' | 'osm'>('voyager');
+  const [activeLayerKey, setActiveLayerKey] = useState<'osm' | 'hot'>('osm');
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [showLocalityLabels, setShowLocalityLabels] = useState(true);
   const [isLocating, setIsLocating] = useState(false);
@@ -90,18 +90,23 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
   }, [locationToast]);
 
   // Switch Tile Layer
-  const setTileLayer = useCallback((layerKey: 'voyager' | 'osm') => {
+  const setTileLayer = useCallback((layerKey: 'osm' | 'hot') => {
     if (!mapInstanceRef.current) return;
     if (tileLayerRef.current) {
       mapInstanceRef.current.removeLayer(tileLayerRef.current);
     }
 
-    const config = TILE_LAYERS[layerKey];
+    const config = TILE_LAYERS[layerKey] || TILE_LAYERS.osm;
     const newLayer = L.tileLayer(config.url, {
       subdomains: config.subdomains,
       maxZoom: config.maxZoom,
-      detectRetina: true,
-      attribution: config.attribution
+      attribution: config.attribution,
+      crossOrigin: true
+    });
+
+    // Graceful error handling for tile network issues
+    newLayer.on('tileerror', (e) => {
+      console.warn('[GondiaMap] Tile load warning handled gracefully:', e);
     });
 
     newLayer.addTo(mapInstanceRef.current);
@@ -128,15 +133,20 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
       bounceAtZoomLimits: true
     });
 
-    // Default sharp, crisp Voyager layer with Retina support
-    const config = TILE_LAYERS.voyager;
+    // Default to 100% free, reliable OpenStreetMap tiles (no API key required)
+    const config = TILE_LAYERS.osm;
     const initialTile = L.tileLayer(config.url, {
       subdomains: config.subdomains,
       maxZoom: config.maxZoom,
-      detectRetina: true,
-      attribution: config.attribution
-    }).addTo(map);
+      attribution: config.attribution,
+      crossOrigin: true
+    });
 
+    initialTile.on('tileerror', (e) => {
+      console.warn('[GondiaMap] Initial tile load notice:', e);
+    });
+
+    initialTile.addTo(map);
     tileLayerRef.current = initialTile;
 
     const localitiesGroup = L.layerGroup().addTo(map);
@@ -630,21 +640,6 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setTileLayer('voyager');
-                    setShowLayerMenu(false);
-                  }}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-xl font-bold flex items-center justify-between cursor-pointer ${
-                    activeLayerKey === 'voyager'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>Clear Streets (HD)</span>
-                  {activeLayerKey === 'voyager' && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
                     setTileLayer('osm');
                     setShowLayerMenu(false);
                   }}
@@ -654,8 +649,23 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
                       : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span>OpenStreetMap Classic</span>
+                  <span>OpenStreetMap Standard</span>
                   {activeLayerKey === 'osm' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTileLayer('hot');
+                    setShowLayerMenu(false);
+                  }}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-xl font-bold flex items-center justify-between cursor-pointer ${
+                    activeLayerKey === 'hot'
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>Humanitarian High-Contrast</span>
+                  {activeLayerKey === 'hot' && <Check className="w-3.5 h-3.5 text-blue-600" />}
                 </button>
                 <div className="border-t border-slate-100 my-1 pt-1">
                   <label className="flex items-center gap-2 px-2 py-1 text-[11px] font-semibold text-slate-700 cursor-pointer">
