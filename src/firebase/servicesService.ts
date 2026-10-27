@@ -290,7 +290,9 @@ export const saveServiceToFirestore = async (
     isFeatured: Boolean(serviceData.isFeatured),
     specialties: Array.isArray(serviceData.specialties) ? serviceData.specialties : [],
     createdAt: typeof serviceData.createdAt === 'number' ? serviceData.createdAt : Date.now(),
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    ...(serviceData.ownerId ? { ownerId: serviceData.ownerId } : (auth?.currentUser?.uid ? { ownerId: auth.currentUser.uid } : {})),
+    ...(serviceData.ownerEmail ? { ownerEmail: serviceData.ownerEmail } : (auth?.currentUser?.email ? { ownerEmail: auth.currentUser.email } : {}))
   };
 
   if (!db || !isFirebaseConfigured()) {
@@ -423,8 +425,9 @@ export const updateServiceInFirestore = async (
     };
   } else if (isCurrentlyApproved) {
     // Provider editing approved service: keep live listing untouched! Store in pendingEdit
+    const { status, hasPendingEdit, pendingEdit, ...fieldsForPendingEdit } = sanitized;
     const pendingData = {
-      ...sanitized,
+      ...fieldsForPendingEdit,
       submittedAt: Date.now()
     };
     finalPayload = {
@@ -472,13 +475,27 @@ export const updateServiceInFirestore = async (
 
   try {
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
-    await setDoc(docRef, finalPayload, { merge: true });
-    return { success: true };
+    try {
+      await updateDoc(docRef, finalPayload);
+      return { success: true };
+    } catch (updateErr: any) {
+      await setDoc(docRef, finalPayload, { merge: true });
+      return { success: true };
+    }
   } catch (err: any) {
     console.error('[GondiaStay] Error updating service in Firestore:', err);
+    const rawError = err?.message || String(err);
+    let userFriendlyError = rawError;
+    if (
+      rawError.toLowerCase().includes('permission') || 
+      rawError.toLowerCase().includes('insufficient') ||
+      rawError.includes('PERMISSION_DENIED')
+    ) {
+      userFriendlyError = 'Database permissions error: Please ensure the latest Firestore security rules are published in Firebase Console -> Firestore Database -> Rules. (Open Firebase Settings in top navigation to copy production rules).';
+    }
     return {
       success: false,
-      error: err?.message || 'Failed to update service in Firestore.'
+      error: userFriendlyError
     };
   }
 };

@@ -199,8 +199,77 @@ service cloud.firestore {
         )
       );
 
-      // 3. Update & Delete: Strictly restricted to verified administrator.
-      allow update: if isAdmin();
+      // Helper function to check if caller is the authenticated owner of the service listing
+      function isServiceOwner() {
+        return request.auth != null && (
+          (resource.data.ownerId != null && resource.data.ownerId == request.auth.uid)
+          || (resource.data.ownerEmail != null && request.auth.token.email != null && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        );
+      }
+
+      // Helper function to check permitted fields for draft service updates
+      function hasOnlyPermittedServiceDraftKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title', 'category', 'providerName', 'ownerName', 'phone', 'ownerPhone',
+          'whatsappNumber', 'ownerWhatsappNumber', 'charges', 'chargeUnit', 'priceNumeric',
+          'description', 'serviceAreas', 'locality', 'city', 'address', 'photos',
+          'businessCardPhoto', 'timing', 'experienceYears', 'specialties', 'status',
+          'updatedAt', 'hasPendingEdit', 'pendingEdit', 'ownerId', 'ownerEmail'
+        ]);
+      }
+
+      // Submission of edited services for admin reapproval on an ALREADY APPROVED listing:
+      // - Keeps the approved live listing completely unchanged until administrator verifies and approves.
+      // - Strictly restricts root document changes to pendingEdit, hasPendingEdit, and updatedAt.
+      // - Live status remains 'approved' and cannot be altered or self-published.
+      // - Requires valid pendingEdit map containing proposed changes.
+      // - If listing has an authenticated ownerId, only that owner (or admin) can submit edits.
+      function isValidProviderPendingEditSubmission() {
+        return (resource.data.status in ['approved', 'APPROVED'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasPendingEdit', 'pendingEdit', 'updatedAt'])
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.hasPendingEdit == true
+          && request.resource.data.pendingEdit is map
+          && (!('ownerId' in resource.data) || resource.data.ownerId == null || isServiceOwner())
+          && (!('title' in request.resource.data.pendingEdit) || (
+            request.resource.data.pendingEdit.title is string
+            && request.resource.data.pendingEdit.title.size() > 0
+            && request.resource.data.pendingEdit.title.size() <= 200
+          ))
+          && (!('phone' in request.resource.data.pendingEdit) || (
+            request.resource.data.pendingEdit.phone is string
+            && request.resource.data.pendingEdit.phone.size() >= 5
+          ));
+      }
+
+      // Updating a draft or pending service listing before initial approval
+      function isValidPendingServiceDraftUpdate() {
+        return (resource.data.status in ['pending', 'PENDING'])
+          && request.resource.data.status in ['pending', 'PENDING']
+          && hasOnlyPermittedServiceDraftKeys()
+          && (!('ownerId' in resource.data) || resource.data.ownerId == null || isServiceOwner())
+          && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false || ('isFeatured' in resource.data && request.resource.data.isFeatured == resource.data.isFeatured))
+          && (!('title' in request.resource.data) || (
+            request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 200
+          ))
+          && (!('phone' in request.resource.data) || (
+            request.resource.data.phone is string
+            && request.resource.data.phone.size() >= 5
+          ));
+      }
+
+      // 3. Update:
+      // - Verified admin can update/publish directly, approve, or reject.
+      // - Service provider can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
+      // - Service provider can update pending drafts (keeping status pending).
+      allow update: if isAdmin() 
+        || isValidProviderPendingEditSubmission()
+        || isValidPendingServiceDraftUpdate();
+
+      // 4. Delete: Strictly restricted to authenticated administrator.
       allow delete: if isAdmin();
     }
   }

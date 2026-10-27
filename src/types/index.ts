@@ -218,6 +218,8 @@ export interface ServiceItem {
   category: ServiceCategory;
   providerName: string;
   ownerName?: string;
+  ownerId?: string;
+  ownerEmail?: string;
   phone: string;
   ownerPhone?: string;
   whatsappNumber?: string;
