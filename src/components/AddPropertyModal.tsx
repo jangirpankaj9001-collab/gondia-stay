@@ -45,6 +45,7 @@ import {
   getFileFingerprint
 } from '../utils/imageOptimizer';
 import { uploadMultiplePropertyPhotos } from '../firebase/storageService';
+import { isValidIndianMobileNumber } from '../utils/contact';
 
 interface PhotoItem {
   id: string;
@@ -427,7 +428,19 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       return;
     }
     if (!ownerPhone.trim()) {
-      setFormError('Please provide a valid contact phone number.');
+      setFormError('Please provide a contact phone number.');
+      return;
+    }
+    if (!isValidIndianMobileNumber(ownerPhone)) {
+      setFormError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for phone number.');
+      return;
+    }
+    if (!ownerWhatsappNumber.trim()) {
+      setFormError('Please provide a WhatsApp number.');
+      return;
+    }
+    if (!isValidIndianMobileNumber(ownerWhatsappNumber)) {
+      setFormError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for WhatsApp number.');
       return;
     }
     const rentNum = Number(monthlyRent);
@@ -1254,9 +1267,18 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                           setOwnerWhatsappNumber(val);
                         }
                       }}
-                      placeholder="+91 98230 54321"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold outline-none"
+                      placeholder="10-digit mobile (e.g. 98230 12345)"
+                      className={`w-full px-3 py-2 text-xs bg-white border ${
+                        ownerPhone && !isValidIndianMobileNumber(ownerPhone)
+                          ? 'border-rose-400 focus:border-rose-600'
+                          : 'border-slate-300 focus:border-blue-600'
+                      } rounded-xl font-semibold outline-none`}
                     />
+                    {ownerPhone && !isValidIndianMobileNumber(ownerPhone) && (
+                      <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                        Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -1268,9 +1290,18 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       required
                       value={ownerWhatsappNumber}
                       onChange={(e) => setOwnerWhatsappNumber(e.target.value)}
-                      placeholder="+91 98230 54321"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold outline-none"
+                      placeholder="10-digit WhatsApp (e.g. 98230 12345)"
+                      className={`w-full px-3 py-2 text-xs bg-white border ${
+                        ownerWhatsappNumber && !isValidIndianMobileNumber(ownerWhatsappNumber)
+                          ? 'border-rose-400 focus:border-rose-600'
+                          : 'border-slate-300 focus:border-blue-600'
+                      } rounded-xl font-semibold outline-none`}
                     />
+                    {ownerWhatsappNumber && !isValidIndianMobileNumber(ownerWhatsappNumber) && (
+                      <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                        Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                      </p>
+                    )}
                   </div>
                 </div>
 

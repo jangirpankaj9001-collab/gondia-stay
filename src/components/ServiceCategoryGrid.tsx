@@ -21,7 +21,7 @@ import {
   Clock
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
-import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
+import { openWhatsApp, formatDisplayPhone, isValidIndianMobileNumber } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
@@ -189,11 +189,11 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   const handleVerifyOwnershipSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!verifyingService) return;
-    const cleanInput = verifyPhoneInput.trim().replace(/\D/g, '');
-    if (cleanInput.length < 10) {
-      setVerifyError('Please enter a valid 10-digit mobile phone number.');
+    if (!verifyPhoneInput.trim() || !isValidIndianMobileNumber(verifyPhoneInput)) {
+      setVerifyError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
       return;
     }
+    const cleanInput = verifyPhoneInput.trim().replace(/\D/g, '');
     const cleanProvPhone = (verifyingService.phone || verifyingService.ownerPhone || '').replace(/\D/g, '');
     const cleanProvWhatsapp = (verifyingService.whatsappNumber || verifyingService.ownerWhatsappNumber || '').replace(/\D/g, '');
 
@@ -710,9 +710,18 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                   autoFocus
                   value={verifyPhoneInput}
                   onChange={(e) => setVerifyPhoneInput(e.target.value)}
-                  placeholder="e.g. 9823012345"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-semibold focus:bg-white focus:border-blue-600 outline-none"
+                  placeholder="10-digit mobile (e.g. 98230 12345)"
+                  className={`w-full px-3.5 py-2.5 bg-slate-50 border ${
+                    verifyPhoneInput && !isValidIndianMobileNumber(verifyPhoneInput)
+                      ? 'border-rose-400 focus:border-rose-600'
+                      : 'border-slate-300 focus:border-blue-600'
+                  } rounded-xl text-xs text-slate-900 font-semibold focus:bg-white outline-none`}
                 />
+                {verifyPhoneInput && !isValidIndianMobileNumber(verifyPhoneInput) && (
+                  <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                    Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">

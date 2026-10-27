@@ -1,8 +1,39 @@
 /**
+ * Validates whether raw phone input is a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.
+ * Handles inputs with or without '+91', '91', or leading '0', as well as spaces and hyphens.
+ */
+export function normalizeIndianMobileNumber(rawPhone: string): string {
+  if (!rawPhone) return '';
+  const digits = rawPhone.replace(/\D/g, '');
+  let tenDigits = '';
+  if (digits.length === 10) {
+    tenDigits = digits;
+  } else if (digits.length === 11 && digits.startsWith('0')) {
+    tenDigits = digits.substring(1);
+  } else if (digits.length === 12 && digits.startsWith('91')) {
+    tenDigits = digits.substring(2);
+  } else {
+    return '';
+  }
+  return /^[6-9]\d{9}$/.test(tenDigits) ? tenDigits : '';
+}
+
+/**
+ * Returns true if the phone number is a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.
+ */
+export function isValidIndianMobileNumber(rawPhone: string): boolean {
+  return normalizeIndianMobileNumber(rawPhone).length === 10;
+}
+
+/**
  * Formats phone number for WhatsApp URL (handles 10-digit Indian numbers by prefixing 91).
  */
 export function formatWhatsAppNumber(rawPhone: string): string {
   if (!rawPhone) return '';
+  const clean10 = normalizeIndianMobileNumber(rawPhone);
+  if (clean10) {
+    return `91${clean10}`;
+  }
   const digits = rawPhone.replace(/\D/g, '');
   if (digits.length === 10) {
     return `91${digits}`;

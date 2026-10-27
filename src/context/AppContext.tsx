@@ -43,6 +43,7 @@ import {
   deleteServiceInFirestore,
   getCachedServices
 } from '../firebase/servicesService';
+import { isValidIndianMobileNumber } from '../utils/contact';
 
 interface AppContextType {
   properties: PropertyListing[];
@@ -409,7 +410,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateOwnerPhone = async (newPhone: string) => {
+    if (!newPhone.trim() || !isValidIndianMobileNumber(newPhone)) {
+      showToast("Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.");
+      return;
+    }
     await updateOwnerProfile({ phone: newPhone.trim() });
+    showToast("Contact number updated successfully.");
   };
 
   /**
@@ -417,6 +423,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * Requirement 1: Use real owner information stored in Firebase.
    */
   const updateOwnerProfile = async (updates: Partial<OwnerProfile>): Promise<void> => {
+    if (updates.phone && !isValidIndianMobileNumber(updates.phone)) {
+      showToast("Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for phone.");
+      return;
+    }
+    if (updates.whatsappNumber && !isValidIndianMobileNumber(updates.whatsappNumber)) {
+      showToast("Please enter a valid 10-digit Indian WhatsApp number starting with 6, 7, 8, or 9.");
+      return;
+    }
     const updated: OwnerProfile = {
       ...currentOwner,
       ...updates

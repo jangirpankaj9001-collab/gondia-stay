@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Lock, Key, UserCheck, AlertCircle, Loader2, Zap, ShieldCheck } from 'lucide-react';
 import { useApp, useBackHandler } from '../context/AppContext';
+import { isValidIndianMobileNumber } from '../utils/contact';
 
 interface OwnerAuthModalProps {
   isOpen: boolean;
@@ -39,11 +40,16 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
           setIsLoading(false);
           return;
         }
+        if (!phone.trim() || !isValidIndianMobileNumber(phone)) {
+          setError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for contact phone.');
+          setIsLoading(false);
+          return;
+        }
         const res = await registerOwnerWithEmailPassword(
           email.trim(),
           password,
           name.trim() || 'Property Owner',
-          phone.trim() || '+91 98230 12345'
+          phone.trim()
         );
         if (res.success) {
           if (onSuccess) onSuccess();
@@ -210,9 +216,18 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
                         required
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+91 98230 12345"
-                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-blue-600"
+                        placeholder="10-digit mobile (e.g. 98230 12345)"
+                        className={`w-full px-3 py-2 text-xs bg-slate-50 border ${
+                          phone && !isValidIndianMobileNumber(phone)
+                            ? 'border-rose-400 focus:ring-rose-200'
+                            : 'border-slate-300 focus:ring-blue-600'
+                        } rounded-xl font-medium focus:ring-2`}
                       />
+                      {phone && !isValidIndianMobileNumber(phone) && (
+                        <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                          Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                        </p>
+                      )}
                     </div>
                   </>
                 )}

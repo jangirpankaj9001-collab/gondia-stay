@@ -29,6 +29,7 @@ import {
 import { uploadServicePhoto, uploadMultipleServicePhotos } from '../firebase/storageService';
 import { saveServiceToFirestore, updateServiceInFirestore } from '../firebase/servicesService';
 import { useApp } from '../context/AppContext';
+import { isValidIndianMobileNumber } from '../utils/contact';
 
 interface AddServiceModalProps {
   isOpen: boolean;
@@ -247,9 +248,16 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       setFormError('Please enter provider/contact person name.');
       return;
     }
-    const cleanPhone = phone.trim().replace(/\D/g, '');
-    if (cleanPhone.length < 10) {
-      setFormError('Please enter a valid 10-digit mobile phone number.');
+    if (!phone.trim()) {
+      setFormError('Please enter a calling phone number.');
+      return;
+    }
+    if (!isValidIndianMobileNumber(phone)) {
+      setFormError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for calling phone.');
+      return;
+    }
+    if (whatsappNumber.trim() && !isValidIndianMobileNumber(whatsappNumber)) {
+      setFormError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for WhatsApp number.');
       return;
     }
     if (!charges.trim()) {
@@ -639,8 +647,17 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="10-digit mobile number"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none"
+                    className={`w-full px-3.5 py-2.5 bg-slate-50 border ${
+                      phone && !isValidIndianMobileNumber(phone)
+                        ? 'border-rose-400 focus:border-rose-600 focus:ring-rose-200'
+                        : 'border-slate-200 focus:border-blue-600 focus:ring-blue-600'
+                    } rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-1 outline-none`}
                   />
+                  {phone && !isValidIndianMobileNumber(phone) && (
+                    <p className="text-[10px] text-rose-600 font-semibold">
+                      Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -653,8 +670,17 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                     value={whatsappNumber}
                     onChange={(e) => setWhatsappNumber(e.target.value)}
                     placeholder="Leave empty if same as calling phone"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none"
+                    className={`w-full px-3.5 py-2.5 bg-slate-50 border ${
+                      whatsappNumber && !isValidIndianMobileNumber(whatsappNumber)
+                        ? 'border-rose-400 focus:border-rose-600 focus:ring-rose-200'
+                        : 'border-slate-200 focus:border-blue-600 focus:ring-blue-600'
+                    } rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-1 outline-none`}
                   />
+                  {whatsappNumber && !isValidIndianMobileNumber(whatsappNumber) && (
+                    <p className="text-[10px] text-rose-600 font-semibold">
+                      Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                    </p>
+                  )}
                 </div>
               </div>
 

@@ -102,7 +102,7 @@ import {
   ServiceCategory,
   SERVICE_CATEGORIES
 } from './types';
-import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps } from './utils/contact';
+import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps, isValidIndianMobileNumber } from './utils/contact';
 
 export const App: React.FC = () => {
   const {
@@ -2094,9 +2094,18 @@ export const App: React.FC = () => {
                             type="text"
                             value={ownerProfileForm.phone}
                             onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, phone: e.target.value })}
-                            placeholder="+91 98230 12345"
-                            className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                            placeholder="10-digit mobile (e.g. 98230 12345)"
+                            className={`w-full px-3 py-2 text-xs bg-slate-900 border ${
+                              ownerProfileForm.phone && !isValidIndianMobileNumber(ownerProfileForm.phone)
+                                ? 'border-rose-500 focus:border-rose-400'
+                                : 'border-slate-700 focus:border-blue-500'
+                            } rounded-xl text-white font-semibold outline-none`}
                           />
+                          {ownerProfileForm.phone && !isValidIndianMobileNumber(ownerProfileForm.phone) && (
+                            <p className="text-[10px] text-rose-400 font-semibold mt-1">
+                              Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="text-[11px] font-bold text-slate-300 block mb-1">WhatsApp Number *</label>
@@ -2104,9 +2113,18 @@ export const App: React.FC = () => {
                             type="text"
                             value={ownerProfileForm.whatsappNumber}
                             onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, whatsappNumber: e.target.value })}
-                            placeholder="+91 98230 12345"
-                            className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                            placeholder="10-digit WhatsApp (e.g. 98230 12345)"
+                            className={`w-full px-3 py-2 text-xs bg-slate-900 border ${
+                              ownerProfileForm.whatsappNumber && !isValidIndianMobileNumber(ownerProfileForm.whatsappNumber)
+                                ? 'border-rose-500 focus:border-rose-400'
+                                : 'border-slate-700 focus:border-blue-500'
+                            } rounded-xl text-white font-semibold outline-none`}
                           />
+                          {ownerProfileForm.whatsappNumber && !isValidIndianMobileNumber(ownerProfileForm.whatsappNumber) && (
+                            <p className="text-[10px] text-rose-400 font-semibold mt-1">
+                              Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -2121,14 +2139,23 @@ export const App: React.FC = () => {
                         <button
                           type="button"
                           onClick={async () => {
-                            if (!ownerProfileForm.name.trim() || !ownerProfileForm.phone.trim()) {
-                              showToast("Please provide owner name and phone.");
+                            if (!ownerProfileForm.name.trim()) {
+                              showToast("Please provide owner name.");
+                              return;
+                            }
+                            if (!ownerProfileForm.phone.trim() || !isValidIndianMobileNumber(ownerProfileForm.phone)) {
+                              showToast("Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 for phone.");
+                              return;
+                            }
+                            const wa = (ownerProfileForm.whatsappNumber || ownerProfileForm.phone).trim();
+                            if (!wa || !isValidIndianMobileNumber(wa)) {
+                              showToast("Please enter a valid 10-digit Indian WhatsApp number starting with 6, 7, 8, or 9.");
                               return;
                             }
                             await updateOwnerProfile({
                               name: ownerProfileForm.name.trim(),
                               phone: ownerProfileForm.phone.trim(),
-                              whatsappNumber: (ownerProfileForm.whatsappNumber || ownerProfileForm.phone).trim()
+                              whatsappNumber: wa
                             });
                             setIsEditingOwnerProfile(false);
                           }}
@@ -2231,12 +2258,22 @@ export const App: React.FC = () => {
                     type="text"
                     value={phoneInput}
                     onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="+91..."
-                    className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg w-36 font-semibold"
+                    placeholder="10-digit mobile"
+                    className={`px-2.5 py-1 text-xs border ${
+                      phoneInput && !isValidIndianMobileNumber(phoneInput)
+                        ? 'border-rose-400 focus:border-rose-600'
+                        : 'border-slate-200 focus:border-blue-600'
+                    } rounded-lg w-36 font-semibold outline-none`}
                   />
                   <button
-                    onClick={() => updateOwnerPhone(phoneInput)}
-                    className="px-2.5 py-1 text-xs bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800"
+                    onClick={() => {
+                      if (!isValidIndianMobileNumber(phoneInput)) {
+                        showToast("Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.");
+                        return;
+                      }
+                      updateOwnerPhone(phoneInput);
+                    }}
+                    className="px-2.5 py-1 text-xs bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800 cursor-pointer"
                   >
                     Update
                   </button>
