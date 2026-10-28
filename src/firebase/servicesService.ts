@@ -111,6 +111,12 @@ export const subscribeToFirestoreServices = (
       const photos = Array.isArray(data.photos) 
         ? data.photos.filter((p: any) => typeof p === 'string' && p.trim().length > 0) 
         : [];
+      if (typeof data.photoUrl === 'string' && data.photoUrl.trim().length > 0 && !photos.includes(data.photoUrl.trim())) {
+        photos.unshift(data.photoUrl.trim());
+      }
+      if (typeof data.businessCardPhoto === 'string' && data.businessCardPhoto.trim().length > 0 && !photos.includes(data.businessCardPhoto.trim())) {
+        photos.push(data.businessCardPhoto.trim());
+      }
       const areas = Array.isArray(data.serviceAreas) && data.serviceAreas.length > 0 
         ? data.serviceAreas 
         : (data.locality ? [data.locality] : ['All Gondia']);

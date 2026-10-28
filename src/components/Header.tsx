@@ -10,6 +10,7 @@ import {
   Sparkles,
   PhoneCall,
   Menu,
+  MoreVertical,
   X,
   Database,
   MessageCircle,
@@ -99,15 +100,15 @@ export const Header: React.FC = () => {
             </button>
 
             <button
-              onClick={() => navigateTo('map')}
+              onClick={() => navigateTo('owner')}
               className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-                activeTab === 'map'
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                activeTab === 'owner' && ownerSubTab !== 'moderation'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
               }`}
             >
-              <MapPin className="w-4 h-4" />
-              <span>Gondia Map</span>
+              <UserCheck className="w-4 h-4" />
+              <span>Owner Dashboard</span>
             </button>
 
             <button
@@ -143,15 +144,15 @@ export const Header: React.FC = () => {
             </button>
 
             <button
-              onClick={() => navigateTo('owner')}
+              onClick={() => navigateTo('map')}
               className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-                activeTab === 'owner' && ownerSubTab !== 'moderation'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                activeTab === 'map'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <UserCheck className="w-4 h-4" />
-              <span>Owner Dashboard</span>
+              <MapPin className="w-4 h-4" />
+              <span>Gondia Map</span>
             </button>
 
             {isAdminAuthenticated && (
@@ -279,21 +280,21 @@ export const Header: React.FC = () => {
               )}
             </div>
 
-            {/* 3-bar hamburger menu button - accessible on any phone or computer */}
+            {/* 3-dot menu button - accessible on any phone or computer */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-xl text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors flex items-center gap-1.5 cursor-pointer ml-1"
               aria-label="Toggle Menu"
               title="Menu & Admin Panel"
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <MoreVertical className="w-5 h-5" />}
               <span className="hidden sm:inline text-xs font-bold text-slate-700">Menu</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Hamburger Drawer Menu - Accessible on phone or computer */}
+      {/* 3-Dot Drawer Menu - Accessible on phone or computer */}
       {mobileMenuOpen && (
         <div className="bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 animate-in slide-in-from-top-2 shadow-lg">
           <button
@@ -305,15 +306,22 @@ export const Header: React.FC = () => {
             <Building2 className="w-4 h-4 text-blue-600" />
             Explore Properties in Gondia
           </button>
+
           <button
-            onClick={() => { navigateTo('map'); setMobileMenuOpen(false); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold ${
-              activeTab === 'map' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
-            }`}
+            onClick={() => { navigateTo('owner'); setMobileMenuOpen(false); }}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
           >
-            <MapPin className="w-4 h-4 text-blue-600" />
-            Interactive Gondia Map
+            <div className="flex items-center gap-3">
+              <UserCheck className="w-4 h-4 text-slate-600" />
+              Owner Dashboard
+            </div>
+            {pendingCount > 0 && !isAdminAuthenticated && (
+              <span className="bg-amber-400 text-slate-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {pendingCount} Pending
+              </span>
+            )}
           </button>
+
           <button
             onClick={() => { navigateTo('services'); setMobileMenuOpen(false); }}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
@@ -328,6 +336,7 @@ export const Header: React.FC = () => {
               Mess, Maid, Repair
             </span>
           </button>
+
           <button
             onClick={() => { navigateTo('saved'); setMobileMenuOpen(false); }}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
@@ -344,22 +353,18 @@ export const Header: React.FC = () => {
               </span>
             )}
           </button>
+
           <button
-            onClick={() => { navigateTo('owner'); setMobileMenuOpen(false); }}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            onClick={() => { navigateTo('map'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold ${
+              activeTab === 'map' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
+            }`}
           >
-            <div className="flex items-center gap-3">
-              <UserCheck className="w-4 h-4 text-slate-600" />
-              Owner Dashboard
-            </div>
-            {pendingCount > 0 && !isAdminAuthenticated && (
-              <span className="bg-amber-400 text-slate-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {pendingCount} Pending
-              </span>
-            )}
+            <MapPin className="w-4 h-4 text-blue-600" />
+            Interactive Gondia Map
           </button>
 
-          {/* Admin Panel Entry - Moved into hamburger menu, protected & accessible on any device */}
+          {/* Admin Panel Entry - Moved into menu, protected & accessible on any device */}
           <button
             onClick={() => { 
               navigateTo('owner'); 

@@ -19,12 +19,14 @@ import {
   X,
   ShieldAlert,
   Award,
-  Pencil
+  Pencil,
+  Camera
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { ServiceGalleryModal } from './ServiceGalleryModal';
 
 interface ServiceCardProps {
   service: ServiceItem;
@@ -45,9 +47,11 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   const canEdit = Boolean(onEdit && (isAdmin || isServiceOwner(service)));
   const [showVisitingCardModal, setShowVisitingCardModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
-  // Close visiting card or photo preview first when pressing Android back button
+  // Close gallery, visiting card or photo preview first when pressing Android back button
+  useBackHandler(showGallery, () => setShowGallery(false), 'service-gallery-modal');
   useBackHandler(showVisitingCardModal, () => setShowVisitingCardModal(false), 'service-visiting-card');
   useBackHandler(Boolean(selectedPhoto), () => setSelectedPhoto(null), 'service-photo-preview');
 
@@ -100,7 +104,9 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
 
   return (
     <>
-      <div className={`bg-white rounded-3xl border transition-all duration-300 overflow-hidden flex flex-col group relative ${
+      <div 
+        onClick={() => setShowGallery(true)}
+        className={`bg-white rounded-3xl border transition-all duration-300 overflow-hidden flex flex-col group relative cursor-pointer ${
         isMessTiffin 
           ? 'border-amber-300/80 shadow-md hover:shadow-2xl ring-1 ring-amber-400/30' 
           : 'border-slate-200/90 shadow-xs hover:shadow-xl'
@@ -182,7 +188,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
             {visitingCard && (
               <button
                 type="button"
-                onClick={() => setShowVisitingCardModal(true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowVisitingCardModal(true);
+                }}
                 className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg backdrop-blur-md flex items-center gap-1 transition-colors border border-white/30"
                 title="View Visiting / Business Card"
               >
@@ -274,7 +283,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               {/* WhatsApp Contact Button */}
               <button
                 type="button"
-                onClick={() => openWhatsApp(service.whatsappNumber || service.phone, defaultMsg)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openWhatsApp(service.whatsappNumber || service.phone, defaultMsg);
+                }}
                 className="flex-1 bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform active:scale-95 cursor-pointer"
                 title={`WhatsApp ${service.providerName}`}
               >
@@ -285,6 +297,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               {/* Call Phone Button */}
               <a
                 href={`tel:${service.phone}`}
+                onClick={(e) => e.stopPropagation()}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs active:scale-95 cursor-pointer text-center"
                 title={`Call ${service.providerName}`}
               >
@@ -299,7 +312,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {onEdit && (
                   <button
                     type="button"
-                    onClick={() => onEdit(service)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(service);
+                    }}
                     className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
                     title="Edit Service Details (Admin Direct Publish)"
                   >
@@ -310,7 +326,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {onModerate && !isApproved(service.status) && (
                   <button
                     type="button"
-                    onClick={() => onModerate(service.id, true)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onModerate(service.id, true);
+                    }}
                     className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -320,7 +339,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {onModerate && isApproved(service.status) && (
                   <button
                     type="button"
-                    onClick={() => onModerate(service.id, false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onModerate(service.id, false);
+                    }}
                     className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <ShieldAlert className="w-3.5 h-3.5" />
@@ -330,7 +352,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {onDelete && (
                   <button
                     type="button"
-                    onClick={() => setShowDeleteConfirm(true)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteConfirm(true);
+                    }}
                     className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer"
                   >
                     Delete
@@ -341,7 +366,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => onEdit && onEdit(service)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onEdit) onEdit(service);
+                  }}
                   className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
                   title="Edit Your Service Listing"
                 >
@@ -415,6 +443,13 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           setShowDeleteConfirm(false);
         }}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      {/* Swipeable Photo Gallery Modal */}
+      <ServiceGalleryModal
+        isOpen={showGallery}
+        provider={service}
+        onClose={() => setShowGallery(false)}
       />
     </>
   );

@@ -116,14 +116,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ? source.photos.filter((p: any) => typeof p === 'string' && p.trim().length > 0)
           : [];
 
-        let initialCard = (typeof source.businessCardPhoto === 'string' && source.businessCardPhoto.trim().length > 0)
+        const initialCard = (typeof source.businessCardPhoto === 'string' && source.businessCardPhoto.trim().length > 0)
           ? source.businessCardPhoto.trim()
           : '';
-
-        // If no explicit businessCardPhoto, check if photos array has a secondary photo that served as visiting card
-        if (!initialCard && rawPhotos.length > 1) {
-          initialCard = rawPhotos[1];
-        }
 
         const setupPhotos = initialCard
           ? rawPhotos.filter(p => p !== initialCard)

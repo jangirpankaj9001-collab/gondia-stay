@@ -18,12 +18,14 @@ import {
   X,
   SlidersHorizontal,
   Pencil,
-  Clock
+  Clock,
+  Camera
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
 import { openWhatsApp, formatDisplayPhone, isValidIndianMobileNumber } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { ServiceGalleryModal } from './ServiceGalleryModal';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -175,6 +177,9 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   // Delete confirmation dialog state
   const [serviceToDelete, setServiceToDelete] = useState<ServiceItem | null>(null);
 
+  // Swipeable photo gallery modal state
+  const [selectedGalleryProvider, setSelectedGalleryProvider] = useState<ServiceItem | null>(null);
+
   const handleProviderEditClick = (provider: ServiceItem) => {
     if (isAdmin || isServiceOwner(provider)) {
       if (onEdit) onEdit(provider);
@@ -237,7 +242,8 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   };
 
   // Android Phone Back-Button & Browser History Handlers:
-  // Close visiting card preview modal first, or exit dedicated category view back to main grid
+  // Close gallery, visiting card preview modal first, or exit dedicated category view back to main grid
+  useBackHandler(Boolean(selectedGalleryProvider), () => setSelectedGalleryProvider(null), 'service-gallery-view');
   useBackHandler(Boolean(selectedVisitingCard), () => setSelectedVisitingCard(null), 'visiting-card-preview');
   useBackHandler(Boolean(verifyingService), () => setVerifyingService(null), 'verify-service-owner');
   useBackHandler(Boolean(activeDedicatedCategory), handleBackToGrid, 'service-subcategory-view');
@@ -372,10 +378,27 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                 const primaryPhoto = (provider.photos && provider.photos.length > 0) ? provider.photos[0] : null;
                 const visitingCard = provider.businessCardPhoto || (provider.photos && provider.photos[1]) || null;
 
+                // Collect all uploaded photos
+                const allPhotos: string[] = [];
+                if (Array.isArray(provider.photos)) {
+                  provider.photos.forEach(p => {
+                    if (typeof p === 'string' && p.trim() && !allPhotos.includes(p.trim())) {
+                      allPhotos.push(p.trim());
+                    }
+                  });
+                }
+                if (provider.businessCardPhoto && typeof provider.businessCardPhoto === 'string' && provider.businessCardPhoto.trim()) {
+                  if (!allPhotos.includes(provider.businessCardPhoto.trim())) {
+                    allPhotos.push(provider.businessCardPhoto.trim());
+                  }
+                }
+
                 return (
                   <div
                     key={provider.id}
-                    className="bg-white rounded-3xl border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-blue-300 transition-all duration-200 flex flex-col justify-between overflow-hidden group"
+                    onClick={() => setSelectedGalleryProvider(provider)}
+                    className="bg-white rounded-3xl border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-blue-300 transition-all duration-200 flex flex-col justify-between overflow-hidden group cursor-pointer"
+                    title={`Tap to view all photos for ${provider.providerName}`}
                   >
                     <div>
                       {/* Photo Header */}
@@ -428,6 +451,14 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                             {provider.charges}
                           </span>
                         </div>
+
+                        {/* Photos count badge */}
+                        {allPhotos.length > 0 && (
+                          <div className="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm">
+                            <Camera className="w-3 h-3 text-blue-400" />
+                            <span>{allPhotos.length} {allPhotos.length === 1 ? 'Photo' : 'Photos'}</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Content Body */}
@@ -490,7 +521,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                         {/* WhatsApp Contact Button */}
                         <button
                           type="button"
-                          onClick={() => openWhatsApp(provider.whatsappNumber || provider.phone, whatsappMsg)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openWhatsApp(provider.whatsappNumber || provider.phone, whatsappMsg);
+                          }}
                           className="py-2.5 px-3 bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform active:scale-95 cursor-pointer"
                           title={`WhatsApp ${provider.providerName}`}
                         >
@@ -501,6 +535,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                         {/* Phone Call Button */}
                         <a
                           href={`tel:${provider.phone}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform active:scale-95 text-center cursor-pointer"
                           title={`Call ${provider.providerName}`}
                         >
@@ -513,13 +548,16 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                       {visitingCard && (
                         <button
                           type="button"
-                          onClick={() => setSelectedVisitingCard({
-                            url: visitingCard,
-                            title: provider.title,
-                            provider: provider.providerName,
-                            phone: provider.phone,
-                            locality: provider.locality || 'Gondia'
-                          })}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedVisitingCard({
+                              url: visitingCard,
+                              title: provider.title,
+                              provider: provider.providerName,
+                              phone: provider.phone,
+                              locality: provider.locality || 'Gondia'
+                            });
+                          }}
                           className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <CreditCard className="w-3.5 h-3.5 text-blue-600" />
@@ -533,7 +571,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           {onEdit && (
                             <button
                               type="button"
-                              onClick={() => onEdit(provider)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEdit(provider);
+                              }}
                               className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer"
                               title="Edit service details (Admin Direct Publish)"
                             >
@@ -544,7 +585,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           {onModerate && !isApproved(provider.status) ? (
                             <button
                               type="button"
-                              onClick={() => onModerate(provider.id, true)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onModerate(provider.id, true);
+                              }}
                               className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Approve Listing
@@ -552,7 +596,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           ) : onModerate ? (
                             <button
                               type="button"
-                              onClick={() => onModerate(provider.id, false)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onModerate(provider.id, false);
+                              }}
                               className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Reject Listing
@@ -561,7 +608,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           {onDelete && (
                             <button
                               type="button"
-                              onClick={() => setServiceToDelete(provider)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setServiceToDelete(provider);
+                              }}
                               className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg cursor-pointer"
                             >
                               Delete
@@ -572,7 +622,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                         <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
                           <button
                             type="button"
-                            onClick={() => handleProviderEditClick(provider)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleProviderEditClick(provider);
+                            }}
                             className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
                             title="Edit Service Listing (Provider)"
                           >
@@ -757,6 +810,13 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
           }
         }}
         onCancel={() => setServiceToDelete(null)}
+      />
+
+      {/* Swipeable Photo Gallery Modal */}
+      <ServiceGalleryModal
+        isOpen={Boolean(selectedGalleryProvider)}
+        provider={selectedGalleryProvider}
+        onClose={() => setSelectedGalleryProvider(null)}
       />
     </div>
   );
