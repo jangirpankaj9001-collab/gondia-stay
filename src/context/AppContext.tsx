@@ -41,6 +41,7 @@ import {
   moderateServiceInFirestore,
   moderateServiceEditInFirestore,
   deleteServiceInFirestore,
+  rateServiceInFirestore,
   getCachedServices
 } from '../firebase/servicesService';
 import { isValidIndianMobileNumber } from '../utils/contact';
@@ -54,6 +55,9 @@ interface AppContextType {
   moderateService: (serviceId: string, approve: boolean) => Promise<boolean>;
   moderateServiceEdit: (serviceId: string, approve: boolean) => Promise<boolean>;
   deleteService: (serviceId: string) => Promise<boolean>;
+  rateService: (serviceId: string, score: number) => Promise<{ success: boolean; error?: string }>;
+  hasUserRatedService: (serviceId: string) => boolean;
+  getUserRatingForService: (serviceId: string) => number | undefined;
   isServiceOwner: (service: ServiceItem) => boolean;
   isPropertyOwner: (property: PropertyListing) => boolean;
   myServiceIds: string[];
@@ -910,6 +914,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return success;
   };
 
+  // Local storage mapping for user ratings submitted by this visitor/device (serviceId -> score)
+  const [userRatings, setUserRatings] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('gondia_stay_user_service_ratings');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const getOrCreateClientId = useCallback((): string => {
+    try {
+      if (authUser?.uid) return authUser.uid;
+      const saved = localStorage.getItem('gondia_stay_client_id');
+      if (saved) return saved;
+      const newId = `usr_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem('gondia_stay_client_id', newId);
+      return newId;
+    } catch {
+      return `usr_${Date.now()}`;
+    }
+  }, [authUser]);
+
+  const hasUserRatedService = useCallback((serviceId: string): boolean => {
+    return Boolean(userRatings[serviceId]);
+  }, [userRatings]);
+
+  const getUserRatingForService = useCallback((serviceId: string): number | undefined => {
+    return userRatings[serviceId];
+  }, [userRatings]);
+
+  /**
+   * Submits a 1-5 star rating for a service provider.
+   * Updates average rating, prevents repeated ratings, and synchronizes with Cloud Firestore.
+   */
+  const rateService = async (
+    serviceId: string, 
+    score: number
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (hasUserRatedService(serviceId)) {
+      const prev = userRatings[serviceId];
+      showToast(`You have already rated this service provider (${prev}★). Thank you!`);
+      return { success: false, error: 'Already rated' };
+    }
+
+    const safeScore = Math.max(1, Math.min(5, Math.round(score)));
+    const clientId = getOrCreateClientId();
+
+    // Optimistically calculate and update state
+    setServices(prev => prev.map(s => {
+      if (s.id === serviceId) {
+        const currentCount = s.reviewCount || 1;
+        const currentRating = s.rating || 5.0;
+        const currentTotal = s.ratingTotal ?? (currentRating * currentCount);
+        const newCount = currentCount + 1;
+        const newTotal = currentTotal + safeScore;
+        const newRating = Math.round((newTotal / newCount) * 10) / 10;
+        return {
+          ...s,
+          rating: newRating,
+          reviewCount: newCount,
+          ratingTotal: newTotal,
+          updatedAt: Date.now()
+        };
+      }
+      return s;
+    }));
+
+    // Record user rating locally to prevent duplicate ratings
+    setUserRatings(prev => {
+      const updated = { ...prev, [serviceId]: safeScore };
+      try {
+        localStorage.setItem('gondia_stay_user_service_ratings', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Synchronize to Firestore
+    try {
+      await rateServiceInFirestore(serviceId, safeScore, clientId);
+    } catch (err: any) {
+      console.warn('[GondiaStay] Error updating rating in Firestore:', err);
+    }
+
+    showToast(`Thank you! Your ${safeScore}-star rating has been submitted.`);
+    return { success: true };
+  };
+
   /**
    * Secure Admin Authentication using Firebase Authentication (Email/Password)
    */
@@ -1388,6 +1480,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       myServiceTokens,
       saveServiceToken,
       getServiceToken,
+      rateService,
+      hasUserRatedService,
+      getUserRatingForService,
       setIsFirebaseModalOpen,
       clearFirestoreError
     }}>

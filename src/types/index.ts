@@ -240,6 +240,7 @@ export interface ServiceItem {
   status: ListingStatus;
   rating?: number;
   reviewCount?: number;
+  ratingTotal?: number;
   isFeatured?: boolean;
   specialties?: string[];
   createdAt?: number;

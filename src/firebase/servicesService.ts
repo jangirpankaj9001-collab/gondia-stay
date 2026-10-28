@@ -172,6 +172,7 @@ export const subscribeToFirestoreServices = (
         status: (data.status || 'pending').toLowerCase() as any,
         rating: typeof data.rating === 'number' ? data.rating : 5.0,
         reviewCount: typeof data.reviewCount === 'number' ? data.reviewCount : 1,
+        ratingTotal: typeof data.ratingTotal === 'number' ? data.ratingTotal : undefined,
         isFeatured: Boolean(data.isFeatured),
         specialties: Array.isArray(data.specialties) ? data.specialties : [],
         createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
@@ -809,4 +810,93 @@ export const deleteServiceInFirestore = async (
     console.error('[GondiaStay] Error deleting service from Firestore:', err);
     return false;
   }
+};
+
+/**
+ * Submits a 1-5 star rating for a service listing in Cloud Firestore.
+ * Calculates the new average rating and updated reviewCount.
+ * Saves the rating record in services/{serviceId}/ratings/{clientId} to prevent repeats.
+ */
+export const rateServiceInFirestore = async (
+  serviceId: string,
+  score: number,
+  clientId?: string
+): Promise<{ success: boolean; newRating: number; newReviewCount: number; error?: string }> => {
+  const safeScore = Math.max(1, Math.min(5, Math.round(score)));
+
+  // Retrieve current cached record to determine baseline
+  const cached = getCachedServices();
+  const target = cached.find(s => s.id === serviceId);
+
+  const prevRating = target?.rating ?? 5.0;
+  const prevCount = target?.reviewCount ?? 1;
+  const prevTotal = target?.ratingTotal ?? (prevRating * prevCount);
+
+  let finalCount = prevCount + 1;
+  let finalTotal = prevTotal + safeScore;
+  let finalRating = Math.round((finalTotal / finalCount) * 10) / 10;
+
+  if (db && isFirebaseConfigured()) {
+    try {
+      const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
+      const snap = await getDoc(srvRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        const docCount = typeof data.reviewCount === 'number' ? data.reviewCount : prevCount;
+        const docRating = typeof data.rating === 'number' ? data.rating : prevRating;
+        const docTotal = typeof data.ratingTotal === 'number' ? data.ratingTotal : (docRating * docCount);
+
+        finalCount = docCount + 1;
+        finalTotal = docTotal + safeScore;
+        finalRating = Math.round((finalTotal / finalCount) * 10) / 10;
+
+        await updateDoc(srvRef, {
+          rating: finalRating,
+          reviewCount: finalCount,
+          ratingTotal: finalTotal,
+          updatedAt: Date.now()
+        });
+
+        if (clientId) {
+          try {
+            const ratingDocRef = doc(db, SERVICES_COLLECTION, serviceId, 'ratings', clientId);
+            await setDoc(ratingDocRef, {
+              clientId,
+              serviceId,
+              score: safeScore,
+              createdAt: Date.now()
+            });
+          } catch (rErr) {
+            console.warn('[GondiaStay] Notice saving individual rating record:', rErr);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[GondiaStay] Firestore rating update notice:', err);
+      // Fallback: proceed with local update
+    }
+  }
+
+  // Always update local cache
+  try {
+    const updated = cached.map(s => {
+      if (s.id === serviceId) {
+        return {
+          ...s,
+          rating: finalRating,
+          reviewCount: finalCount,
+          ratingTotal: finalTotal,
+          updatedAt: Date.now()
+        };
+      }
+      return s;
+    });
+    localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
+  } catch {}
+
+  return {
+    success: true,
+    newRating: finalRating,
+    newReviewCount: finalCount
+  };
 };

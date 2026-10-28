@@ -44,12 +44,18 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   onDelete,
   onEdit
 }) => {
-  const { isServiceOwner } = useApp();
+  const { 
+    isServiceOwner,
+    rateService,
+    hasUserRatedService,
+    getUserRatingForService
+  } = useApp();
   const canEdit = Boolean(onEdit && (isAdmin || isServiceOwner(service)));
   const [showVisitingCardModal, setShowVisitingCardModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [hoveredRating, setHoveredRating] = useState<number>(0);
 
   // Close gallery, visiting card or photo preview first when pressing Android back button
   useBackHandler(showGallery, () => setShowGallery(false), 'service-gallery-modal');
@@ -142,8 +148,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
             {/* Rating / Review */}
             <div className="bg-black/75 backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded-xl flex items-center gap-1">
               <Star className="w-3.5 h-3.5 text-amber-400 fill-current" />
-              <span>{service.rating || '4.8'}</span>
-              <span className="text-slate-400 text-[10px]">({service.reviewCount || '25+'})</span>
+              <span>{typeof service.rating === 'number' ? service.rating.toFixed(1) : (service.rating || '5.0')}</span>
+              <span className="text-slate-400 text-[10px]">({service.reviewCount || 1})</span>
             </div>
           </div>
 
@@ -276,6 +282,76 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Interactive 5-Star Rating Widget */}
+          <div className="px-3.5 py-2.5 bg-slate-50/80 rounded-xl border border-slate-100 flex items-center justify-between gap-2 mt-3 mb-2">
+            <div className="text-left">
+              {hasUserRatedService(service.id) ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Rated {getUserRatingForService(service.id)}★
+                  </span>
+                  <span className="text-[10px] text-slate-400 hidden sm:inline">Saved</span>
+                </div>
+              ) : (
+                <div>
+                  <span className="text-[11px] font-bold text-slate-700 block">Rate this service</span>
+                  <span className="text-[9px] text-slate-400">Tap 1 to 5 stars</span>
+                </div>
+              )}
+            </div>
+
+            <div 
+              className="flex items-center gap-0.5"
+              onMouseLeave={() => setHoveredRating(0)}
+            >
+              {[1, 2, 3, 4, 5].map(star => {
+                const userScore = getUserRatingForService(service.id);
+                const isRated = hasUserRatedService(service.id);
+                const isFilled = isRated 
+                  ? (userScore ? star <= userScore : false)
+                  : (hoveredRating ? star <= hoveredRating : false);
+
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    disabled={isRated}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isRated) {
+                        rateService(service.id, star);
+                      }
+                    }}
+                    onMouseEnter={() => {
+                      if (!isRated) {
+                        setHoveredRating(star);
+                      }
+                    }}
+                    className={`p-1.5 rounded-lg transition-all ${
+                      isRated
+                        ? 'cursor-default opacity-85'
+                        : 'cursor-pointer hover:scale-110 active:scale-95 hover:bg-amber-100/60'
+                    }`}
+                    title={
+                      isRated 
+                        ? `You rated this service ${userScore} stars` 
+                        : `Rate ${star} star${star > 1 ? 's' : ''}`
+                    }
+                  >
+                    <Star 
+                      className={`w-4 h-4 transition-colors ${
+                        isFilled
+                          ? 'fill-amber-400 text-amber-500'
+                          : 'text-slate-300 fill-slate-100'
+                      }`} 
+                    />
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Action Buttons: Phone & WhatsApp */}

@@ -371,12 +371,26 @@ service cloud.firestore {
           ));
       }
 
+      // Permitted rating update on approved services:
+      // Allows anyone (or authenticated users) to submit a rating by updating rating, reviewCount, ratingTotal, and updatedAt
+      function isValidRatingUpdate() {
+        return (resource.data.status in ['approved', 'APPROVED'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'reviewCount', 'ratingTotal', 'updatedAt'])
+          && request.resource.data.rating is number
+          && request.resource.data.rating >= 1.0
+          && request.resource.data.rating <= 5.0
+          && request.resource.data.reviewCount is number
+          && request.resource.data.reviewCount > 0;
+      }
+
       // 3. Update:
       // - Verified admin can update/publish directly, approve, or reject.
+      // - Users can submit 1-5 star ratings on approved services.
       // - Service provider can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
       // - Service provider can update pending drafts (keeping status pending).
       // - Verified service edit-token holder can update listing fields.
       allow update: if isAdmin() 
+        || isValidRatingUpdate()
         || isValidProviderPendingEditSubmission()
         || isValidPendingServiceDraftUpdate()
         || (
@@ -392,6 +406,16 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/service_secrets/$(serviceId))
           && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken
         );
+
+      // Service Ratings Subcollection: Stores each individual user rating (1-5 stars)
+      match /ratings/{ratingId} {
+        allow read: if true;
+        allow create: if request.resource.data.score is number
+          && request.resource.data.score >= 1
+          && request.resource.data.score <= 5
+          && request.resource.data.serviceId == serviceId;
+        allow update, delete: if isAdmin();
+      }
     }
 
     // Service Secrets: Stores private edit token and owner ID for each service
