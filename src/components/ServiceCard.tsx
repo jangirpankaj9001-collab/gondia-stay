@@ -20,7 +20,8 @@ import {
   ShieldAlert,
   Award,
   Pencil,
-  Camera
+  Camera,
+  Trash2
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
@@ -364,7 +365,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 )}
               </div>
             ) : canEdit ? (
-              <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+              <div className="pt-2 flex items-center gap-2 border-t border-slate-100 flex-wrap sm:flex-nowrap">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -377,6 +378,20 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                   <Pencil className="w-3.5 h-3.5" />
                   <span>Edit Service Listing</span>
                 </button>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200 shrink-0"
+                    title="Delete Service Listing (Owner)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Service Listing</span>
+                  </button>
+                )}
                 {service.hasPendingEdit && (
                   <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-1 rounded-lg border border-amber-300 shrink-0 flex items-center gap-1">
                     <Clock className="w-3 h-3 text-amber-700" />

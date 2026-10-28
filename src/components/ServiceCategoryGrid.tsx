@@ -19,13 +19,16 @@ import {
   SlidersHorizontal,
   Pencil,
   Clock,
-  Camera
+  Camera,
+  Trash2,
+  KeyRound
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
-import { openWhatsApp, formatDisplayPhone, isValidIndianMobileNumber } from '../utils/contact';
+import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
+import { verifyServiceOwnershipSecurely } from '../firebase/servicesService';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -149,7 +152,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   onDelete,
   onEdit
 }) => {
-  const { isServiceOwner, saveServiceId, showToast } = useApp();
+  const { isServiceOwner, saveServiceId, saveServiceToken, showToast } = useApp();
 
   // Currently opened category in dedicated view (null means grid of 8 icons is shown)
   const [activeDedicatedCategory, setActiveDedicatedCategory] = useState<ServiceCategory | null>(
@@ -169,10 +172,12 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     locality: string;
   } | null>(null);
 
-  // Provider ownership verification state to unlock editing from any device
+  // Provider ownership verification state to unlock editing or deleting from another device
   const [verifyingService, setVerifyingService] = useState<ServiceItem | null>(null);
-  const [verifyPhoneInput, setVerifyPhoneInput] = useState('');
+  const [verifyingAction, setVerifyingAction] = useState<'edit' | 'delete'>('edit');
+  const [verifyInput, setVerifyInput] = useState('');
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Delete confirmation dialog state
   const [serviceToDelete, setServiceToDelete] = useState<ServiceItem | null>(null);
@@ -186,35 +191,60 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
       if (onEdit) onEdit(provider);
       return;
     }
-    // Need ownership verification via registered phone
+    // Need ownership verification via Owner ID or Edit Token
     setVerifyingService(provider);
-    setVerifyPhoneInput('');
+    setVerifyingAction('edit');
+    setVerifyInput('');
     setVerifyError(null);
   };
 
-  const handleVerifyOwnershipSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!verifyingService) return;
-    if (!verifyPhoneInput.trim() || !isValidIndianMobileNumber(verifyPhoneInput)) {
-      setVerifyError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
+  const handleProviderDeleteClick = (provider: ServiceItem) => {
+    if (isAdmin || isServiceOwner(provider)) {
+      // Ask for confirmation before deletion
+      setServiceToDelete(provider);
       return;
     }
-    const cleanInput = verifyPhoneInput.trim().replace(/\D/g, '');
-    const cleanProvPhone = (verifyingService.phone || verifyingService.ownerPhone || '').replace(/\D/g, '');
-    const cleanProvWhatsapp = (verifyingService.whatsappNumber || verifyingService.ownerWhatsappNumber || '').replace(/\D/g, '');
+    // Need ownership verification via Owner ID or Edit Token before asking for delete confirmation
+    setVerifyingService(provider);
+    setVerifyingAction('delete');
+    setVerifyInput('');
+    setVerifyError(null);
+  };
 
-    const inputLast10 = cleanInput.slice(-10);
-    const phoneMatch = cleanProvPhone.length >= 10 && cleanProvPhone.endsWith(inputLast10);
-    const whatsappMatch = cleanProvWhatsapp.length >= 10 && cleanProvWhatsapp.endsWith(inputLast10);
+  const handleVerifyOwnershipSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifyingService) return;
+    const cleanInput = verifyInput.trim();
+    if (!cleanInput) {
+      setVerifyError('Please enter the Owner ID or Edit Token for this service.');
+      return;
+    }
 
-    if (phoneMatch || whatsappMatch) {
-      saveServiceId(verifyingService.id);
-      showToast(`Provider verified! You can now edit "${verifyingService.title}".`);
-      const target = verifyingService;
-      setVerifyingService(null);
-      if (onEdit) onEdit(target);
-    } else {
-      setVerifyError('Phone number does not match this service listing. Only the verified provider or admin can edit this service.');
+    setIsVerifying(true);
+    setVerifyError(null);
+
+    try {
+      const isOwner = await verifyServiceOwnershipSecurely(verifyingService, cleanInput);
+      if (isOwner) {
+        saveServiceId(verifyingService.id);
+        saveServiceToken(verifyingService.id, cleanInput);
+        showToast(`Ownership verified for "${verifyingService.title}"!`);
+        const target = verifyingService;
+        const action = verifyingAction;
+        setVerifyingService(null);
+        if (action === 'delete') {
+          // Ask for confirmation before deletion
+          setServiceToDelete(target);
+        } else if (onEdit) {
+          onEdit(target);
+        }
+      } else {
+        setVerifyError('Verification failed: The entered Owner ID or Edit Token does not match this service listing. Only the verified listing owner or admin can edit or delete this service.');
+      }
+    } catch {
+      setVerifyError('Error checking service ownership. Please try again.');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -614,7 +644,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           )}
                         </div>
                       ) : onEdit ? (
-                        <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+                        <div className="pt-2 flex items-center gap-2 border-t border-slate-100 flex-wrap sm:flex-nowrap">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -627,6 +657,22 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                             <Pencil className="w-3.5 h-3.5" />
                             <span>Edit Service Listing</span>
                           </button>
+
+                          {onDelete && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleProviderDeleteClick(provider);
+                              }}
+                              className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200 shrink-0"
+                              title="Delete Service Listing (Owner)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete Service Listing</span>
+                            </button>
+                          )}
+
                           {provider.hasPendingEdit && (
                             <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-1 rounded-lg border border-amber-300 shrink-0 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-amber-700" />
@@ -712,16 +758,18 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
         </div>
       )}
 
-      {/* Provider Phone Verification Modal to Unlock Editing from Any Device */}
+      {/* Provider Ownership Verification Modal to Unlock Editing or Deleting from Another Device */}
       {verifyingService && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Pencil className="w-4 h-4" />
+                <div className={`w-8 h-8 rounded-xl ${verifyingAction === 'delete' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'} flex items-center justify-center`}>
+                  {verifyingAction === 'delete' ? <Trash2 className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}
                 </div>
-                <h3 className="text-sm font-extrabold text-slate-900">Verify Service Ownership</h3>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  {verifyingAction === 'delete' ? 'Verify Ownership to Delete' : 'Verify Service Ownership'}
+                </h3>
               </div>
               <button
                 type="button"
@@ -737,7 +785,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                 Service: <span className="font-extrabold text-blue-700">{verifyingService.title}</span>
               </p>
               <p className="text-xs text-slate-500 leading-relaxed">
-                To protect local listings, please enter the registered 10-digit mobile number for this service to unlock editing.
+                To {verifyingAction === 'delete' ? 'delete' : 'edit'} this service listing on this device, please verify ownership using your Service Owner ID or private Edit Token.
+              </p>
+              <p className="text-[11px] text-slate-400 leading-normal">
+                Only the listing owner and admin can {verifyingAction === 'delete' ? 'delete' : 'edit'} it; other owners cannot modify someone else's service.
               </p>
             </div>
 
@@ -750,26 +801,20 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
             <form onSubmit={handleVerifyOwnershipSubmit} className="space-y-3 pt-1">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Registered 10-digit Phone Number *
+                  Service Owner ID or Edit Token *
                 </label>
                 <input
-                  type="tel"
+                  type="text"
                   required
                   autoFocus
-                  value={verifyPhoneInput}
-                  onChange={(e) => setVerifyPhoneInput(e.target.value)}
-                  placeholder="10-digit mobile (e.g. 98230 12345)"
-                  className={`w-full px-3.5 py-2.5 bg-slate-50 border ${
-                    verifyPhoneInput && !isValidIndianMobileNumber(verifyPhoneInput)
-                      ? 'border-rose-400 focus:border-rose-600'
-                      : 'border-slate-300 focus:border-blue-600'
-                  } rounded-xl text-xs text-slate-900 font-semibold focus:bg-white outline-none`}
+                  value={verifyInput}
+                  onChange={(e) => setVerifyInput(e.target.value)}
+                  placeholder="Enter Owner ID or Edit Token"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 focus:border-blue-600 rounded-xl text-xs text-slate-900 font-semibold focus:bg-white outline-none"
                 />
-                {verifyPhoneInput && !isValidIndianMobileNumber(verifyPhoneInput) && (
-                  <p className="text-[10px] text-rose-600 font-semibold mt-1">
-                    Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
-                  </p>
-                )}
+                <p className="text-[10px] text-slate-500 font-medium mt-1">
+                  Provided when your service was registered (or your signed-in owner ID).
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">
@@ -782,10 +827,17 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                  disabled={isVerifying}
+                  className={`px-5 py-2 ${verifyingAction === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'} text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5`}
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Verify & Edit</span>
+                  {isVerifying ? (
+                    <span>Verifying...</span>
+                  ) : (
+                    <>
+                      {verifyingAction === 'delete' ? <Trash2 className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                      <span>{verifyingAction === 'delete' ? 'Verify & Delete' : 'Verify & Edit'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

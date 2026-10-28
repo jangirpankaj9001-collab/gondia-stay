@@ -220,6 +220,7 @@ export interface ServiceItem {
   ownerName?: string;
   ownerId?: string;
   ownerEmail?: string;
+  editToken?: string;
   phone: string;
   ownerPhone?: string;
   whatsappNumber?: string;

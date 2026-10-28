@@ -49,7 +49,7 @@ interface AppContextType {
   properties: PropertyListing[];
   tiffinServices: TiffinService[];
   services: ServiceItem[];
-  saveService: (service: Partial<ServiceItem>) => Promise<{ success: boolean; serviceId: string; error?: string }>;
+  saveService: (service: Partial<ServiceItem>) => Promise<{ success: boolean; serviceId: string; ownerId?: string; editToken?: string; error?: string }>;
   updateService: (serviceId: string, updatedFields: Partial<ServiceItem>) => Promise<{ success: boolean; error?: string }>;
   moderateService: (serviceId: string, approve: boolean) => Promise<boolean>;
   moderateServiceEdit: (serviceId: string, approve: boolean) => Promise<boolean>;
@@ -58,6 +58,9 @@ interface AppContextType {
   isPropertyOwner: (property: PropertyListing) => boolean;
   myServiceIds: string[];
   saveServiceId: (serviceId: string) => void;
+  myServiceTokens: Record<string, string>;
+  saveServiceToken: (serviceId: string, token: string) => void;
+  getServiceToken: (serviceId: string) => string | undefined;
   favorites: string[];
   currentOwner: OwnerProfile;
   searchQuery: string;
@@ -221,27 +224,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
+  // Local storage mapping for service private edit tokens (serviceId -> token)
+  const [myServiceTokens, setMyServiceTokens] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('gondia_stay_service_tokens');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const saveServiceToken = useCallback((serviceId: string, token: string) => {
+    setMyServiceTokens(prev => {
+      const updated = { ...prev, [serviceId]: token };
+      localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const getServiceToken = useCallback((serviceId: string): string | undefined => {
+    return myServiceTokens[serviceId];
+  }, [myServiceTokens]);
+
+  /**
+   * Secure service ownership check:
+   * - Admin always has full access
+   * - Verified service ID stored on this device
+   * - Valid private edit token possessed by this device
+   * - Logged-in Firebase account matching service.ownerId or service.ownerEmail
+   * - Verified custom owner profile matching service.ownerId (excluding public demo profile)
+   * Strictly prevents other owners from modifying or deleting someone else's service.
+   */
   const isServiceOwner = useCallback((service: ServiceItem): boolean => {
     if (isAdminAuthenticated) return true;
     if (myServiceIds.includes(service.id)) return true;
-    const sPhone = (service.phone || service.ownerPhone || '').replace(/\D/g, '');
-    const myPhone = (currentOwner.phone || '').replace(/\D/g, '');
-    if (myPhone.length >= 10 && sPhone.length >= 10) {
-      if (sPhone.endsWith(myPhone.slice(-10)) || myPhone.endsWith(sPhone.slice(-10))) {
+    if (myServiceTokens[service.id]) return true;
+    if (authUser) {
+      if (service.ownerId && (service.ownerId === authUser.uid || (service.ownerId === currentOwner.id && currentOwner.id !== 'owner_gondia_primary'))) {
+        return true;
+      }
+      if (service.ownerEmail && authUser.email && service.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) {
         return true;
       }
     }
-    if (authUser) {
-      if ((service as any).ownerId === authUser.uid) return true;
-      if (authUser.phoneNumber) {
-        const authPhone = authUser.phoneNumber.replace(/\D/g, '');
-        if (authPhone.length >= 10 && sPhone.length >= 10 && sPhone.endsWith(authPhone.slice(-10))) {
-          return true;
-        }
-      }
+    if (currentOwner.id && currentOwner.id !== 'owner_gondia_primary' && service.ownerId === currentOwner.id) {
+      return true;
     }
     return false;
-  }, [isAdminAuthenticated, myServiceIds, currentOwner.phone, authUser]);
+  }, [isAdminAuthenticated, myServiceIds, myServiceTokens, authUser, currentOwner]);
 
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
     if (isAdminAuthenticated) return true;
@@ -709,16 +739,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    */
   const saveService = async (
     service: Partial<ServiceItem>
-  ): Promise<{ success: boolean; serviceId: string; error?: string }> => {
+  ): Promise<{ success: boolean; serviceId: string; ownerId?: string; editToken?: string; error?: string }> => {
     const result = await saveServiceToFirestore(service, isAdminAuthenticated);
     if (result.success) {
       saveServiceId(result.serviceId);
+      if (result.editToken) {
+        saveServiceToken(result.serviceId, result.editToken);
+      }
       showToast(isAdminAuthenticated ? "Service listing published!" : "Service submitted! Awaiting admin verification.");
       const cleanService: ServiceItem = {
         id: result.serviceId,
         title: service.title || '',
         category: service.category || 'MESS_TIFFIN',
         providerName: service.providerName || '',
+        ownerName: service.providerName || '',
+        ownerId: result.ownerId || service.ownerId,
+        editToken: result.editToken || service.editToken,
         phone: service.phone || '',
         whatsappNumber: service.whatsappNumber || service.phone || '',
         charges: service.charges || '',
@@ -847,16 +883,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /**
    * Deletes a service listing permanently from Cloud Firestore.
+   * Only the actual listing owner or admin can delete it.
    */
   const deleteService = async (serviceId: string): Promise<boolean> => {
-    if (!isAdminAuthenticated) {
-      showToast("Admin verification required to delete services.");
+    const targetService = services.find(s => s.id === serviceId);
+    if (!isAdminAuthenticated && targetService && !isServiceOwner(targetService)) {
+      showToast("Unauthorized: Only the listing owner or admin can delete this service.");
       return false;
     }
-    const success = await deleteServiceInFirestore(serviceId);
+    const token = myServiceTokens[serviceId] || targetService?.editToken;
+    const ownerId = targetService?.ownerId;
+    const success = await deleteServiceInFirestore(serviceId, token, ownerId, isAdminAuthenticated);
     if (success) {
       setServices(prev => prev.filter(s => s.id !== serviceId));
+      setMyServiceIds(prev => prev.filter(id => id !== serviceId));
+      setMyServiceTokens(prev => {
+        const updated = { ...prev };
+        delete updated[serviceId];
+        localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated));
+        return updated;
+      });
       showToast("Service listing removed.");
+    } else {
+      showToast("Failed to delete service listing. Please check permissions.");
     }
     return success;
   };
@@ -1336,6 +1385,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isPropertyOwner,
       myServiceIds,
       saveServiceId,
+      myServiceTokens,
+      saveServiceToken,
+      getServiceToken,
       setIsFirebaseModalOpen,
       clearFirestoreError
     }}>

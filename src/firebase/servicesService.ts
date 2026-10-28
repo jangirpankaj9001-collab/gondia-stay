@@ -19,13 +19,16 @@ import {
   query, 
   where, 
   onSnapshot, 
-  Unsubscribe 
+  Unsubscribe,
+  writeBatch
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './config';
 import { isAuthorizedAdminEmail } from './propertiesService';
 import { ServiceItem, ServiceCategory } from '../types';
 
 export const SERVICES_COLLECTION = 'services';
+export const SERVICE_SECRETS_COLLECTION = 'service_secrets';
+export const SERVICE_EDIT_TOKENS_COLLECTION = 'service_edit_tokens';
 export const SERVICES_CACHE_KEY = 'gondia_stay_services_cache';
 export const DELETED_SERVICES_KEY = 'gondia_stay_deleted_services';
 
@@ -175,6 +178,9 @@ export const subscribeToFirestoreServices = (
         updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : Date.now(),
         moderatedAt: typeof data.moderatedAt === 'number' ? data.moderatedAt : undefined,
         moderatedBy: typeof data.moderatedBy === 'string' ? data.moderatedBy : undefined,
+        ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
+        ownerEmail: typeof data.ownerEmail === 'string' ? data.ownerEmail : undefined,
+        editToken: typeof data.editToken === 'string' ? data.editToken : undefined,
         hasPendingEdit: Boolean(data.hasPendingEdit),
         pendingEdit: data.pendingEdit || undefined
       });
@@ -259,15 +265,30 @@ export const subscribeToFirestoreServices = (
 };
 
 /**
+ * Generates an unguessable private edit token for local services.
+ */
+export const generateServiceEditToken = (): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = 'gst_srv_';
+  for (let i = 0; i < 28; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+};
+
+/**
  * Submits a new local service to Firestore.
  * Always defaults status to 'pending' unless caller has an authenticated Firebase Admin session.
  * Fully supports zero-login submissions from any resident or provider across Gondia.
+ * Secures the listing with unique ownerId and unguessable editToken.
  */
 export const saveServiceToFirestore = async (
   serviceData: Partial<ServiceItem>,
   isAdmin: boolean = false
-): Promise<{ success: boolean; serviceId: string; error?: string }> => {
+): Promise<{ success: boolean; serviceId: string; ownerId: string; editToken: string; error?: string }> => {
   const serviceId = serviceData.id || `srv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const ownerId = serviceData.ownerId || (auth?.currentUser?.uid ? auth.currentUser.uid : `srv_owner_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
+  const editToken = serviceData.editToken || generateServiceEditToken();
 
   // Determine if caller has an active, authorized Firebase administrator session
   const isRealAdminAuth = Boolean(
@@ -320,7 +341,8 @@ export const saveServiceToFirestore = async (
     specialties: Array.isArray(serviceData.specialties) ? serviceData.specialties : [],
     createdAt: typeof serviceData.createdAt === 'number' ? serviceData.createdAt : Date.now(),
     updatedAt: Date.now(),
-    ...(serviceData.ownerId ? { ownerId: serviceData.ownerId } : (auth?.currentUser?.uid ? { ownerId: auth.currentUser.uid } : {})),
+    ownerId,
+    editToken,
     ...(serviceData.ownerEmail ? { ownerEmail: serviceData.ownerEmail } : (auth?.currentUser?.email ? { ownerEmail: auth.currentUser.email } : {}))
   };
 
@@ -331,12 +353,30 @@ export const saveServiceToFirestore = async (
     try {
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
-    return { success: true, serviceId };
+    return { success: true, serviceId, ownerId, editToken };
   }
 
   try {
+    const batch = writeBatch(db);
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
-    await setDoc(docRef, cleanData);
+    batch.set(docRef, cleanData);
+
+    const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+    batch.set(secretRef, {
+      serviceId,
+      editToken,
+      ownerId,
+      createdAt: Date.now()
+    });
+
+    const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, editToken);
+    batch.set(tokenRef, {
+      serviceId,
+      ownerId,
+      createdAt: Date.now()
+    });
+
+    await batch.commit();
 
     // Also update local cache
     const cached = getCachedServices();
@@ -345,7 +385,7 @@ export const saveServiceToFirestore = async (
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
 
-    return { success: true, serviceId };
+    return { success: true, serviceId, ownerId, editToken };
   } catch (err: any) {
     console.error('[GondiaStay] Failed to save service in Firestore:', err);
 
@@ -369,6 +409,8 @@ export const saveServiceToFirestore = async (
     return {
       success: false,
       serviceId,
+      ownerId,
+      editToken,
       error: userFriendlyError
     };
   }
@@ -649,9 +691,74 @@ export const moderateServiceInFirestore = async (
 };
 
 /**
- * Admin action: deletes a service listing permanently from Firestore.
+ * Verifies if a given token or ownerId belongs to the service listing.
+ * Securely checks:
+ * 1. Matching ownerId
+ * 2. Matching editToken
+ * 3. Matching ownerEmail
+ * 4. Stored Firestore service_secrets or service_edit_tokens
  */
-export const deleteServiceInFirestore = async (serviceId: string): Promise<boolean> => {
+export const verifyServiceOwnershipSecurely = async (
+  service: ServiceItem,
+  tokenOrOwnerId: string
+): Promise<boolean> => {
+  if (!service || !tokenOrOwnerId) return false;
+  const cleanInput = tokenOrOwnerId.trim();
+  if (cleanInput.length === 0) return false;
+
+  // 1. Direct match with service ownerId
+  if (service.ownerId && service.ownerId.trim() === cleanInput) {
+    return true;
+  }
+
+  // 2. Direct match with service editToken
+  if (service.editToken && service.editToken.trim() === cleanInput) {
+    return true;
+  }
+
+  // 3. Direct match with service ownerEmail
+  if (service.ownerEmail && service.ownerEmail.trim().toLowerCase() === cleanInput.toLowerCase()) {
+    return true;
+  }
+
+  // 4. Check Firestore service_secrets / service_edit_tokens if Firebase is configured
+  if (db && isFirebaseConfigured()) {
+    try {
+      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, service.id);
+      const secretSnap = await getDoc(secretRef);
+      if (secretSnap.exists()) {
+        const secData = secretSnap.data();
+        if (secData.editToken === cleanInput || secData.ownerId === cleanInput) {
+          return true;
+        }
+      }
+
+      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanInput);
+      const tokenSnap = await getDoc(tokenRef);
+      if (tokenSnap.exists()) {
+        const tokenData = tokenSnap.data();
+        if (tokenData.serviceId === service.id) {
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('[GondiaStay] Error checking service secrets in Firestore:', e);
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Deletes a service listing permanently from Firestore.
+ * Supports deletion by verified administrator OR the service's verified owner.
+ */
+export const deleteServiceInFirestore = async (
+  serviceId: string,
+  token?: string,
+  ownerId?: string,
+  isAdminCaller: boolean = false
+): Promise<boolean> => {
   // Update local cache and deleted tracking
   try {
     const rawDeleted = localStorage.getItem(DELETED_SERVICES_KEY);
@@ -671,8 +778,32 @@ export const deleteServiceInFirestore = async (serviceId: string): Promise<boole
   }
 
   try {
-    const docRef = doc(db, SERVICES_COLLECTION, serviceId);
-    await deleteDoc(docRef);
+    const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
+    const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+
+    let secretExists = false;
+    let secretToken = '';
+    try {
+      const secretSnap = await getDoc(secretRef);
+      if (secretSnap.exists()) {
+        secretExists = true;
+        secretToken = secretSnap.data().editToken || '';
+      }
+    } catch {}
+
+    const tokenToUse = token || secretToken;
+
+    if (secretExists && tokenToUse) {
+      const batch = writeBatch(db);
+      batch.delete(srvRef);
+      batch.update(secretRef, {
+        verifiedToken: tokenToUse,
+        deletedAt: Date.now()
+      });
+      await batch.commit();
+    } else {
+      await deleteDoc(srvRef);
+    }
     return true;
   } catch (err) {
     console.error('[GondiaStay] Error deleting service from Firestore:', err);

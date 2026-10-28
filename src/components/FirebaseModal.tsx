@@ -214,7 +214,7 @@ service cloud.firestore {
           'whatsappNumber', 'ownerWhatsappNumber', 'charges', 'chargeUnit', 'priceNumeric',
           'description', 'serviceAreas', 'locality', 'city', 'address', 'photos',
           'businessCardPhoto', 'timing', 'experienceYears', 'specialties', 'status',
-          'updatedAt', 'hasPendingEdit', 'pendingEdit', 'ownerId', 'ownerEmail'
+          'updatedAt', 'hasPendingEdit', 'pendingEdit', 'ownerId', 'ownerEmail', 'editToken'
         ]);
       }
 
@@ -265,12 +265,63 @@ service cloud.firestore {
       // - Verified admin can update/publish directly, approve, or reject.
       // - Service provider can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
       // - Service provider can update pending drafts (keeping status pending).
+      // - Verified service edit-token holder can update listing fields.
       allow update: if isAdmin() 
         || isValidProviderPendingEditSubmission()
-        || isValidPendingServiceDraftUpdate();
+        || isValidPendingServiceDraftUpdate()
+        || (
+          exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken
+        );
 
-      // 4. Delete: Strictly restricted to authenticated administrator.
+      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder.
+      allow delete: if isAdmin() 
+        || isServiceOwner()
+        || (
+          exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken
+        );
+    }
+
+    match /service_secrets/{serviceId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() || (
+        (
+          !exists(/databases/$(database)/documents/services/$(serviceId))
+          && !exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+          && existsAfter(/databases/$(database)/documents/services/$(serviceId))
+          && request.resource.data.editToken is string
+          && request.resource.data.editToken.size() >= 16
+          && request.resource.data.serviceId == serviceId
+        )
+        || (
+          exists(/databases/$(database)/documents/services/$(serviceId))
+          && (
+            (request.auth != null && get(/databases/$(database)/documents/services/$(serviceId)).data.ownerId == request.auth.uid)
+            || (
+              get(/databases/$(database)/documents/services/$(serviceId)).data.ownerId != null
+              && request.resource.data.ownerId == get(/databases/$(database)/documents/services/$(serviceId)).data.ownerId
+            )
+          )
+          && request.resource.data.editToken is string
+          && request.resource.data.editToken.size() >= 16
+        )
+      );
+      allow update: if isAdmin() || (
+        request.resource.data.verifiedToken == resource.data.editToken
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'lastEditedAt', 'deletedAt'])
+      );
       allow delete: if isAdmin();
+    }
+
+    match /service_edit_tokens/{token} {
+      allow list: if isAdmin();
+      allow get: if true;
+      allow create: if isAdmin() || (
+        token.size() >= 16
+        && request.resource.data.serviceId is string
+      );
+      allow update, delete: if isAdmin();
     }
   }
 }`;
