@@ -323,9 +323,9 @@ export interface OwnerProfile {
 }
 
 export const DEFAULT_OWNER_PROFILE: OwnerProfile = {
-  id: 'owner_gondia_primary',
-  name: 'Rajesh Sharma',
-  phone: '+91 98230 12345',
-  whatsappNumber: '+91 98230 12345',
-  email: 'rajesh.sharma@gondiastay.com'
+  id: '',
+  name: '',
+  phone: '',
+  whatsappNumber: '',
+  email: ''
 };

@@ -288,8 +288,6 @@ export const saveServiceToFirestore = async (
   isAdmin: boolean = false
 ): Promise<{ success: boolean; serviceId: string; ownerId: string; editToken: string; error?: string }> => {
   const serviceId = serviceData.id || `srv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const ownerId = serviceData.ownerId || (auth?.currentUser?.uid ? auth.currentUser.uid : `srv_owner_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
-  const editToken = serviceData.editToken || generateServiceEditToken();
 
   // Determine if caller has an active, authorized Firebase administrator session
   const isRealAdminAuth = Boolean(
@@ -298,6 +296,13 @@ export const saveServiceToFirestore = async (
     auth.currentUser.email &&
     isAuthorizedAdminEmail(auth.currentUser.email)
   );
+
+  const ownerId = serviceData.ownerId || (
+    auth?.currentUser?.uid && !isRealAdminAuth
+      ? auth.currentUser.uid
+      : `srv_owner_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+  );
+  const editToken = serviceData.editToken || generateServiceEditToken();
 
   // Non-admin or unauthenticated submissions ALWAYS default to 'pending' so security rules succeed
   const cleanStatus = (isRealAdminAuth && serviceData.status) ? serviceData.status : 'pending';
@@ -344,7 +349,7 @@ export const saveServiceToFirestore = async (
     updatedAt: Date.now(),
     ownerId,
     editToken,
-    ...(serviceData.ownerEmail ? { ownerEmail: serviceData.ownerEmail } : (auth?.currentUser?.email ? { ownerEmail: auth.currentUser.email } : {}))
+    ...(serviceData.ownerEmail ? { ownerEmail: serviceData.ownerEmail } : (auth?.currentUser?.email && !isRealAdminAuth ? { ownerEmail: auth.currentUser.email } : {}))
   };
 
   if (!db || !isFirebaseConfigured()) {

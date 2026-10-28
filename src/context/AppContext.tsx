@@ -181,7 +181,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentOwner, setCurrentOwner] = useState<OwnerProfile>(() => {
     try {
       const saved = localStorage.getItem('gondia_stay_current_owner');
-      return saved ? (JSON.parse(saved) as OwnerProfile) : DEFAULT_OWNER_PROFILE;
+      if (saved) {
+        const parsed = JSON.parse(saved) as OwnerProfile;
+        if (
+          !parsed.id ||
+          parsed.id === 'owner_gondia_primary' ||
+          parsed.email?.toLowerCase().includes('jangirpankaj') ||
+          parsed.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com' ||
+          parsed.name === 'Rajesh Sharma'
+        ) {
+          localStorage.removeItem('gondia_stay_current_owner');
+          return DEFAULT_OWNER_PROFILE;
+        }
+        return parsed;
+      }
+      return DEFAULT_OWNER_PROFILE;
     } catch {
       return DEFAULT_OWNER_PROFILE;
     }
@@ -263,15 +277,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isAdminAuthenticated) return true;
     if (myServiceIds.includes(service.id)) return true;
     if (myServiceTokens[service.id]) return true;
-    if (authUser) {
-      if (service.ownerId && (service.ownerId === authUser.uid || (service.ownerId === currentOwner.id && currentOwner.id !== 'owner_gondia_primary'))) {
+    if (authUser && !isAdminAuthenticated) {
+      if (service.ownerId && service.ownerId === authUser.uid) {
         return true;
       }
       if (service.ownerEmail && authUser.email && service.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) {
         return true;
       }
     }
-    if (currentOwner.id && currentOwner.id !== 'owner_gondia_primary' && service.ownerId === currentOwner.id) {
+    if (currentOwner.id && currentOwner.id !== '' && service.ownerId === currentOwner.id) {
       return true;
     }
     return false;
@@ -280,17 +294,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
     if (isAdminAuthenticated) return true;
     if (myListingTokens[property.id]) return true;
-    if (authUser) {
-      if (property.ownerId === authUser.uid) return true;
+    if (authUser && !isAdminAuthenticated) {
+      if (property.ownerId && property.ownerId === authUser.uid) return true;
       if (property.ownerEmail && authUser.email && property.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) return true;
-      if (property.ownerId === 'owner_gondia_primary' && authUser.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com') return true;
     }
-    if (property.ownerId === currentOwner.id) return true;
-    const pPhone = (property.ownerPhone || property.ownerWhatsappNumber || '').replace(/\D/g, '');
-    const oPhone = (currentOwner.phone || '').replace(/\D/g, '');
-    if (pPhone.length >= 10 && oPhone.length >= 10) {
-      if (pPhone.endsWith(oPhone.slice(-10)) || oPhone.endsWith(pPhone.slice(-10))) {
-        return true;
+    if (currentOwner.id && currentOwner.id !== '' && property.ownerId === currentOwner.id) return true;
+    if (!isAdminAuthenticated && currentOwner.phone && currentOwner.phone.trim().length >= 10) {
+      const pPhone = (property.ownerPhone || property.ownerWhatsappNumber || '').replace(/\D/g, '');
+      const oPhone = (currentOwner.phone || '').replace(/\D/g, '');
+      if (pPhone.length >= 10 && oPhone.length >= 10) {
+        if (pPhone.endsWith(oPhone.slice(-10)) || oPhone.endsWith(pPhone.slice(-10))) {
+          return true;
+        }
       }
     }
     return false;
@@ -331,17 +346,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsAdminAuthenticated(isAuthorizedEmail);
       setIsAdminLoading(false);
 
-      if (user && !isAuthorizedAdminEmail(user.email)) {
-        setCurrentOwner(prev => {
-          const updated: OwnerProfile = {
-            ...prev,
-            id: user.uid,
-            email: user.email || prev.email,
-            name: user.displayName || (prev.email === user.email ? prev.name : user.email?.split('@')[0] || prev.name)
-          };
-          localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updated));
-          return updated;
-        });
+      if (user) {
+        if (isAuthorizedEmail) {
+          // Admin account: clear any owner profile so admin info never auto-fills into owner fields
+          setCurrentOwner(DEFAULT_OWNER_PROFILE);
+          localStorage.removeItem('gondia_stay_current_owner');
+        } else {
+          // Logged-in Landlord / Owner:
+          // Check for saved profile for this specific owner UID
+          const savedOwnerForUser = localStorage.getItem(`gondia_stay_owner_${user.uid}`);
+          let loadedProfile: OwnerProfile | null = null;
+          if (savedOwnerForUser) {
+            try {
+              loadedProfile = JSON.parse(savedOwnerForUser);
+            } catch {}
+          }
+          if (loadedProfile && loadedProfile.id === user.uid) {
+            setCurrentOwner(loadedProfile);
+            localStorage.setItem('gondia_stay_current_owner', JSON.stringify(loadedProfile));
+          } else {
+            // New owner with no saved details yet -> blank fields
+            const newOwner: OwnerProfile = {
+              id: user.uid,
+              email: user.email || '',
+              name: user.displayName || '',
+              phone: '',
+              whatsappNumber: ''
+            };
+            setCurrentOwner(newOwner);
+            localStorage.setItem('gondia_stay_current_owner', JSON.stringify(newOwner));
+          }
+        }
+      } else {
+        // Logged out / guest
+        setCurrentOwner(DEFAULT_OWNER_PROFILE);
+        localStorage.removeItem('gondia_stay_current_owner');
       }
     });
 
@@ -350,15 +389,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Real-time Firestore owner profile listener
   useEffect(() => {
-    if (!isFirebaseConfigured() || !currentOwner.id) return;
+    if (!isFirebaseConfigured() || !currentOwner.id || isAdminAuthenticated) return;
     const unsubscribe = subscribeToOwnerProfile(currentOwner.id, (remoteOwner) => {
-      setCurrentOwner(remoteOwner);
-      localStorage.setItem('gondia_stay_current_owner', JSON.stringify(remoteOwner));
+      if (remoteOwner && remoteOwner.id === currentOwner.id) {
+        setCurrentOwner(remoteOwner);
+        localStorage.setItem('gondia_stay_current_owner', JSON.stringify(remoteOwner));
+        localStorage.setItem(`gondia_stay_owner_${remoteOwner.id}`, JSON.stringify(remoteOwner));
+      }
     });
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [currentOwner.id]);
+  }, [currentOwner.id, isAdminAuthenticated]);
 
   // Clear firestore error manually
   const clearFirestoreError = useCallback(() => {
@@ -1144,6 +1186,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAdminAuthenticated(false);
     setAuthUser(null);
     setIsOwnerAuthenticated(false);
+    setCurrentOwner(DEFAULT_OWNER_PROFILE);
+    localStorage.removeItem('gondia_stay_current_owner');
     showToast("Logged out of Admin Portal.");
   };
 
@@ -1201,14 +1245,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsOwnerAuthenticated(true);
       const updatedProfile: OwnerProfile = {
         id: user.uid,
-        name: name?.trim() || 'Property Owner',
-        phone: phone?.trim() || '+91 98230 12345',
-        whatsappNumber: phone?.trim() || '+91 98230 12345',
+        name: name?.trim() || '',
+        phone: phone?.trim() || '',
+        whatsappNumber: phone?.trim() || '',
         email: email.trim()
       };
       setCurrentOwner(updatedProfile);
       localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updatedProfile));
-      if (isFirebaseConfigured()) {
+      localStorage.setItem(`gondia_stay_owner_${user.uid}`, JSON.stringify(updatedProfile));
+      if (isFirebaseConfigured() && (updatedProfile.name || updatedProfile.phone)) {
         await saveOwnerProfileToFirestore(updatedProfile);
       }
       showToast(`Landlord account created! Welcome, ${name || email}`);
@@ -1240,6 +1285,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsOwnerAuthenticated(false);
     setIsAdminAuthenticated(false);
     setAdminUser(null);
+    setCurrentOwner(DEFAULT_OWNER_PROFILE);
+    localStorage.removeItem('gondia_stay_current_owner');
     showToast("Signed out of Landlord Console.");
   };
 

@@ -388,8 +388,12 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: property.photos && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: 'owner_unauthenticated',
-      ...(property.ownerEmail ? { ownerEmail: property.ownerEmail } : {}),
+      ownerId: property.ownerId && property.ownerId !== 'owner_unauthenticated'
+        ? property.ownerId
+        : (auth?.currentUser && !isAuthorizedAdminEmail(auth.currentUser.email)
+            ? auth.currentUser.uid
+            : `owner_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`),
+      ...(property.ownerEmail ? { ownerEmail: property.ownerEmail } : (auth?.currentUser?.email && !isAuthorizedAdminEmail(auth.currentUser.email) ? { ownerEmail: auth.currentUser.email } : {})),
       ownerName: property.ownerName ? property.ownerName.trim() : '',
       ownerPhone: property.ownerPhone ? property.ownerPhone.trim() : '',
       ownerWhatsappNumber: (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || '',
@@ -726,9 +730,9 @@ export const subscribeToOwnerProfile = (
         const data = snap.data();
         onUpdate({
           id: snap.id,
-          name: data.name || 'Property Owner',
-          phone: data.phone || '+91 98230 12345',
-          whatsappNumber: data.whatsappNumber || data.phone || '+91 98230 12345',
+          name: data.name || '',
+          phone: data.phone || '',
+          whatsappNumber: data.whatsappNumber || data.phone || '',
           email: data.email || ''
         });
       }

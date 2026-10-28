@@ -46,6 +46,7 @@ import {
 } from '../utils/imageOptimizer';
 import { uploadMultiplePropertyPhotos } from '../firebase/storageService';
 import { isValidIndianMobileNumber } from '../utils/contact';
+import { useApp } from '../context/AppContext';
 
 interface PhotoItem {
   id: string;
@@ -70,6 +71,7 @@ interface AddPropertyModalProps {
   isAdmin?: boolean;
   editToken?: string | null;
   currentOwner: {
+    id?: string;
     name: string;
     phone: string;
     whatsappNumber?: string;
@@ -140,10 +142,21 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
+  const { isOwnerAuthenticated, isAdminAuthenticated, authUser } = useApp();
+  const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
+
   // Landlord Contact
-  const [ownerName, setOwnerName] = useState(currentOwner?.name || '');
-  const [ownerPhone, setOwnerPhone] = useState(currentOwner?.phone || '');
-  const [ownerWhatsappNumber, setOwnerWhatsappNumber] = useState(currentOwner?.whatsappNumber || currentOwner?.phone || '');
+  const [ownerName, setOwnerName] = useState(
+    (!propertyToEdit && isRealOwnerLoggedIn && currentOwner?.name) ? currentOwner.name : ''
+  );
+  const [ownerPhone, setOwnerPhone] = useState(
+    (!propertyToEdit && isRealOwnerLoggedIn && currentOwner?.phone) ? currentOwner.phone : ''
+  );
+  const [ownerWhatsappNumber, setOwnerWhatsappNumber] = useState(
+    (!propertyToEdit && isRealOwnerLoggedIn && (currentOwner?.whatsappNumber || currentOwner?.phone)) 
+      ? (currentOwner.whatsappNumber || currentOwner.phone) 
+      : ''
+  );
   const [ownerPreferredContact, setOwnerPreferredContact] = useState<ContactMethod>('BOTH');
 
   // Photos
@@ -195,9 +208,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setPickerLocation({ lat: initialLat, lng: initialLng });
       setHasCustomPin(hasCoords);
 
-      setOwnerName(propertyToEdit.ownerName || currentOwner?.name || '');
-      setOwnerPhone(propertyToEdit.ownerPhone || currentOwner?.phone || '');
-      setOwnerWhatsappNumber(propertyToEdit.ownerWhatsappNumber || propertyToEdit.ownerPhone || currentOwner?.whatsappNumber || currentOwner?.phone || '');
+      setOwnerName(propertyToEdit.ownerName || '');
+      setOwnerPhone(propertyToEdit.ownerPhone || '');
+      setOwnerWhatsappNumber(propertyToEdit.ownerWhatsappNumber || propertyToEdit.ownerPhone || '');
       setOwnerPreferredContact(propertyToEdit.ownerPreferredContact || 'BOTH');
 
       const existingItems: PhotoItem[] = (propertyToEdit.photos || []).map((url, idx) => ({
@@ -234,9 +247,10 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setPickerLocation(defaultCoords);
       setHasCustomPin(false);
 
-      setOwnerName(currentOwner?.name || '');
-      setOwnerPhone(currentOwner?.phone || '');
-      setOwnerWhatsappNumber(currentOwner?.whatsappNumber || currentOwner?.phone || '');
+      const shouldAutoFill = Boolean(isRealOwnerLoggedIn && currentOwner?.name);
+      setOwnerName(shouldAutoFill ? (currentOwner?.name || '') : '');
+      setOwnerPhone(shouldAutoFill ? (currentOwner?.phone || '') : '');
+      setOwnerWhatsappNumber(shouldAutoFill ? (currentOwner?.whatsappNumber || currentOwner?.phone || '') : '');
       setOwnerPreferredContact('BOTH');
 
       setPhotos([]);
@@ -244,7 +258,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setIsSuccess(false);
       setSavedPropertyInfo(null);
     }
-  }, [isOpen, propertyToEdit, currentOwner]);
+  }, [isOpen, propertyToEdit, currentOwner, isRealOwnerLoggedIn]);
 
   const handleLocalityChange = (newLocality: string) => {
     setLocality(newLocality);
@@ -561,8 +575,10 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           amenities,
           description: description.trim(),
           photos: finalPhotoUrls,
-          ownerId: propertyToEdit.ownerId || 'owner_unauthenticated',
-          ownerEmail: propertyToEdit.ownerEmail || (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''),
+          ownerId: propertyToEdit.ownerId && propertyToEdit.ownerId !== 'owner_unauthenticated'
+            ? propertyToEdit.ownerId
+            : (isRealOwnerLoggedIn && authUser?.uid ? authUser.uid : (propertyToEdit.ownerId || 'owner_unauthenticated')),
+          ownerEmail: propertyToEdit.ownerEmail || (isRealOwnerLoggedIn && authUser?.email ? authUser.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '')),
           ownerName: ownerName.trim(),
           ownerPhone: ownerPhone.trim(),
           ownerWhatsappNumber: (ownerWhatsappNumber || ownerPhone).trim(),
@@ -583,7 +599,15 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         setIsSuccess(true);
         if (onSuccessToast) onSuccessToast('Listing updated successfully!');
       } else {
-        // Create new property listing
+        // Create new property listing linked to actual logged in owner
+        const actualOwnerId = (isRealOwnerLoggedIn && authUser?.uid)
+          ? authUser.uid
+          : (isRealOwnerLoggedIn && currentOwner?.id ? currentOwner.id : 'owner_unauthenticated');
+
+        const actualOwnerEmail = (isRealOwnerLoggedIn && authUser?.email)
+          ? authUser.email
+          : (isRealOwnerLoggedIn && currentOwner?.email ? currentOwner.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''));
+
         const newProp: PropertyListing = {
           id: `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           title: title.trim(),
@@ -606,8 +630,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           amenities,
           description: description.trim(),
           photos: finalPhotoUrls,
-          ownerId: 'owner_unauthenticated',
-          ownerEmail: ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '',
+          ownerId: actualOwnerId,
+          ownerEmail: actualOwnerEmail,
           ownerName: ownerName.trim(),
           ownerPhone: ownerPhone.trim(),
           ownerWhatsappNumber: (ownerWhatsappNumber || ownerPhone).trim(),

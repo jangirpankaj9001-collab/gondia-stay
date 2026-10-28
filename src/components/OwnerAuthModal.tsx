@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Key, UserCheck, AlertCircle, Loader2, Zap, ShieldCheck } from 'lucide-react';
+import { X, Lock, Key, UserCheck, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { useApp, useBackHandler } from '../context/AppContext';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
@@ -65,39 +65,6 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
         } else {
           setError(res.error || 'Failed to sign in. Please verify credentials.');
         }
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleQuickSignIn = async () => {
-    setError(null);
-    setIsLoading(true);
-    const demoEmail = 'rajesh.sharma@gondiastay.com';
-    const demoPass = 'rajesh12345';
-
-    try {
-      // First try signing in
-      const loginRes = await loginOwnerWithEmailPassword(demoEmail, demoPass);
-      if (loginRes.success) {
-        if (onSuccess) onSuccess();
-        onClose();
-        return;
-      }
-      
-      // If user doesn't exist yet, create the verified landlord account
-      const regRes = await registerOwnerWithEmailPassword(
-        demoEmail,
-        demoPass,
-        'Rajesh Sharma',
-        '+91 98230 12345'
-      );
-      if (regRes.success) {
-        if (onSuccess) onSuccess();
-        onClose();
-      } else {
-        setError(regRes.error || 'Quick sign-in encountered an issue.');
       }
     } finally {
       setIsLoading(false);
@@ -173,23 +140,6 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
                 <strong>Why Sign In?</strong> To protect landlords against unauthorized edits, GondiaStay requires Firebase Authentication so only the verified listing owner can edit details and upload property photos.
               </div>
 
-              {/* 1-Click Demo / Test Sign-In */}
-              <button
-                type="button"
-                onClick={handleQuickSignIn}
-                disabled={isLoading}
-                className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer"
-              >
-                <Zap className="w-4 h-4 fill-current text-amber-300" />
-                <span>1-Click Sign In as Rajesh Sharma (Verified Owner)</span>
-              </button>
-
-              <div className="flex items-center gap-2 my-2">
-                <div className="h-px bg-slate-200 flex-1" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">or with credentials</span>
-                <div className="h-px bg-slate-200 flex-1" />
-              </div>
-
               {/* Form */}
               <form onSubmit={handleSubmit} className="space-y-3">
                 {isRegister && (
@@ -203,7 +153,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
                         required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="e.g. Rajesh Sharma"
+                        placeholder="e.g. Ramesh Patel"
                         className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-blue-600"
                       />
                     </div>

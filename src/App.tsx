@@ -1933,7 +1933,7 @@ export const App: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    Welcome, {currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}
+                    Welcome, {currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'Landlord'}
                   </h1>
                   <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                     Landlord
@@ -2000,7 +2000,7 @@ export const App: React.FC = () => {
                         )}
                       </div>
                       <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                        Welcome, {currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`}
+                        Welcome, {currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'Landlord'}
                       </h2>
                       <p className="text-xs text-slate-400 mt-0.5">
                         Real Owner Account stored in Cloud Firestore • Gondia, Maharashtra
@@ -2034,35 +2034,39 @@ export const App: React.FC = () => {
                         <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered Contact Number</span>
                         <div className="text-sm font-extrabold text-white mt-0.5 flex items-center gap-1.5">
                           <Phone className="w-4 h-4 text-blue-400" />
-                          <span>{formatDisplayPhone(currentOwner.phone)}</span>
+                          <span>{currentOwner.phone ? formatDisplayPhone(currentOwner.phone) : 'Not set yet (tap Edit Profile to add)'}</span>
                         </div>
                       </div>
                       <div>
                         <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Registered WhatsApp Number</span>
                         <div className="text-sm font-extrabold text-emerald-400 mt-0.5 flex items-center gap-1.5">
                           <MessageCircle className="w-4 h-4 fill-current text-emerald-400" />
-                          <span>{formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone)}</span>
+                          <span>{(currentOwner.whatsappNumber || currentOwner.phone) ? formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone) : 'Not set yet'}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello Mr. ${currentOwner.name}, contacting you regarding your property listings on GondiaStay.`)}
-                        className="px-3.5 py-2 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                        <span>WhatsApp Owner</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => dialPhone(currentOwner.phone)}
-                        className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>Call</span>
-                      </button>
+                      {Boolean(currentOwner.whatsappNumber || currentOwner.phone) && (
+                        <button
+                          type="button"
+                          onClick={() => openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello ${currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'Landlord'}, contacting you regarding your property listings on GondiaStay.`)}
+                          className="px-3.5 py-2 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-extrabold rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                          <span>WhatsApp Owner</span>
+                        </button>
+                      )}
+                      {Boolean(currentOwner.phone) && (
+                        <button
+                          type="button"
+                          onClick={() => dialPhone(currentOwner.phone)}
+                          className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Call</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2084,7 +2088,7 @@ export const App: React.FC = () => {
                             type="text"
                             value={ownerProfileForm.name}
                             onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, name: e.target.value })}
-                            placeholder="Rajesh Sharma"
+                            placeholder="e.g. Ramesh Patel"
                             className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
                           />
                         </div>
@@ -2974,7 +2978,7 @@ export const App: React.FC = () => {
                       return (
                         <div className="space-y-3">
                           {displayedList.map(prop => {
-                            const isOwnListing = prop.ownerId === currentOwner.id;
+                            const isOwnListing = Boolean(currentOwner.id && prop.ownerId && prop.ownerId === currentOwner.id);
                             const isEditReview = adminModerationFilter === 'pending_edits';
                             const pEdit = prop.pendingEdit;
 
