@@ -28,6 +28,7 @@ import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
+import { RateServiceModal } from './RateServiceModal';
 import { verifyServiceOwnershipSecurely } from '../firebase/servicesService';
 
 interface SubCategoryConfig {
@@ -156,14 +157,11 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     isServiceOwner, 
     saveServiceId, 
     saveServiceToken, 
-    showToast,
-    rateService,
-    hasUserRatedService,
-    getUserRatingForService
+    showToast 
   } = useApp();
 
-  // Local hover state for star ratings per service
-  const [hoveredRating, setHoveredRating] = useState<{ [serviceId: string]: number }>({});
+  // State for opening the rating popup when top-right stars are tapped
+  const [ratingModalService, setRatingModalService] = useState<ServiceItem | null>(null);
 
   // Currently opened category in dedicated view (null means grid of 8 icons is shown)
   const [activeDedicatedCategory, setActiveDedicatedCategory] = useState<ServiceCategory | null>(
@@ -478,12 +476,20 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           )}
                         </div>
 
-                        {/* Rating Overlay */}
-                        <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-md px-2 py-1 rounded-xl shadow-xs flex items-center gap-1 text-[11px] font-extrabold text-slate-900">
-                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                        {/* Rating Overlay Button (Clickable to rate provider) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRatingModalService(provider);
+                          }}
+                          className="absolute top-3 right-3 bg-white/95 hover:bg-amber-50 active:scale-95 transition-all backdrop-blur-md px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1.5 text-[11px] font-extrabold text-slate-900 border border-slate-200/60 cursor-pointer group/rate"
+                          title="Tap to rate this service provider"
+                        >
+                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 group-hover/rate:scale-110 transition-transform" />
                           <span>{typeof provider.rating === 'number' ? provider.rating.toFixed(1) : (provider.rating || '5.0')}</span>
                           <span className="text-slate-400 text-[10px]">({provider.reviewCount || 1})</span>
-                        </div>
+                        </button>
 
                         {/* Charges Bottom Pill on Image */}
                         <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md border border-slate-200 px-3 py-1 rounded-xl shadow-sm">
@@ -551,77 +557,6 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                             ))}
                           </div>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Interactive 5-Star Rating Widget */}
-                    <div className="px-4 sm:px-5 py-2.5 bg-slate-50/80 border-t border-b border-slate-100 flex items-center justify-between gap-2">
-                      <div className="text-left">
-                        {hasUserRatedService(provider.id) ? (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] font-black text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Rated {getUserRatingForService(provider.id)}★
-                            </span>
-                            <span className="text-[10px] text-slate-400 hidden sm:inline">Saved</span>
-                          </div>
-                        ) : (
-                          <div>
-                            <span className="text-[11px] font-bold text-slate-700 block">Rate this service</span>
-                            <span className="text-[9px] text-slate-400">Tap 1 to 5 stars</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div 
-                        className="flex items-center gap-0.5"
-                        onMouseLeave={() => setHoveredRating(prev => ({ ...prev, [provider.id]: 0 }))}
-                      >
-                        {[1, 2, 3, 4, 5].map(star => {
-                          const userScore = getUserRatingForService(provider.id);
-                          const isRated = hasUserRatedService(provider.id);
-                          const hoverScore = hoveredRating[provider.id] || 0;
-                          const isFilled = isRated 
-                            ? (userScore ? star <= userScore : false)
-                            : (hoverScore ? star <= hoverScore : false);
-
-                          return (
-                            <button
-                              key={star}
-                              type="button"
-                              disabled={isRated}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!isRated) {
-                                  rateService(provider.id, star);
-                                }
-                              }}
-                              onMouseEnter={() => {
-                                if (!isRated) {
-                                  setHoveredRating(prev => ({ ...prev, [provider.id]: star }));
-                                }
-                              }}
-                              className={`p-1.5 rounded-lg transition-all ${
-                                isRated
-                                  ? 'cursor-default opacity-85'
-                                  : 'cursor-pointer hover:scale-110 active:scale-95 hover:bg-amber-100/60'
-                              }`}
-                              title={
-                                isRated 
-                                  ? `You rated this service ${userScore} stars` 
-                                  : `Rate ${star} star${star > 1 ? 's' : ''}`
-                              }
-                            >
-                              <Star 
-                                className={`w-4 h-4 transition-colors ${
-                                  isFilled
-                                    ? 'fill-amber-400 text-amber-500'
-                                    : 'text-slate-300 fill-slate-100'
-                                }`} 
-                              />
-                            </button>
-                          );
-                        })}
                       </div>
                     </div>
 
@@ -950,6 +885,13 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
           setSelectedGalleryProvider(null);
           setGalleryInitialIndex(0);
         }}
+      />
+
+      {/* 5-Star Rating Popup Modal */}
+      <RateServiceModal
+        isOpen={Boolean(ratingModalService)}
+        service={ratingModalService}
+        onClose={() => setRatingModalService(null)}
       />
     </div>
   );
