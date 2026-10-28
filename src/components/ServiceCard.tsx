@@ -26,7 +26,7 @@ import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
-import { ServiceGalleryModal } from './ServiceGalleryModal';
+import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
 
 interface ServiceCardProps {
   service: ServiceItem;
@@ -70,14 +70,15 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
 
   const defaultMsg = `Hello ${service.providerName || 'Sir/Ma\'am'}, I found your ${categoryMeta.label} '${service.title}' on Gondia Stay. I would like to inquire about your services and availability in ${service.locality || 'Gondia'}.`;
 
-  // Determine hero photo
-  const heroPhoto = service.photos && service.photos.length > 0 
-    ? service.photos[0] 
+  // Extract all photos using shared robust extraction
+  const allPhotos = extractServicePhotos(service);
+  const heroPhoto = allPhotos.length > 0 
+    ? allPhotos[0] 
     : isMessTiffin 
       ? '/hero_tiffin_mess.jpg' 
       : '/hero_gondia_stays.jpg';
 
-  const visitingCard = service.businessCardPhoto || (service.photos && service.photos[1]) || null;
+  const visitingCard = service.businessCardPhoto || (allPhotos.length > 1 ? allPhotos[1] : null);
 
   const renderCategoryIcon = (category: ServiceCategory) => {
     switch (category) {
@@ -190,7 +191,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setShowVisitingCardModal(true);
+                  setShowGallery(true);
                 }}
                 className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg backdrop-blur-md flex items-center gap-1 transition-colors border border-white/30"
                 title="View Visiting / Business Card"

@@ -25,7 +25,7 @@ import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '..
 import { openWhatsApp, formatDisplayPhone, isValidIndianMobileNumber } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
-import { ServiceGalleryModal } from './ServiceGalleryModal';
+import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -179,6 +179,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
 
   // Swipeable photo gallery modal state
   const [selectedGalleryProvider, setSelectedGalleryProvider] = useState<ServiceItem | null>(null);
+  const [galleryInitialIndex, setGalleryInitialIndex] = useState(0);
 
   const handleProviderEditClick = (provider: ServiceItem) => {
     if (isAdmin || isServiceOwner(provider)) {
@@ -375,34 +376,32 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {dedicatedProviders.map(provider => {
                 const whatsappMsg = `Hello ${provider.providerName}, I found your ${currentConfig?.name || 'service'} listing '${provider.title}' on Gondia Stay. I would like to inquire about your availability in ${provider.locality || 'Gondia'}.`;
-                const primaryPhoto = (provider.photos && provider.photos.length > 0) ? provider.photos[0] : null;
-                const visitingCard = provider.businessCardPhoto || (provider.photos && provider.photos[1]) || null;
-
+                
                 // Collect all uploaded photos
-                const allPhotos: string[] = [];
-                if (Array.isArray(provider.photos)) {
-                  provider.photos.forEach(p => {
-                    if (typeof p === 'string' && p.trim() && !allPhotos.includes(p.trim())) {
-                      allPhotos.push(p.trim());
-                    }
-                  });
-                }
-                if (provider.businessCardPhoto && typeof provider.businessCardPhoto === 'string' && provider.businessCardPhoto.trim()) {
-                  if (!allPhotos.includes(provider.businessCardPhoto.trim())) {
-                    allPhotos.push(provider.businessCardPhoto.trim());
-                  }
-                }
+                const allPhotos = extractServicePhotos(provider);
+                const primaryPhoto = allPhotos.length > 0 ? allPhotos[0] : null;
+                const visitingCard = provider.businessCardPhoto || (allPhotos.length > 1 ? allPhotos[1] : null);
 
                 return (
                   <div
                     key={provider.id}
-                    onClick={() => setSelectedGalleryProvider(provider)}
+                    onClick={() => {
+                      setSelectedGalleryProvider(provider);
+                      setGalleryInitialIndex(0);
+                    }}
                     className="bg-white rounded-3xl border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-blue-300 transition-all duration-200 flex flex-col justify-between overflow-hidden group cursor-pointer"
                     title={`Tap to view all photos for ${provider.providerName}`}
                   >
                     <div>
                       {/* Photo Header */}
-                      <div className="h-44 w-full bg-slate-100 relative overflow-hidden">
+                      <div 
+                        className="h-44 w-full bg-slate-100 relative overflow-hidden cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedGalleryProvider(provider);
+                          setGalleryInitialIndex(0);
+                        }}
+                      >
                         {primaryPhoto ? (
                           <img 
                             src={primaryPhoto} 
@@ -550,13 +549,9 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedVisitingCard({
-                              url: visitingCard,
-                              title: provider.title,
-                              provider: provider.providerName,
-                              phone: provider.phone,
-                              locality: provider.locality || 'Gondia'
-                            });
+                            const cardIndex = allPhotos.indexOf(visitingCard);
+                            setSelectedGalleryProvider(provider);
+                            setGalleryInitialIndex(cardIndex >= 0 ? cardIndex : 0);
                           }}
                           className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                         >
@@ -816,7 +811,11 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
       <ServiceGalleryModal
         isOpen={Boolean(selectedGalleryProvider)}
         provider={selectedGalleryProvider}
-        onClose={() => setSelectedGalleryProvider(null)}
+        initialIndex={galleryInitialIndex}
+        onClose={() => {
+          setSelectedGalleryProvider(null);
+          setGalleryInitialIndex(0);
+        }}
       />
     </div>
   );

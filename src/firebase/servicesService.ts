@@ -108,14 +108,37 @@ export const subscribeToFirestoreServices = (
       const pName = (data.providerName || data.ownerName || '').trim();
       const pPhone = (data.phone || data.ownerPhone || '').trim();
       const pWhatsapp = (data.whatsappNumber || data.ownerWhatsappNumber || pPhone).trim();
-      const photos = Array.isArray(data.photos) 
-        ? data.photos.filter((p: any) => typeof p === 'string' && p.trim().length > 0) 
-        : [];
-      if (typeof data.photoUrl === 'string' && data.photoUrl.trim().length > 0 && !photos.includes(data.photoUrl.trim())) {
-        photos.unshift(data.photoUrl.trim());
+      const photos: string[] = [];
+      const addRawPhoto = (item: any) => {
+        if (!item) return;
+        if (typeof item === 'string') {
+          const t = item.trim();
+          if (t.length > 0 && t !== 'null' && t !== 'undefined' && !photos.includes(t)) {
+            photos.push(t);
+          }
+        } else if (typeof item === 'object') {
+          const u = item.url || item.photoUrl || item.imageUrl || item.src;
+          if (typeof u === 'string' && u.trim().length > 0 && !photos.includes(u.trim())) {
+            photos.push(u.trim());
+          }
+        }
+      };
+      if (Array.isArray(data.photos)) data.photos.forEach(addRawPhoto);
+      else if (typeof data.photos === 'string') {
+        try {
+          const p = JSON.parse(data.photos);
+          if (Array.isArray(p)) p.forEach(addRawPhoto);
+          else addRawPhoto(data.photos);
+        } catch {
+          data.photos.split(',').forEach(addRawPhoto);
+        }
       }
-      if (typeof data.businessCardPhoto === 'string' && data.businessCardPhoto.trim().length > 0 && !photos.includes(data.businessCardPhoto.trim())) {
-        photos.push(data.businessCardPhoto.trim());
+      addRawPhoto(data.photoUrl);
+      addRawPhoto(data.photo);
+      addRawPhoto(data.imageUrl);
+      if (Array.isArray(data.images)) data.images.forEach(addRawPhoto);
+      if (typeof data.businessCardPhoto === 'string' && data.businessCardPhoto.trim().length > 0) {
+        addRawPhoto(data.businessCardPhoto.trim());
       }
       const areas = Array.isArray(data.serviceAreas) && data.serviceAreas.length > 0 
         ? data.serviceAreas 
