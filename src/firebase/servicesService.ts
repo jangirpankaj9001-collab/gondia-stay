@@ -592,18 +592,22 @@ export const updateServiceInFirestore = async (
       ...fieldsForPendingEdit,
       submittedAt: Date.now()
     };
+    const singleUseNonce = 'nonce_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
     finalPayload = {
       hasPendingEdit: true,
       pendingEdit: pendingData,
+      editNonce: singleUseNonce,
       updatedAt: Date.now()
     };
   } else {
     // Provider editing pending service: update directly, remain pending
+    const singleUseNonce = 'nonce_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
     finalPayload = {
       ...sanitized,
       status: 'pending',
       hasPendingEdit: false,
       pendingEdit: null,
+      editNonce: singleUseNonce,
       updatedAt: Date.now()
     };
   }
@@ -643,6 +647,7 @@ export const updateServiceInFirestore = async (
       const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
       batch.update(secretRef, {
         verifiedToken: editToken.trim(),
+        editNonce: finalPayload.editNonce,
         lastEditedAt: Date.now()
       });
       await batch.commit();
@@ -902,10 +907,12 @@ export const deleteServiceInFirestore = async (
     // against service_secrets on the server without needing client-side read permission.
     if (token && token.trim()) {
       const cleanToken = token.trim();
+      const deleteNonce = 'del_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
       const batch = writeBatch(db);
       batch.delete(srvRef);
       batch.update(secretRef, {
         verifiedToken: cleanToken,
+        deleteNonce,
         deletedAt: Date.now()
       });
       await batch.commit();

@@ -182,8 +182,11 @@ service cloud.firestore {
 
     // Services Collection: Gondia local services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security)
     match /services/{serviceId} {
-      // 1. Read: Publicly readable so visitors can browse all local services across Gondia without errors.
-      allow read: if true;
+      // 1. Read: Restrict public reads to approved services where compatible with the app.
+      // Verified admins and authenticated listing owners can read any status (including pending drafts and rejected).
+      allow read: if (resource.data.status in ['approved', 'APPROVED'])
+        || isAdmin()
+        || isServiceOwner();
 
       // 2. Create: Zero-login registration for any resident/service provider in Gondia.
       allow create: if request.resource.data.title is string
@@ -212,9 +215,27 @@ service cloud.firestore {
         );
       }
 
-      // Helper function to verify caller has the unguessable private edit token in service_secrets
+      // Helper function to verify caller has the unguessable private edit token in service_secrets for this specific atomic edit
+      // Never grants permanent authorization: requires single-use editNonce updated in the same write batch
       function hasValidServiceEditToken() {
         return exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+          && ('editNonce' in request.resource.data)
+          && request.resource.data.editNonce is string
+          && request.resource.data.editNonce.size() >= 10
+          && ('editNonce' in getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data)
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editNonce == request.resource.data.editNonce
+          && (!('editNonce' in get(/databases/$(database)/documents/service_secrets/$(serviceId)).data) || getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editNonce != get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editNonce)
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken;
+      }
+
+      // Helper function to verify caller has the unguessable private edit token in service_secrets for deleting this service
+      // Never grants permanent authorization: requires single-use deleteNonce updated in the same write batch
+      function hasValidServiceDeleteToken() {
+        return exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+          && ('deleteNonce' in getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data)
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce is string
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce.size() >= 10
+          && (!('deleteNonce' in get(/databases/$(database)/documents/service_secrets/$(serviceId)).data) || getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce != get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce)
           && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken;
       }
 
@@ -230,19 +251,19 @@ service cloud.firestore {
           'whatsappNumber', 'ownerWhatsappNumber', 'charges', 'chargeUnit', 'priceNumeric',
           'description', 'serviceAreas', 'locality', 'city', 'address', 'photos',
           'businessCardPhoto', 'timing', 'experienceYears', 'specialties', 'status',
-          'updatedAt', 'hasPendingEdit', 'pendingEdit'
+          'updatedAt', 'hasPendingEdit', 'pendingEdit', 'editNonce'
         ]);
       }
 
       // Submission of edited services for admin reapproval on an ALREADY APPROVED listing:
       // - Keeps the approved live listing completely unchanged until administrator verifies and approves.
-      // - Strictly restricts root document changes to pendingEdit, hasPendingEdit, and updatedAt.
+      // - Strictly restricts root document changes to pendingEdit, hasPendingEdit, updatedAt, and editNonce.
       // - Live status remains 'approved' and cannot be altered or self-published.
       // - Requires valid pendingEdit map containing proposed changes.
-      // - Strictly requires caller to be authorized service owner (authenticated or holding verified edit token).
+      // - Strictly requires caller to be authorized service owner (authenticated or holding single-use verified edit token).
       function isValidProviderPendingEditSubmission() {
         return (resource.data.status in ['approved', 'APPROVED'])
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasPendingEdit', 'pendingEdit', 'updatedAt'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasPendingEdit', 'pendingEdit', 'updatedAt', 'editNonce'])
           && request.resource.data.status == resource.data.status
           && request.resource.data.hasPendingEdit == true
           && isAuthorizedServiceOwner()
@@ -304,7 +325,11 @@ service cloud.firestore {
       }
 
       // Permitted rating update on approved services:
-      // Allows anyone (or authenticated users) to submit a rating by updating rating, reviewCount, ratingTotal, and updatedAt
+      // Strictly enforces mathematical integrity to prevent rating-total manipulation:
+      // - Review count must increment by exactly 1
+      // - Rating total must increase by a valid 1-5 star score
+      // - Rating total must remain within [reviewCount * 1.0, reviewCount * 5.0]
+      // - Average rating must remain within [1.0, 5.0]
       function isValidRatingUpdate() {
         return (resource.data.status in ['approved', 'APPROVED'])
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'reviewCount', 'ratingTotal', 'updatedAt'])
@@ -312,21 +337,47 @@ service cloud.firestore {
           && request.resource.data.rating >= 1.0
           && request.resource.data.rating <= 5.0
           && request.resource.data.reviewCount is number
-          && request.resource.data.reviewCount > 0;
+          && request.resource.data.reviewCount >= 1
+          && request.resource.data.ratingTotal is number
+          && request.resource.data.ratingTotal >= request.resource.data.reviewCount * 1.0
+          && request.resource.data.ratingTotal <= request.resource.data.reviewCount * 5.0
+          && (
+            (
+              ('reviewCount' in resource.data) && resource.data.reviewCount is number && resource.data.reviewCount > 0
+              && request.resource.data.reviewCount == resource.data.reviewCount + 1
+              && (
+                ('ratingTotal' in resource.data) && resource.data.ratingTotal is number
+                ? (
+                  request.resource.data.ratingTotal >= resource.data.ratingTotal + 1.0
+                  && request.resource.data.ratingTotal <= resource.data.ratingTotal + 5.0
+                )
+                : (
+                  request.resource.data.ratingTotal >= (resource.data.rating * resource.data.reviewCount) + 1.0
+                  && request.resource.data.ratingTotal <= (resource.data.rating * resource.data.reviewCount) + 5.0
+                )
+              )
+            )
+            || (
+              (!('reviewCount' in resource.data) || resource.data.reviewCount == null || resource.data.reviewCount == 0)
+              && request.resource.data.reviewCount == 1
+              && request.resource.data.ratingTotal >= 1.0
+              && request.resource.data.ratingTotal <= 5.0
+            )
+          );
       }
 
       // 3. Update:
       // - Verified admin can update/publish directly, approve, or reject.
       // - Users can submit 1-5 star ratings on approved services.
-      // - Authorized service owner (authenticated or holding verified edit token) can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
-      // - Authorized service owner (authenticated or holding verified edit token) can update pending drafts (keeping status pending).
+      // - Authorized service owner (authenticated or holding verified edit token with single-use editNonce) can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
+      // - Authorized service owner (authenticated or holding verified edit token with single-use editNonce) can update pending drafts (keeping status pending).
       allow update: if isAdmin() 
         || isValidRatingUpdate()
         || isValidProviderPendingEditSubmission()
         || isValidPendingServiceDraftUpdate();
 
-      // 4. Delete: Strictly restricted to verified administrator or authorized service owner (authenticated or holding verified edit token).
-      allow delete: if isAdmin() || isAuthorizedServiceOwner();
+      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder with single-use deleteNonce
+      allow delete: if isAdmin() || isServiceOwner() || hasValidServiceDeleteToken();
 
       // Service Ratings Subcollection: Stores each individual user rating (1-5 stars)
       match /ratings/{ratingId} {
@@ -354,7 +405,9 @@ service cloud.firestore {
       );
       allow update: if isAdmin() || (
         request.resource.data.verifiedToken == resource.data.editToken
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'lastEditedAt', 'deletedAt'])
+        && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken)
+        && (!('serviceId' in request.resource.data) || request.resource.data.serviceId == resource.data.serviceId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'editNonce', 'deleteNonce', 'lastEditedAt', 'deletedAt'])
       );
       allow delete: if isAdmin();
     }

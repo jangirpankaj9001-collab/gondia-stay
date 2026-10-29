@@ -250,6 +250,7 @@ export interface ServiceItem {
   hasPendingEdit?: boolean;
   pendingEdit?: Partial<ServiceItem>;
   submittedAt?: number;
+  editNonce?: string;
 }
 
 export type SortOption = 
