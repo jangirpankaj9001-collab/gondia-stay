@@ -59,6 +59,28 @@ const TILE_LAYERS = {
   }
 };
 
+/**
+ * Finds the nearest known locality in Gondia for given coordinates.
+ */
+export const findNearestLocality = (lat: number, lng: number): string | undefined => {
+  let nearestLoc: string | undefined;
+  let minDist = Infinity;
+  for (const [name, coords] of Object.entries(GONDIA_LOCALITY_COORDS)) {
+    const dLat = coords.lat - lat;
+    const dLng = coords.lng - lng;
+    const dist = dLat * dLat + dLng * dLng;
+    if (dist < minDist) {
+      minDist = dist;
+      nearestLoc = name;
+    }
+  }
+  // If within ~3km in Gondia (0.003 degrees squared ~ approx 3km)
+  if (minDist < 0.003) {
+    return nearestLoc;
+  }
+  return undefined;
+};
+
 export const GondiaMap: React.FC<GondiaMapProps> = ({
   properties = [],
   selectedPropertyId,
@@ -75,6 +97,11 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
   const localitiesLayerRef = useRef<L.LayerGroup | null>(null);
   const pickerMarkerRef = useRef<L.Marker | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
+
+  const onPickerLocationChangeRef = useRef(onPickerLocationChange);
+  useEffect(() => {
+    onPickerLocationChangeRef.current = onPickerLocationChange;
+  }, [onPickerLocationChange]);
 
   const [activeLayerKey, setActiveLayerKey] = useState<'osm' | 'hot'>('osm');
   const [showLayerMenu, setShowLayerMenu] = useState(false);
@@ -157,16 +184,6 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
 
     mapInstanceRef.current = map;
 
-    // Pinpoint mode: click on map to reposition pinpoint marker
-    if (mode === 'picker') {
-      map.on('click', (e: L.LeafletMouseEvent) => {
-        const { lat, lng } = e.latlng;
-        if (onPickerLocationChange) {
-          onPickerLocationChange({ lat, lng });
-        }
-      });
-    }
-
     // Force map to recalculate size after DOM rendering
     const timer = setTimeout(() => {
       map.invalidateSize();
@@ -184,12 +201,35 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
     };
   }, []);
 
-  // Render Locality Landmark Labels on the Map for clear navigation
+  // Tapping anywhere on the map in picker mode smoothly updates the single location pin
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || mode !== 'picker') return;
+
+    const handleMapClick = (e: L.LeafletMouseEvent) => {
+      const { lat, lng } = e.latlng;
+      if (pickerMarkerRef.current) {
+        pickerMarkerRef.current.setLatLng([lat, lng]);
+      }
+      const nearestLoc = findNearestLocality(lat, lng);
+      if (onPickerLocationChangeRef.current) {
+        onPickerLocationChangeRef.current({ lat, lng, locality: nearestLoc });
+      }
+    };
+
+    map.on('click', handleMapClick);
+    return () => {
+      map.off('click', handleMapClick);
+    };
+  }, [mode]);
+
+  // Render Locality Landmark Labels on the Map for clear navigation (Explore Mode Only)
   useEffect(() => {
     if (!mapInstanceRef.current || !localitiesLayerRef.current) return;
     localitiesLayerRef.current.clearLayers();
 
-    if (!showLocalityLabels) return;
+    // In picker mode, do NOT show locality markers to guarantee strictly ONE single location pin on the map
+    if (mode === 'picker' || !showLocalityLabels) return;
 
     Object.entries(GONDIA_LOCALITY_COORDS).forEach(([name, coords]) => {
       const isSelected = mode === 'explore' && properties.some(
@@ -222,20 +262,19 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
         if (mapInstanceRef.current) {
           mapInstanceRef.current.flyTo([coords.lat, coords.lng], 15, { duration: 0.8 });
         }
-        if (mode === 'picker' && onPickerLocationChange) {
-          onPickerLocationChange({ lat: coords.lat, lng: coords.lng, locality: name });
-        }
       });
 
       localitiesLayerRef.current?.addLayer(marker);
     });
-  }, [showLocalityLabels, mode, properties, selectedPropertyId, onPickerLocationChange]);
+  }, [showLocalityLabels, mode, properties, selectedPropertyId]);
 
   // Update Explore Mode Property Markers
   useEffect(() => {
-    if (mode !== 'explore' || !mapInstanceRef.current || !markersLayerRef.current) return;
-
+    if (!mapInstanceRef.current || !markersLayerRef.current) return;
     markersLayerRef.current.clearLayers();
+
+    // In picker mode, do NOT show explore property markers
+    if (mode !== 'explore') return;
 
     properties.forEach((property) => {
       const lat = property.latitude || GONDIA_CENTER.lat;
@@ -344,38 +383,54 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
     });
   }, [properties, selectedPropertyId, mode, onSelectProperty]);
 
-  // Update Pinpoint Mode Marker (Preserved & Enhanced)
+  // Update Pinpoint Mode Marker - Exactly one location pin that identifies and updates selected property location
   useEffect(() => {
-    if (mode !== 'picker' || !mapInstanceRef.current) return;
+    if (!mapInstanceRef.current) return;
 
-    const lat = pickerLocation?.lat || GONDIA_CENTER.lat;
-    const lng = pickerLocation?.lng || GONDIA_CENTER.lng;
+    if (mode !== 'picker') {
+      if (pickerMarkerRef.current) {
+        mapInstanceRef.current.removeLayer(pickerMarkerRef.current);
+        pickerMarkerRef.current = null;
+      }
+      return;
+    }
+
+    // Ensure any user GPS marker or extra layers are cleared in picker mode
+    if (userMarkerRef.current) {
+      mapInstanceRef.current.removeLayer(userMarkerRef.current);
+      userMarkerRef.current = null;
+    }
+
+    const lat = pickerLocation?.lat ?? GONDIA_CENTER.lat;
+    const lng = pickerLocation?.lng ?? GONDIA_CENTER.lng;
 
     const pickerHtml = `
-      <div class="cursor-grab active:cursor-grabbing flex flex-col items-center select-none" style="touch-action: none;">
-        <div style="background: #1d4ed8; color: #ffffff; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); white-space: nowrap; margin-bottom: 2px; border: 1px solid #60a5fa; display: flex; align-items: center; gap: 4px;">
-          <span>📍 Pinpoint Location</span>
+      <div style="display: flex; flex-direction: column; align-items: center; user-select: none; cursor: grab;" class="picker-pin-wrapper">
+        <div style="background: #1e3a8a; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); white-space: nowrap; margin-bottom: 2px; border: 1px solid #93c5fa; letter-spacing: 0.01em;">
+          Property Location
         </div>
-        <div style="width: 36px; height: 36px; border-radius: 9999px; background: #2563eb; color: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(37,99,235,0.45); border: 2.5px solid #ffffff;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-            <circle cx="12" cy="10" r="3"/>
+        <div style="position: relative; width: 32px; height: 40px; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.35));">
+          <svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 0C7.16 0 0 7.16 0 16C0 25.5 14 38.5 14.9 39.4C15.5 40 16.5 40 17.1 39.4C18 38.5 32 25.5 32 16C32 7.16 24.84 0 16 0Z" fill="#DC2626"/>
+            <circle cx="16" cy="15" r="6" fill="#FFFFFF"/>
+            <circle cx="16" cy="15" r="3" fill="#DC2626"/>
           </svg>
         </div>
+        <div style="width: 14px; height: 4px; background: rgba(0,0,0,0.3); border-radius: 50%; margin-top: -2px; filter: blur(1px);"></div>
       </div>
     `;
 
     const pickerIcon = L.divIcon({
       html: pickerHtml,
       className: 'picker-marker-container',
-      iconSize: [140, 68],
-      iconAnchor: [70, 62]
+      iconSize: [120, 65],
+      iconAnchor: [60, 61]
     });
 
     if (pickerMarkerRef.current) {
       pickerMarkerRef.current.setLatLng([lat, lng]);
       if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains([lat, lng])) {
-        mapInstanceRef.current.panTo([lat, lng], { animate: true, duration: 0.5 });
+        mapInstanceRef.current.panTo([lat, lng], { animate: true, duration: 0.4 });
       }
     } else {
       const marker = L.marker([lat, lng], {
@@ -384,17 +439,21 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
         zIndexOffset: 1000
       });
 
-      marker.on('dragend', (e: any) => {
+      const handleDrag = (e: any) => {
         const newPos = e.target.getLatLng();
-        if (onPickerLocationChange) {
-          onPickerLocationChange({ lat: newPos.lat, lng: newPos.lng });
+        const nearestLoc = findNearestLocality(newPos.lat, newPos.lng);
+        if (onPickerLocationChangeRef.current) {
+          onPickerLocationChangeRef.current({ lat: newPos.lat, lng: newPos.lng, locality: nearestLoc });
         }
-      });
+      };
+
+      marker.on('drag', handleDrag);
+      marker.on('dragend', handleDrag);
 
       marker.addTo(mapInstanceRef.current);
       pickerMarkerRef.current = marker;
     }
-  }, [mode, pickerLocation, onPickerLocationChange]);
+  }, [mode, pickerLocation?.lat, pickerLocation?.lng]);
 
   // Jump to specific locality
   const handleJumpToLocality = (locality: string) => {
@@ -448,45 +507,57 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
           // Smooth fly to current location
           mapInstanceRef.current.flyTo([latitude, longitude], 16, { duration: 1.2 });
 
-          // Render or update animated User Location Pin marker
-          const userLocationHtml = `
-            <div class="user-location-pin-wrapper select-none">
-              <div class="user-pulse-halo"></div>
-              <div class="user-pin-bubble">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                  <circle cx="12" cy="10" r="3"/>
-                </svg>
+          // In explore mode, show user location indicator
+          if (mode === 'explore') {
+            const userLocationHtml = `
+              <div class="user-location-pin-wrapper select-none">
+                <div class="user-pulse-halo"></div>
+                <div class="user-pin-bubble">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  </svg>
+                </div>
               </div>
-            </div>
-          `;
+            `;
 
-          const userIcon = L.divIcon({
-            html: userLocationHtml,
-            className: 'user-location-div-icon',
-            iconSize: [44, 44],
-            iconAnchor: [22, 22]
-          });
-
-          if (userMarkerRef.current) {
-            userMarkerRef.current.setLatLng([latitude, longitude]);
-          } else {
-            const uMarker = L.marker([latitude, longitude], {
-              icon: userIcon,
-              zIndexOffset: 800
+            const userIcon = L.divIcon({
+              html: userLocationHtml,
+              className: 'user-location-div-icon',
+              iconSize: [44, 44],
+              iconAnchor: [22, 22]
             });
-            uMarker.bindPopup(`
-              <div style="font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; color: #1e3a8a; padding: 4px;">
-                📍 You are here
-              </div>
-            `);
-            uMarker.addTo(mapInstanceRef.current);
-            userMarkerRef.current = uMarker;
+
+            if (userMarkerRef.current) {
+              userMarkerRef.current.setLatLng([latitude, longitude]);
+            } else {
+              const uMarker = L.marker([latitude, longitude], {
+                icon: userIcon,
+                zIndexOffset: 800
+              });
+              uMarker.bindPopup(`
+                <div style="font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; color: #1e3a8a; padding: 4px;">
+                  📍 You are here
+                </div>
+              `);
+              uMarker.addTo(mapInstanceRef.current);
+              userMarkerRef.current = uMarker;
+            }
+          } else if (mode === 'picker') {
+            // In picker mode, keep strictly one location pin and update it
+            if (userMarkerRef.current && mapInstanceRef.current) {
+              mapInstanceRef.current.removeLayer(userMarkerRef.current);
+              userMarkerRef.current = null;
+            }
+            if (pickerMarkerRef.current) {
+              pickerMarkerRef.current.setLatLng([latitude, longitude]);
+            }
           }
         }
 
-        if (mode === 'picker' && onPickerLocationChange) {
-          onPickerLocationChange({ lat: latitude, lng: longitude });
+        if (mode === 'picker' && onPickerLocationChangeRef.current) {
+          const nearestLoc = findNearestLocality(latitude, longitude);
+          onPickerLocationChangeRef.current({ lat: latitude, lng: longitude, locality: nearestLoc });
         }
 
         setLocationToast({
@@ -572,21 +643,23 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
         {/* Floating Map Controls (Right Side) */}
         <div className="absolute top-3 right-3 z-400 flex flex-col gap-2">
           
-          {/* Dedicated Current-Location Button with Location-Pin Icon */}
-          <button
-            type="button"
-            onClick={handleUseCurrentLocation}
-            disabled={isLocating}
-            className="w-10 h-10 rounded-2xl bg-white hover:bg-blue-50 text-blue-700 border border-slate-200/90 shadow-md flex items-center justify-center transition-all cursor-pointer hover:shadow-lg active:scale-90 group"
-            title="Center map on my current location (GPS)"
-            aria-label="My Location"
-          >
-            {isLocating ? (
-              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            ) : (
-              <MapPin className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
-            )}
-          </button>
+          {/* Dedicated Current-Location Button with Location-Pin Icon (Explore Mode Only) */}
+          {mode === 'explore' && (
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isLocating}
+              className="w-10 h-10 rounded-2xl bg-white hover:bg-blue-50 text-blue-700 border border-slate-200/90 shadow-md flex items-center justify-center transition-all cursor-pointer hover:shadow-lg active:scale-90 group"
+              title="Center map on my current location (GPS)"
+              aria-label="My Location"
+            >
+              {isLocating ? (
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+              ) : (
+                <MapPin className="w-5 h-5 text-blue-600 group-hover:scale-110 transition-transform" />
+              )}
+            </button>
+          )}
 
           {/* Smooth Zoom Controls */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md flex flex-col overflow-hidden">
@@ -683,30 +756,7 @@ export const GondiaMap: React.FC<GondiaMapProps> = ({
           </div>
         </div>
 
-        {/* Pinpoint Helper in Picker Mode */}
-        {mode === 'picker' && (
-          <div className="absolute bottom-3 left-3 right-3 sm:left-4 sm:right-auto z-400 bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-2xl shadow-lg border border-slate-200 text-xs flex items-center justify-between gap-3 max-w-sm">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
-              <div className="text-[11px] leading-tight">
-                <span className="font-extrabold text-slate-800 block">Tap map or drag pin</span>
-                <span className="text-slate-500">
-                  {pickerLocation ? `${pickerLocation.lat.toFixed(4)}, ${pickerLocation.lng.toFixed(4)}` : 'Coordinates set'}
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleUseCurrentLocation}
-              disabled={isLocating}
-              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold rounded-xl border border-blue-200 text-[11px] flex items-center gap-1 cursor-pointer shrink-0"
-              title="Pinpoint current location"
-            >
-              <MapPin className="w-3 h-3 text-blue-600" />
-              <span>Use GPS</span>
-            </button>
-          </div>
-        )}
+
       </div>
 
       {/* Bottom Footer Details (Explore Mode) */}
