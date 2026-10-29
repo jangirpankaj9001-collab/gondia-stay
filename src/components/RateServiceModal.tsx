@@ -34,8 +34,9 @@ export const RateServiceModal: React.FC<RateServiceModalProps> = ({
   const alreadyRated = hasUserRatedService(service.id);
   const userPreviousScore = getUserRatingForService(service.id);
   const activeScore = hoveredScore || selectedScore;
-  const currentAvgRating = typeof service.rating === 'number' ? service.rating.toFixed(1) : (service.rating || '5.0');
-  const reviewCount = service.reviewCount || 1;
+  const hasRatings = Boolean(typeof service.rating === 'number' && service.rating > 0 && typeof service.reviewCount === 'number' && service.reviewCount > 0);
+  const currentAvgRating = hasRatings ? service.rating!.toFixed(1) : null;
+  const reviewCount = hasRatings ? service.reviewCount! : 0;
 
   const handleSubmit = async () => {
     if (selectedScore < 1 || selectedScore > 5 || isSubmitting || alreadyRated) return;
@@ -89,12 +90,14 @@ export const RateServiceModal: React.FC<RateServiceModalProps> = ({
             <div>
               <span className="text-[11px] font-bold text-slate-600 block">Current Average</span>
               <span className="text-xs text-slate-500">
-                Based on {reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
+                {hasRatings ? `Based on ${reviewCount} ${reviewCount === 1 ? 'rating' : 'ratings'}` : 'No ratings submitted yet'}
               </span>
             </div>
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-amber-200 shadow-xs">
-              <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-              <span className="text-sm font-black text-slate-900">{currentAvgRating}</span>
+              <Star className={`w-4 h-4 ${hasRatings ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+              <span className="text-sm font-black text-slate-900">
+                {hasRatings ? currentAvgRating : 'No ratings yet.'}
+              </span>
             </div>
           </div>
 

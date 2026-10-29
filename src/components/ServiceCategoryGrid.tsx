@@ -486,9 +486,18 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           className="absolute top-3 right-3 bg-white/95 hover:bg-amber-50 active:scale-95 transition-all backdrop-blur-md px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1.5 text-[11px] font-extrabold text-slate-900 border border-slate-200/60 cursor-pointer group/rate"
                           title="Tap to rate this service provider"
                         >
-                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 group-hover/rate:scale-110 transition-transform" />
-                          <span>{typeof provider.rating === 'number' ? provider.rating.toFixed(1) : (provider.rating || '5.0')}</span>
-                          <span className="text-slate-400 text-[10px]">({provider.reviewCount || 1})</span>
+                          {typeof provider.rating === 'number' && provider.rating > 0 && typeof provider.reviewCount === 'number' && provider.reviewCount > 0 ? (
+                            <>
+                              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 group-hover/rate:scale-110 transition-transform" />
+                              <span>{provider.rating.toFixed(1)}</span>
+                              <span className="text-slate-400 text-[10px]">({provider.reviewCount})</span>
+                            </>
+                          ) : (
+                            <>
+                              <Star className="w-3.5 h-3.5 text-amber-500 group-hover/rate:scale-110 transition-transform" />
+                              <span className="text-amber-700 text-[10px] font-bold">No ratings yet.</span>
+                            </>
+                          )}
                         </button>
 
                         {/* Charges Bottom Pill on Image */}

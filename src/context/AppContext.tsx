@@ -1021,9 +1021,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Optimistically calculate and update state
     setServices(prev => prev.map(s => {
       if (s.id === serviceId) {
-        const currentCount = s.reviewCount || 1;
-        const currentRating = s.rating || 5.0;
-        const currentTotal = s.ratingTotal ?? (currentRating * currentCount);
+        const hasExisting = Boolean(
+          typeof s.reviewCount === 'number' && 
+          s.reviewCount > 0 && 
+          typeof s.rating === 'number' && 
+          s.rating > 0
+        );
+        const currentCount = hasExisting ? s.reviewCount! : 0;
+        const currentTotal = hasExisting ? (s.ratingTotal ?? (s.rating! * currentCount)) : 0;
         const newCount = currentCount + 1;
         const newTotal = currentTotal + safeScore;
         const newRating = Math.round((newTotal / newCount) * 10) / 10;

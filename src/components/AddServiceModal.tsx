@@ -406,8 +406,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         timing: timing.trim(),
         experienceYears,
         status: isAdmin ? adminStatus : 'pending',
-        rating: 5.0,
-        reviewCount: 1,
+        rating: 0,
+        reviewCount: 0,
+        ratingTotal: 0,
         specialties: specs
       };
 

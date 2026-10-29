@@ -151,9 +151,18 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               className="bg-black/75 hover:bg-black/90 active:scale-95 transition-all backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded-xl flex items-center gap-1.5 cursor-pointer border border-white/20 group/rate"
               title="Tap to rate this service provider"
             >
-              <Star className="w-3.5 h-3.5 text-amber-400 fill-current group-hover/rate:scale-110 transition-transform" />
-              <span>{typeof service.rating === 'number' ? service.rating.toFixed(1) : (service.rating || '5.0')}</span>
-              <span className="text-slate-400 text-[10px]">({service.reviewCount || 1})</span>
+              {typeof service.rating === 'number' && service.rating > 0 && typeof service.reviewCount === 'number' && service.reviewCount > 0 ? (
+                <>
+                  <Star className="w-3.5 h-3.5 text-amber-400 fill-current group-hover/rate:scale-110 transition-transform" />
+                  <span>{service.rating.toFixed(1)}</span>
+                  <span className="text-slate-400 text-[10px]">({service.reviewCount})</span>
+                </>
+              ) : (
+                <>
+                  <Star className="w-3.5 h-3.5 text-amber-400 group-hover/rate:scale-110 transition-transform" />
+                  <span className="text-amber-200 text-[11px] font-bold">No ratings yet.</span>
+                </>
+              )}
             </button>
           </div>
 
