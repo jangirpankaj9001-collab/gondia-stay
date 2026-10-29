@@ -592,22 +592,18 @@ export const updateServiceInFirestore = async (
       ...fieldsForPendingEdit,
       submittedAt: Date.now()
     };
-    const singleUseNonce = 'nonce_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
     finalPayload = {
       hasPendingEdit: true,
       pendingEdit: pendingData,
-      editNonce: singleUseNonce,
       updatedAt: Date.now()
     };
   } else {
     // Provider editing pending service: update directly, remain pending
-    const singleUseNonce = 'nonce_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
     finalPayload = {
       ...sanitized,
       status: 'pending',
       hasPendingEdit: false,
       pendingEdit: null,
-      editNonce: singleUseNonce,
       updatedAt: Date.now()
     };
   }
@@ -642,14 +638,19 @@ export const updateServiceInFirestore = async (
   try {
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
     if (!isRealAdminAuth && editToken && editToken.trim()) {
+      const cleanToken = editToken.trim();
       const batch = writeBatch(db);
       batch.update(docRef, finalPayload);
-      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
-      batch.update(secretRef, {
-        verifiedToken: editToken.trim(),
-        editNonce: finalPayload.editNonce,
-        lastEditedAt: Date.now()
-      });
+      // Request-specific owner proof: update lastActionAt on service_edit_tokens/{cleanToken}.
+      // service_secrets remains strictly immutable. Only the caller who possesses the secret editToken
+      // can address its document ID in the write batch.
+      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
+      batch.set(tokenRef, {
+        serviceId,
+        serviceData: finalPayload,
+        lastActionAt: Date.now(),
+        updatedAt: Date.now()
+      }, { merge: true });
       await batch.commit();
       return { success: true };
     }
@@ -903,25 +904,15 @@ export const deleteServiceInFirestore = async (
     }
 
     // Owner deletion using private Edit Token:
-    // Uses an atomic writeBatch to delete the public service and verify the editToken
-    // against service_secrets on the server without needing client-side read permission.
+    // Uses an atomic writeBatch to delete the public service and delete the unguessable token
+    // document from service_edit_tokens. service_secrets remains immutable.
     if (token && token.trim()) {
       const cleanToken = token.trim();
-      const deleteNonce = 'del_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
       const batch = writeBatch(db);
       batch.delete(srvRef);
-      batch.update(secretRef, {
-        verifiedToken: cleanToken,
-        deleteNonce,
-        deletedAt: Date.now()
-      });
+      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
+      batch.delete(tokenRef);
       await batch.commit();
-
-      // Clean up token mapping if possible
-      try {
-        const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
-        await deleteDoc(tokenRef);
-      } catch {}
 
       return true;
     }
@@ -1013,7 +1004,21 @@ export const rateServiceInFirestore = async (
           finalRating = Math.round((finalTotal / finalCount) * 10) / 10;
         }
 
-        await updateDoc(srvRef, {
+        if (clientId) {
+          const ratingDocRef = doc(db, SERVICES_COLLECTION, serviceId, 'ratings', clientId);
+          const existingSnap = await getDoc(ratingDocRef);
+          if (existingSnap.exists()) {
+            return {
+              success: false,
+              newRating: prevRating,
+              newReviewCount: prevCount,
+              error: 'You have already submitted a rating for this service.'
+            };
+          }
+        }
+
+        const batch = writeBatch(db);
+        batch.update(srvRef, {
           rating: finalRating,
           reviewCount: finalCount,
           ratingTotal: finalTotal,
@@ -1021,21 +1026,28 @@ export const rateServiceInFirestore = async (
         });
 
         if (clientId) {
-          try {
-            const ratingDocRef = doc(db, SERVICES_COLLECTION, serviceId, 'ratings', clientId);
-            await setDoc(ratingDocRef, {
-              clientId,
-              serviceId,
-              score: safeScore,
-              createdAt: Date.now()
-            });
-          } catch (rErr) {
-            console.warn('[GondiaStay] Notice saving individual rating record:', rErr);
-          }
+          const ratingDocRef = doc(db, SERVICES_COLLECTION, serviceId, 'ratings', clientId);
+          batch.set(ratingDocRef, {
+            clientId,
+            serviceId,
+            score: safeScore,
+            createdAt: Date.now()
+          });
         }
+
+        await batch.commit();
       }
     } catch (err: any) {
       console.warn('[GondiaStay] Firestore rating update notice:', err);
+      const msg = err?.message || String(err);
+      if (msg.includes('permission') || msg.includes('PERMISSION_DENIED')) {
+        return {
+          success: false,
+          newRating: prevRating,
+          newReviewCount: prevCount,
+          error: 'Only one rating per user is permitted.'
+        };
+      }
       // Fallback: proceed with local update
     }
   }

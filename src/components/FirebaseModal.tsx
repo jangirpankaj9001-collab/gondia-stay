@@ -39,26 +39,41 @@ service cloud.firestore {
     // Helper function to verify admin authorization
     function isAdmin() {
       return request.auth != null && (
-        // Firebase custom claim: admin == true
-        request.auth.token.admin == true
+        // Firebase custom claim: admin == true (with verified email)
+        (request.auth.token.admin == true && request.auth.token.email_verified == true)
         // Or authorized admin email match strictly for verified administrator account
         || (
           request.auth.token.email != null 
           && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+          && request.auth.token.email_verified == true
         )
-        // Or registered in Firestore admins collection
-        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        // Or registered in Firestore admins collection with verified email
+        || (
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+          && request.auth.token.email_verified == true
+        )
       );
     }
 
     // Properties Collection: Gondia Stay listings
     match /properties/{propertyId} {
       // 1. Read:
-      // Property listings are publicly readable so all visitors can browse stays on Explore and Map.
-      allow read: if true;
+      // Restrict public reads to approved stays where compatible with the app.
+      // Verified admins and authenticated listing owners can read any status (including pending and rejected).
+      allow read: if (resource.data.status in ['approved', 'APPROVED'])
+        || isAdmin()
+        || isPropertyOwner();
 
       // 2. Create:
       // Zero-login submission: Any owner can submit a new property without login, password, or OTP.
+      // Strictly enforced server-side:
+      // - Status MUST be 'pending' (no public submission can self-approve)
+      // - Cannot set isFeatured: true on create
+      // - Title must be non-empty string <= 150 chars
+      // - Address must be non-empty string <= 300 chars
+      // - Monthly rent must be a non-negative number <= 1,000,000
+      // - Owner phone must be valid string (at least 5 characters)
+      // - Must atomically provision property_secrets for this property with a valid unguessable edit token
       allow create: if request.resource.data.status in ['pending', 'PENDING']
                     && request.resource.data.title is string
                     && request.resource.data.title.size() > 0
@@ -78,37 +93,110 @@ service cloud.firestore {
                     && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken is string
                     && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken.size() >= 24;
 
+      // Helper function to check permitted fields for owner listing update
       function hasOnlyPermittedListingUpdateKeys() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'title', 'address', 'locality', 'city', 'propertyType', 'accommodationType',
-          'monthlyRent', 'securityDeposit', 'bedrooms', 'bathrooms', 'kitchenAvailable',
-          'hallAvailable', 'furnishing', 'suitableTenants', 'availableFrom', 'amenities',
-          'photos', 'ownerId', 'ownerName', 'ownerPhone', 'ownerWhatsappNumber',
-          'ownerPreferredContact', 'ownerEmail', 'latitude', 'longitude', 'occupancyStatus',
-          'isFeatured', 'updatedAt'
+          'title',
+          'address',
+          'locality',
+          'city',
+          'propertyType',
+          'accommodationType',
+          'monthlyRent',
+          'securityDeposit',
+          'bedrooms',
+          'bathrooms',
+          'kitchenAvailable',
+          'hallAvailable',
+          'furnishing',
+          'suitableTenants',
+          'availableFrom',
+          'amenities',
+          'photos',
+          'ownerId',
+          'ownerName',
+          'ownerPhone',
+          'ownerWhatsappNumber',
+          'ownerPreferredContact',
+          'ownerEmail',
+          'latitude',
+          'longitude',
+          'occupancyStatus',
+          'isFeatured',
+          'updatedAt',
+          'hasPendingEdit',
+          'pendingEdit'
         ]);
       }
 
+      // Validation for permitted owner update:
+      // - Cannot self-approve listing (approval is admin-only)
+      // - Cannot self-feature listing
+      // - Cannot tamper with creation timestamp
+      // - Validates photos list and field types
       function isValidOwnerUpdate() {
         return hasOnlyPermittedListingUpdateKeys()
           && (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'PENDING'] || ('status' in resource.data && request.resource.data.status == resource.data.status))
           && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false || ('isFeatured' in resource.data && request.resource.data.isFeatured == resource.data.isFeatured))
           && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
           && (!('photos' in request.resource.data) || (
-            request.resource.data.photos is list && request.resource.data.photos.size() > 0 && request.resource.data.photos.size() <= 30
+            request.resource.data.photos is list
+            && request.resource.data.photos.size() > 0
+            && request.resource.data.photos.size() <= 30
           ))
-          && (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200))
-          && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() > 0 && request.resource.data.address.size() <= 500))
-          && (!('monthlyRent' in request.resource.data) || (request.resource.data.monthlyRent is number && request.resource.data.monthlyRent >= 0 && request.resource.data.monthlyRent <= 5000000))
-          && (!('ownerPhone' in request.resource.data) || (request.resource.data.ownerPhone is string && request.resource.data.ownerPhone.size() >= 5))
-          && (!('occupancyStatus' in request.resource.data) || (request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']));
+          && (!('title' in request.resource.data) || (
+            request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 200
+          ))
+          && (!('address' in request.resource.data) || (
+            request.resource.data.address is string
+            && request.resource.data.address.size() > 0
+            && request.resource.data.address.size() <= 500
+          ))
+          && (!('monthlyRent' in request.resource.data) || (
+            request.resource.data.monthlyRent is number
+            && request.resource.data.monthlyRent >= 0
+            && request.resource.data.monthlyRent <= 5000000
+          ))
+          && (!('ownerPhone' in request.resource.data) || (
+            request.resource.data.ownerPhone is string
+            && request.resource.data.ownerPhone.size() >= 5
+          ))
+          && (!('occupancyStatus' in request.resource.data) || (
+            request.resource.data.occupancyStatus in ['AVAILABLE', 'OCCUPIED', 'available', 'occupied']
+          ));
+      }
+
+      // Function to check if caller is the authenticated owner of the property
+      function isPropertyOwner() {
+        return request.auth != null && (
+          (resource.data.ownerId != null && resource.data.ownerId == request.auth.uid)
+          || (resource.data.ownerEmail != null && request.auth.token.email != null && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        );
+      }
+
+      // Helper function to verify caller has the unguessable private edit token in property_edit_tokens for this specific atomic update
+      // Never grants permanent authorization: requires caller to touch /property_edit_tokens/{token} in the same write batch
+      function hasValidPropertyEditToken() {
+        return exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+          && exists(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken))
+          && existsAfter(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken))
+          && (
+            !('lastActionAt' in get(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken)).data)
+            || getAfter(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken)).data.lastActionAt != get(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken)).data.lastActionAt
+          )
+          && ('lastActionAt' in getAfter(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken)).data);
       }
 
       // 3. Update:
-      // Verified Admin has full update privileges; Owner with private edit link can update permitted listing fields.
+      // - Verified Admin has full update privileges (approval, rejection, edits, occupancy, featured).
+      // - Authenticated owner can update permitted fields (including occupancyStatus).
+      // - Owner with unguessable private edit link can update permitted listing fields (including occupancyStatus) via atomic batch updating their private token doc in property_edit_tokens.
+      // - Unauthenticated occupancy status updates without private edit key or ownership are strictly prohibited.
+      // - Never exposes edit tokens in the public property document.
       allow update: if isAdmin() || (
-        exists(/databases/$(database)/documents/property_secrets/$(propertyId))
-        && getAfter(/databases/$(database)/documents/property_secrets/$(propertyId)).data.verifiedToken == get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken
+        (isPropertyOwner() || hasValidPropertyEditToken())
         && isValidOwnerUpdate()
       );
 
@@ -116,61 +204,97 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Property Secrets: Stores the unguessable private edit token for each property
+    // NEVER exposed in public property documents or readable by the public.
     match /property_secrets/{propertyId} {
+      // Strictly forbidden from public reads! Only admin can read.
       allow read: if isAdmin();
+
+      // Zero-login submission: Can ONLY be created atomically when a brand new property is submitted.
+      // Strictly prevents public users from creating arbitrary/standalone secrets or hijacking existing properties:
       allow create: if isAdmin() || (
+        // The property must NOT exist prior to this transaction
         !exists(/databases/$(database)/documents/properties/$(propertyId))
+        // The secret must NOT already exist
         && !exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+        // The property must be created in this very same atomic batch with 'pending' status
         && existsAfter(/databases/$(database)/documents/properties/$(propertyId))
         && getAfter(/databases/$(database)/documents/properties/$(propertyId)).data.status in ['pending', 'PENDING']
+        // Validate secret document payload strictly
         && request.resource.data.editToken is string
         && request.resource.data.editToken.size() >= 24
         && request.resource.data.propertyId == propertyId
         && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
         && request.resource.data.keys().hasOnly(['editToken', 'propertyId', 'createdAt'])
+        // Must bind with property_edit_tokens in the same batch
         && existsAfter(/databases/$(database)/documents/property_edit_tokens/$(request.resource.data.editToken))
         && getAfter(/databases/$(database)/documents/property_edit_tokens/$(request.resource.data.editToken)).data.propertyId == propertyId
       );
-      allow update: if isAdmin() || (
-        request.resource.data.verifiedToken == resource.data.editToken
-        && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken)
-        && (!('propertyId' in request.resource.data) || request.resource.data.propertyId == resource.data.propertyId)
-        && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'lastEditedAt', 'editNonce'])
-      );
+
+      // Property secrets are strictly immutable once created.
+      // Permanent authorization is impossible because secrets cannot be updated.
+      allow update: if false;
+
+      // Only admin can delete
       allow delete: if isAdmin();
     }
 
+    // Property Edit Tokens: Document ID is the unguessable token itself.
+    // Enables the private edit link to resolve to the property ID without exposing tokens.
     match /property_edit_tokens/{token} {
+      // Disallow list queries (nobody can enumerate or scan all tokens)
       allow list: if isAdmin();
+
+      // Unguessable token direct lookup: only someone who already possesses the exact token can fetch it
       allow get: if true;
+
+      // Created atomically when listing is submitted.
+      // Strictly prevents public users from forging edit-token mappings:
+      // - Property must be brand new (does not exist before this transaction)
+      // - Token document cannot overwrite an existing token
+      // - Property and secret must be created in this same batch
+      // - The token in the path MUST match the secret's editToken in property_secrets
       allow create: if isAdmin() || (
         token.size() >= 24
         && request.resource.data.propertyId is string
         && !exists(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
         && !exists(/databases/$(database)/documents/property_edit_tokens/$(token))
         && existsAfter(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+        && existsAfter(/databases/$(database)/documents/property_secrets/$(request.resource.data.propertyId))
         && getAfter(/databases/$(database)/documents/property_secrets/$(request.resource.data.propertyId)).data.editToken == token
       );
+
+      // Updates:
+      // - Public users CANNOT change propertyId (forging mapping to a different property is strictly prevented)
+      // - Token must match the trusted secret in property_secrets
+      // - Can only update draft propertyData, lastActionAt, and updatedAt
       allow update: if isAdmin() || (
         resource.data.propertyId == request.resource.data.propertyId
         && exists(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId))
         && get(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId)).data.editToken == token
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['propertyData', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['propertyData', 'updatedAt', 'lastActionAt'])
+        && ('lastActionAt' in request.resource.data)
+        && request.resource.data.lastActionAt is number
       );
+
       allow delete: if isAdmin();
     }
 
+    // Owners collection for profile data
     match /owners/{ownerId} {
       allow read: if true;
-      allow write: if isAdmin() || (request.auth != null && request.auth.uid == ownerId);
+      allow write: if isAdmin() 
+        || (request.auth != null && request.auth.uid == ownerId)
+        || (request.resource.data.name is string && request.resource.data.phone is string);
     }
 
+    // Admins Collection: restricted to verified administrators
     match /admins/{adminId} {
       allow read: if isAdmin();
       allow write: if false;
     }
 
+    // Tiffin Services Collection (Legacy support)
     match /tiffin_services/{serviceId} {
       allow read: if true;
       allow create: if (
@@ -182,13 +306,23 @@ service cloud.firestore {
 
     // Services Collection: Gondia local services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security)
     match /services/{serviceId} {
-      // 1. Read: Restrict public reads to approved services where compatible with the app.
+      // 1. Read:
+      // Restrict public reads to approved services where compatible with the app.
       // Verified admins and authenticated listing owners can read any status (including pending drafts and rejected).
       allow read: if (resource.data.status in ['approved', 'APPROVED'])
         || isAdmin()
         || isServiceOwner();
 
-      // 2. Create: Zero-login registration for any resident/service provider in Gondia.
+      // 2. Create:
+      // Zero-login registration for any resident/service provider in Gondia.
+      // Safe against unauthorized direct publishing:
+      // - Must contain valid title (non-empty string <= 200 chars)
+      // - Must contain contact phone (string with >= 5 digits)
+      // - Must specify a service category
+      // - Status MUST be 'pending' for zero-login / unauthenticated submissions
+      // - NEVER allows editToken in the public service document
+      // - Must atomically provision service_secrets for this service with an unguessable edit token (>= 24 chars)
+      // - Verified admin can create directly as 'approved' or 'pending'
       allow create: if request.resource.data.title is string
                     && request.resource.data.title.size() > 0
                     && request.resource.data.title.size() <= 200
@@ -215,28 +349,25 @@ service cloud.firestore {
         );
       }
 
-      // Helper function to verify caller has the unguessable private edit token in service_secrets for this specific atomic edit
-      // Never grants permanent authorization: requires single-use editNonce updated in the same write batch
+      // Helper function to verify caller has the unguessable private edit token in service_edit_tokens for this specific atomic edit
+      // Never grants permanent authorization: requires caller to touch /service_edit_tokens/{token} in the same write batch
       function hasValidServiceEditToken() {
         return exists(/databases/$(database)/documents/service_secrets/$(serviceId))
-          && ('editNonce' in request.resource.data)
-          && request.resource.data.editNonce is string
-          && request.resource.data.editNonce.size() >= 10
-          && ('editNonce' in getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data)
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editNonce == request.resource.data.editNonce
-          && (!('editNonce' in get(/databases/$(database)/documents/service_secrets/$(serviceId)).data) || getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editNonce != get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editNonce)
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken;
+          && exists(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken))
+          && existsAfter(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken))
+          && (
+            !('lastActionAt' in get(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken)).data)
+            || getAfter(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken)).data.lastActionAt != get(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken)).data.lastActionAt
+          )
+          && ('lastActionAt' in getAfter(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken)).data);
       }
 
-      // Helper function to verify caller has the unguessable private edit token in service_secrets for deleting this service
-      // Never grants permanent authorization: requires single-use deleteNonce updated in the same write batch
+      // Helper function to verify caller has the unguessable private edit token in service_edit_tokens for deleting this service
+      // Never grants permanent authorization: requires caller to delete /service_edit_tokens/{token} in the same write batch
       function hasValidServiceDeleteToken() {
         return exists(/databases/$(database)/documents/service_secrets/$(serviceId))
-          && ('deleteNonce' in getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data)
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce is string
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce.size() >= 10
-          && (!('deleteNonce' in get(/databases/$(database)/documents/service_secrets/$(serviceId)).data) || getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce != get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.deleteNonce)
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken;
+          && exists(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken))
+          && !existsAfter(/databases/$(database)/documents/service_edit_tokens/$(get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken));
       }
 
       // True if caller is authorized owner: either through Firebase Auth or verified private edit token
@@ -244,26 +375,46 @@ service cloud.firestore {
         return isServiceOwner() || hasValidServiceEditToken();
       }
 
-      // Helper function to check permitted fields for draft service updates (excludes ownerId and ownerEmail)
+      // Helper function to check permitted fields for draft service updates
       function hasOnlyPermittedServiceDraftKeys() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'title', 'category', 'providerName', 'ownerName', 'phone', 'ownerPhone',
-          'whatsappNumber', 'ownerWhatsappNumber', 'charges', 'chargeUnit', 'priceNumeric',
-          'description', 'serviceAreas', 'locality', 'city', 'address', 'photos',
-          'businessCardPhoto', 'timing', 'experienceYears', 'specialties', 'status',
-          'updatedAt', 'hasPendingEdit', 'pendingEdit', 'editNonce'
+          'title',
+          'category',
+          'providerName',
+          'ownerName',
+          'phone',
+          'ownerPhone',
+          'whatsappNumber',
+          'ownerWhatsappNumber',
+          'charges',
+          'chargeUnit',
+          'priceNumeric',
+          'description',
+          'serviceAreas',
+          'locality',
+          'city',
+          'address',
+          'photos',
+          'businessCardPhoto',
+          'timing',
+          'experienceYears',
+          'specialties',
+          'status',
+          'updatedAt',
+          'hasPendingEdit',
+          'pendingEdit'
         ]);
       }
 
       // Submission of edited services for admin reapproval on an ALREADY APPROVED listing:
       // - Keeps the approved live listing completely unchanged until administrator verifies and approves.
-      // - Strictly restricts root document changes to pendingEdit, hasPendingEdit, updatedAt, and editNonce.
+      // - Strictly restricts root document changes to pendingEdit, hasPendingEdit, and updatedAt.
       // - Live status remains 'approved' and cannot be altered or self-published.
       // - Requires valid pendingEdit map containing proposed changes.
       // - Strictly requires caller to be authorized service owner (authenticated or holding single-use verified edit token).
       function isValidProviderPendingEditSubmission() {
         return (resource.data.status in ['approved', 'APPROVED'])
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasPendingEdit', 'pendingEdit', 'updatedAt', 'editNonce'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasPendingEdit', 'pendingEdit', 'updatedAt'])
           && request.resource.data.status == resource.data.status
           && request.resource.data.hasPendingEdit == true
           && isAuthorizedServiceOwner()
@@ -369,27 +520,33 @@ service cloud.firestore {
       // 3. Update:
       // - Verified admin can update/publish directly, approve, or reject.
       // - Users can submit 1-5 star ratings on approved services.
-      // - Authorized service owner (authenticated or holding verified edit token with single-use editNonce) can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
-      // - Authorized service owner (authenticated or holding verified edit token with single-use editNonce) can update pending drafts (keeping status pending).
+      // - Authorized service owner (authenticated or holding verified edit token) can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
+      // - Authorized service owner (authenticated or holding verified edit token) can update pending drafts (keeping status pending).
       allow update: if isAdmin() 
         || isValidRatingUpdate()
         || isValidProviderPendingEditSubmission()
         || isValidPendingServiceDraftUpdate();
 
-      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder with single-use deleteNonce
+      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder
       allow delete: if isAdmin() || isServiceOwner() || hasValidServiceDeleteToken();
 
       // Service Ratings Subcollection: Stores each individual user rating (1-5 stars)
       match /ratings/{ratingId} {
         allow read: if true;
-        allow create: if request.resource.data.score is number
+        // Prevent duplicate rating abuse: can create only if doc doesn't exist yet!
+        allow create: if !exists(/databases/$(database)/documents/services/$(serviceId)/ratings/$(ratingId))
+          && request.resource.data.score is number
           && request.resource.data.score >= 1
           && request.resource.data.score <= 5
           && request.resource.data.serviceId == serviceId;
-        allow update, delete: if isAdmin();
+        // Cannot overwrite existing rating (prevent rating manipulation/alteration)
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
 
+    // Service Secrets: Stores private edit token and owner ID for each service
+    // NEVER exposed in public service documents or readable by the public.
     match /service_secrets/{serviceId} {
       allow read: if isAdmin();
       allow create: if isAdmin() || (
@@ -403,15 +560,12 @@ service cloud.firestore {
         && request.resource.data.serviceId == serviceId
         && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
       );
-      allow update: if isAdmin() || (
-        request.resource.data.verifiedToken == resource.data.editToken
-        && (!('editToken' in request.resource.data) || request.resource.data.editToken == resource.data.editToken)
-        && (!('serviceId' in request.resource.data) || request.resource.data.serviceId == resource.data.serviceId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verifiedToken', 'editNonce', 'deleteNonce', 'lastEditedAt', 'deletedAt'])
-      );
+      // Service secrets are strictly immutable once created.
+      allow update: if false;
       allow delete: if isAdmin();
     }
 
+    // Service Edit Tokens: Enables looking up service by private edit token
     match /service_edit_tokens/{token} {
       allow list: if isAdmin();
       allow get: if true;
@@ -424,10 +578,23 @@ service cloud.firestore {
         && existsAfter(/databases/$(database)/documents/service_secrets/$(request.resource.data.serviceId))
         && getAfter(/databases/$(database)/documents/service_secrets/$(request.resource.data.serviceId)).data.editToken == token
       );
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        resource.data.serviceId == request.resource.data.serviceId
+        && exists(/databases/$(database)/documents/service_secrets/$(resource.data.serviceId))
+        && get(/databases/$(database)/documents/service_secrets/$(resource.data.serviceId)).data.editToken == token
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['serviceData', 'updatedAt', 'lastActionAt'])
+        && ('lastActionAt' in request.resource.data)
+        && request.resource.data.lastActionAt is number
+      );
+      allow delete: if isAdmin() || (
+        exists(/databases/$(database)/documents/service_secrets/$(resource.data.serviceId))
+        && get(/databases/$(database)/documents/service_secrets/$(resource.data.serviceId)).data.editToken == token
+        && !existsAfter(/databases/$(database)/documents/services/$(resource.data.serviceId))
+      );
     }
   }
-}`;
+}
+`;
 
 interface FirebaseModalProps {
   isOpen: boolean;

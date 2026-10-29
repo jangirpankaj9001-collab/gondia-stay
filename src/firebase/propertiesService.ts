@@ -336,17 +336,14 @@ export const savePropertyToFirestore = async (
         });
       }
       
-      const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, property.id);
-      batch.update(secretRef, {
-        verifiedToken: editToken,
-        lastEditedAt: Date.now(),
-        editNonce: Math.random().toString(36).substring(2)
-      });
-
+      // Request-specific owner proof: update lastActionAt on property_edit_tokens/{editToken}.
+      // property_secrets remains strictly immutable. Only the caller who possesses the secret editToken
+      // can address its document ID in the write batch.
       const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken);
       batch.set(tokenRef, {
         propertyId: property.id,
         propertyData: isCurrentlyApproved ? { ...(existingSnap.data() || {}), pendingEdit: updatePayload } : updatePayload,
+        lastActionAt: Date.now(),
         updatedAt: Date.now()
       }, { merge: true });
 
@@ -572,12 +569,14 @@ export const updatePropertyOccupancyInFirestore = async (
     occupancyStatus,
     updatedAt: Date.now()
   });
-  const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
-  batch.update(secretRef, {
-    verifiedToken: editToken,
-    lastEditedAt: Date.now(),
-    editNonce: Math.random().toString(36).substring(2)
-  });
+  // Request-specific owner proof: update lastActionAt on property_edit_tokens/{editToken}.
+  // property_secrets remains strictly immutable.
+  const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken);
+  batch.set(tokenRef, {
+    propertyId,
+    lastActionAt: Date.now(),
+    updatedAt: Date.now()
+  }, { merge: true });
   await batch.commit();
 };
 
