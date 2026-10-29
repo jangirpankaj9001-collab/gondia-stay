@@ -303,6 +303,17 @@ service cloud.firestore {
         );
       }
 
+      // Helper function to verify caller has the unguessable private edit token in service_secrets
+      function hasValidServiceEditToken() {
+        return exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken;
+      }
+
+      // True if caller is authorized owner: either through Firebase Auth or verified private edit token
+      function isAuthorizedServiceOwner() {
+        return isServiceOwner() || hasValidServiceEditToken();
+      }
+
       // Helper function to check permitted fields for draft service updates
       function hasOnlyPermittedServiceDraftKeys() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -330,9 +341,7 @@ service cloud.firestore {
           'status',
           'updatedAt',
           'hasPendingEdit',
-          'pendingEdit',
-          'ownerId',
-          'ownerEmail'
+          'pendingEdit'
         ]);
       }
 
@@ -341,14 +350,14 @@ service cloud.firestore {
       // - Strictly restricts root document changes to pendingEdit, hasPendingEdit, and updatedAt.
       // - Live status remains 'approved' and cannot be altered or self-published.
       // - Requires valid pendingEdit map containing proposed changes.
-      // - If listing has an authenticated ownerId, only that owner (or admin) can submit edits.
+      // - Strictly requires caller to be authorized service owner (authenticated or holding verified edit token).
       function isValidProviderPendingEditSubmission() {
         return (resource.data.status in ['approved', 'APPROVED'])
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasPendingEdit', 'pendingEdit', 'updatedAt'])
           && request.resource.data.status == resource.data.status
           && request.resource.data.hasPendingEdit == true
+          && isAuthorizedServiceOwner()
           && request.resource.data.pendingEdit is map
-          && (!('ownerId' in resource.data) || resource.data.ownerId == null || isServiceOwner())
           && (!('title' in request.resource.data.pendingEdit) || (
             request.resource.data.pendingEdit.title is string
             && request.resource.data.pendingEdit.title.size() > 0
@@ -357,6 +366,18 @@ service cloud.firestore {
           && (!('phone' in request.resource.data.pendingEdit) || (
             request.resource.data.pendingEdit.phone is string
             && request.resource.data.pendingEdit.phone.size() >= 5
+          ))
+          && (!('photos' in request.resource.data.pendingEdit) || (
+            request.resource.data.pendingEdit.photos is list
+            && request.resource.data.pendingEdit.photos.size() <= 30
+          ))
+          && (!('charges' in request.resource.data.pendingEdit) || (
+            request.resource.data.pendingEdit.charges is string
+            && request.resource.data.pendingEdit.charges.size() <= 100
+          ))
+          && (!('description' in request.resource.data.pendingEdit) || (
+            request.resource.data.pendingEdit.description is string
+            && request.resource.data.pendingEdit.description.size() <= 1500
           ));
       }
 
@@ -365,7 +386,9 @@ service cloud.firestore {
         return (resource.data.status in ['pending', 'PENDING'])
           && request.resource.data.status in ['pending', 'PENDING']
           && hasOnlyPermittedServiceDraftKeys()
-          && (!('ownerId' in resource.data) || resource.data.ownerId == null || isServiceOwner())
+          && isAuthorizedServiceOwner()
+          && (!('ownerId' in resource.data) || !('ownerId' in request.resource.data) || request.resource.data.ownerId == resource.data.ownerId)
+          && (!('ownerEmail' in resource.data) || !('ownerEmail' in request.resource.data) || request.resource.data.ownerEmail == resource.data.ownerEmail)
           && (!('createdAt' in resource.data) || !('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt)
           && (!('isFeatured' in request.resource.data) || request.resource.data.isFeatured == false || ('isFeatured' in resource.data && request.resource.data.isFeatured == resource.data.isFeatured))
           && (!('title' in request.resource.data) || (
@@ -376,6 +399,18 @@ service cloud.firestore {
           && (!('phone' in request.resource.data) || (
             request.resource.data.phone is string
             && request.resource.data.phone.size() >= 5
+          ))
+          && (!('photos' in request.resource.data) || (
+            request.resource.data.photos is list
+            && request.resource.data.photos.size() <= 30
+          ))
+          && (!('charges' in request.resource.data) || (
+            request.resource.data.charges is string
+            && request.resource.data.charges.size() <= 100
+          ))
+          && (!('description' in request.resource.data) || (
+            request.resource.data.description is string
+            && request.resource.data.description.size() <= 1500
           ));
       }
 
@@ -394,26 +429,15 @@ service cloud.firestore {
       // 3. Update:
       // - Verified admin can update/publish directly, approve, or reject.
       // - Users can submit 1-5 star ratings on approved services.
-      // - Service provider can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
-      // - Service provider can update pending drafts (keeping status pending).
-      // - Verified service edit-token holder can update listing fields.
+      // - Authorized service owner (authenticated or holding verified edit token) can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
+      // - Authorized service owner (authenticated or holding verified edit token) can update pending drafts (keeping status pending).
       allow update: if isAdmin() 
         || isValidRatingUpdate()
         || isValidProviderPendingEditSubmission()
-        || isValidPendingServiceDraftUpdate()
-        || (
-          exists(/databases/$(database)/documents/service_secrets/$(serviceId))
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken
-        );
+        || isValidPendingServiceDraftUpdate();
 
-      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder.
-      // Other owners cannot delete someone else's service.
-      allow delete: if isAdmin() 
-        || isServiceOwner()
-        || (
-          exists(/databases/$(database)/documents/service_secrets/$(serviceId))
-          && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.verifiedToken == get(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken
-        );
+      // 4. Delete: Strictly restricted to verified administrator or authorized service owner (authenticated or holding verified edit token).
+      allow delete: if isAdmin() || isAuthorizedServiceOwner();
 
       // Service Ratings Subcollection: Stores each individual user rating (1-5 stars)
       match /ratings/{ratingId} {

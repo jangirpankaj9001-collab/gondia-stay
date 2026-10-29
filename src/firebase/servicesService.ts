@@ -480,7 +480,7 @@ export const saveServiceToFirestore = async (
 
     // Graceful local cache fallback so the listing isn't lost
     const cached = getCachedServices();
-    const updated = [cleanData, ...cached.filter(s => s.id !== serviceId)];
+    const updated = [clientCachedData, ...cached.filter(s => s.id !== serviceId)];
     try {
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
