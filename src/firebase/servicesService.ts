@@ -192,7 +192,16 @@ export const subscribeToFirestoreServices = (
         moderatedBy: typeof data.moderatedBy === 'string' ? data.moderatedBy : undefined,
         ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
         ownerEmail: typeof data.ownerEmail === 'string' ? data.ownerEmail : undefined,
-        editToken: typeof data.editToken === 'string' ? data.editToken : undefined,
+        // Private editToken is never read from public document; retrieved from local device storage for the owner
+        editToken: (() => {
+          try {
+            const raw = localStorage.getItem('gondia_stay_service_tokens');
+            const tokens = raw ? JSON.parse(raw) : {};
+            return tokens[docSnap.id] || undefined;
+          } catch {
+            return undefined;
+          }
+        })(),
         hasPendingEdit: Boolean(data.hasPendingEdit),
         pendingEdit: data.pendingEdit || undefined
       });
@@ -321,12 +330,19 @@ export const subscribeToFirestoreServices = (
  * Generates an unguessable private edit token for local services.
  */
 export const generateServiceEditToken = (): string => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = 'gst_srv_';
-  for (let i = 0; i < 28; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  try {
+    const randomBytes = new Uint8Array(20);
+    crypto.getRandomValues(randomBytes);
+    const hex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `gst_srv_${hex}`;
+  } catch {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = 'gst_srv_';
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return token;
   }
-  return token;
 };
 
 /**
@@ -368,7 +384,10 @@ export const saveServiceToFirestore = async (
     ? serviceData.photos.filter(p => typeof p === 'string' && p.trim().length > 0)
     : [];
 
-  const cleanData: ServiceItem = {
+  // CRITICAL SECURITY ENFORCEMENT:
+  // editToken is NEVER stored in the public /services document!
+  // It is stored exclusively in /service_secrets and /service_edit_tokens.
+  const publicData: Omit<ServiceItem, 'editToken'> = {
     id: serviceId,
     title: cleanTitle,
     category: cleanCategory,
@@ -401,14 +420,25 @@ export const saveServiceToFirestore = async (
     createdAt: typeof serviceData.createdAt === 'number' ? serviceData.createdAt : Date.now(),
     updatedAt: Date.now(),
     ownerId,
-    editToken,
     ...(serviceData.ownerEmail ? { ownerEmail: serviceData.ownerEmail } : (auth?.currentUser?.email && !isRealAdminAuth ? { ownerEmail: auth.currentUser.email } : {}))
   };
+
+  const clientCachedData: ServiceItem = {
+    ...publicData,
+    editToken
+  };
+
+  // Always save private token to local device storage for the creator
+  try {
+    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
+    savedTokens[serviceId] = editToken;
+    localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
+  } catch {}
 
   if (!db || !isFirebaseConfigured()) {
     // Save to local cache so offline or local-only works
     const cached = getCachedServices();
-    const updated = [cleanData, ...cached.filter(s => s.id !== serviceId)];
+    const updated = [clientCachedData, ...cached.filter(s => s.id !== serviceId)];
     try {
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
@@ -418,7 +448,7 @@ export const saveServiceToFirestore = async (
   try {
     const batch = writeBatch(db);
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
-    batch.set(docRef, cleanData);
+    batch.set(docRef, publicData);
 
     const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
     batch.set(secretRef, {
@@ -437,9 +467,9 @@ export const saveServiceToFirestore = async (
 
     await batch.commit();
 
-    // Also update local cache
+    // Also update local cache with private token for this device
     const cached = getCachedServices();
-    const updated = [cleanData, ...cached.filter(s => s.id !== serviceId)];
+    const updated = [clientCachedData, ...cached.filter(s => s.id !== serviceId)];
     try {
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
@@ -485,7 +515,8 @@ export const saveServiceToFirestore = async (
 export const updateServiceInFirestore = async (
   serviceId: string,
   updatedFields: Partial<ServiceItem>,
-  isAdminCaller: boolean = false
+  isAdminCaller: boolean = false,
+  editToken?: string
 ): Promise<{ success: boolean; error?: string }> => {
   const isRealAdminAuth = Boolean(
     isAdminCaller &&
@@ -503,6 +534,7 @@ export const updateServiceInFirestore = async (
     updatedAt: Date.now()
   };
   delete sanitized.id;
+  delete sanitized.editToken;
 
   if (cleanProvider) {
     sanitized.providerName = cleanProvider;
@@ -605,6 +637,18 @@ export const updateServiceInFirestore = async (
 
   try {
     const docRef = doc(db, SERVICES_COLLECTION, serviceId);
+    if (!isRealAdminAuth && editToken && editToken.trim()) {
+      const batch = writeBatch(db);
+      batch.update(docRef, finalPayload);
+      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+      batch.update(secretRef, {
+        verifiedToken: editToken.trim(),
+        lastEditedAt: Date.now()
+      });
+      await batch.commit();
+      return { success: true };
+    }
+
     try {
       await updateDoc(docRef, finalPayload);
       return { success: true };
@@ -750,60 +794,55 @@ export const moderateServiceInFirestore = async (
 };
 
 /**
- * Verifies if a given token or ownerId belongs to the service listing.
+ * Verifies if a given token belongs to the service listing.
  * Securely checks:
- * 1. Matching ownerId
- * 2. Matching editToken
- * 3. Matching ownerEmail
- * 4. Stored Firestore service_secrets or service_edit_tokens
+ * 1. Logged-in Firebase Account matching service.ownerId or service.ownerEmail
+ * 2. Unforgeable private Edit Token checked against service_edit_tokens in Firestore
+ * 3. Locally saved private edit token on this device
+ * 
+ * CRITICAL: Public metadata like ownerId or ownerPhone are NEVER accepted as secret credentials!
  */
 export const verifyServiceOwnershipSecurely = async (
   service: ServiceItem,
-  tokenOrOwnerId: string
+  tokenInput: string
 ): Promise<boolean> => {
-  if (!service || !tokenOrOwnerId) return false;
-  const cleanInput = tokenOrOwnerId.trim();
-  if (cleanInput.length === 0) return false;
+  if (!service || !tokenInput) return false;
+  const cleanToken = tokenInput.trim();
+  if (cleanToken.length === 0) return false;
 
-  // 1. Direct match with service ownerId
-  if (service.ownerId && service.ownerId.trim() === cleanInput) {
-    return true;
+  // 1. Authenticated Firebase account check
+  if (auth?.currentUser) {
+    if (service.ownerId && auth.currentUser.uid === service.ownerId) {
+      return true;
+    }
+    if (service.ownerEmail && auth.currentUser.email && auth.currentUser.email.toLowerCase() === service.ownerEmail.toLowerCase()) {
+      return true;
+    }
   }
 
-  // 2. Direct match with service editToken
-  if (service.editToken && service.editToken.trim() === cleanInput) {
-    return true;
-  }
-
-  // 3. Direct match with service ownerEmail
-  if (service.ownerEmail && service.ownerEmail.trim().toLowerCase() === cleanInput.toLowerCase()) {
-    return true;
-  }
-
-  // 4. Check Firestore service_secrets / service_edit_tokens if Firebase is configured
+  // 2. Direct lookup of unguessable private token in service_edit_tokens collection
   if (db && isFirebaseConfigured()) {
     try {
-      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, service.id);
-      const secretSnap = await getDoc(secretRef);
-      if (secretSnap.exists()) {
-        const secData = secretSnap.data();
-        if (secData.editToken === cleanInput || secData.ownerId === cleanInput) {
-          return true;
-        }
-      }
-
-      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanInput);
+      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
       const tokenSnap = await getDoc(tokenRef);
       if (tokenSnap.exists()) {
         const tokenData = tokenSnap.data();
-        if (tokenData.serviceId === service.id) {
+        if (tokenData?.serviceId === service.id) {
           return true;
         }
       }
     } catch (e) {
-      console.warn('[GondiaStay] Error checking service secrets in Firestore:', e);
+      console.warn('[GondiaStay] Error checking service edit token in Firestore:', e);
     }
   }
+
+  // 3. Local storage fallback check (if token is stored on this device)
+  try {
+    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
+    if (savedTokens[service.id] && savedTokens[service.id] === cleanToken) {
+      return true;
+    }
+  } catch {}
 
   return false;
 };
@@ -830,6 +869,11 @@ export const deleteServiceInFirestore = async (
     const cached = getCachedServices();
     const updated = cached.filter(s => s.id !== serviceId);
     localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
+
+    // Clean up local token
+    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
+    delete savedTokens[serviceId];
+    localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
   } catch {}
 
   if (!db || !isFirebaseConfigured()) {
@@ -840,30 +884,48 @@ export const deleteServiceInFirestore = async (
     const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
     const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
 
-    let secretExists = false;
-    let secretToken = '';
-    try {
-      const secretSnap = await getDoc(secretRef);
-      if (secretSnap.exists()) {
-        secretExists = true;
-        secretToken = secretSnap.data().editToken || '';
-      }
-    } catch {}
+    const isRealAdmin = Boolean(
+      isAdminCaller || 
+      (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
+    );
 
-    const tokenToUse = token || secretToken;
+    if (isRealAdmin) {
+      await deleteDoc(srvRef);
+      try {
+        await deleteDoc(secretRef);
+      } catch {}
+      return true;
+    }
 
-    if (secretExists && tokenToUse) {
+    // Owner deletion using private Edit Token:
+    // Uses an atomic writeBatch to delete the public service and verify the editToken
+    // against service_secrets on the server without needing client-side read permission.
+    if (token && token.trim()) {
+      const cleanToken = token.trim();
       const batch = writeBatch(db);
       batch.delete(srvRef);
       batch.update(secretRef, {
-        verifiedToken: tokenToUse,
+        verifiedToken: cleanToken,
         deletedAt: Date.now()
       });
       await batch.commit();
-    } else {
-      await deleteDoc(srvRef);
+
+      // Clean up token mapping if possible
+      try {
+        const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
+        await deleteDoc(tokenRef);
+      } catch {}
+
+      return true;
     }
-    return true;
+
+    // Authenticated owner deletion via Firebase Auth (UID match)
+    if (auth?.currentUser) {
+      await deleteDoc(srvRef);
+      return true;
+    }
+
+    throw new Error('Unauthorized: Valid private edit token required to delete this service listing.');
   } catch (err) {
     console.error('[GondiaStay] Error deleting service from Firestore:', err);
     return false;

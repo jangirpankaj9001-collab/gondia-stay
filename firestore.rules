@@ -274,19 +274,26 @@ service cloud.firestore {
       // - Must contain contact phone (string with >= 5 digits)
       // - Must specify a service category
       // - Status MUST be 'pending' for zero-login / unauthenticated submissions
+      // - NEVER allows editToken in the public service document
+      // - Must atomically provision service_secrets for this service with an unguessable edit token (>= 24 chars)
       // - Verified admin can create directly as 'approved' or 'pending'
-      allow create: if (
-        request.resource.data.title is string
-        && request.resource.data.title.size() > 0
-        && request.resource.data.title.size() <= 200
-        && request.resource.data.phone is string
-        && request.resource.data.phone.size() >= 5
-        && request.resource.data.category is string
-        && (
-          request.resource.data.status in ['pending', 'PENDING']
-          || isAdmin()
-        )
-      );
+      allow create: if request.resource.data.title is string
+                    && request.resource.data.title.size() > 0
+                    && request.resource.data.title.size() <= 200
+                    && request.resource.data.phone is string
+                    && request.resource.data.phone.size() >= 5
+                    && request.resource.data.category is string
+                    && (!('editToken' in request.resource.data))
+                    && (
+                      (
+                        request.resource.data.status in ['pending', 'PENDING']
+                        && existsAfter(/databases/$(database)/documents/service_secrets/$(serviceId))
+                        && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.serviceId == serviceId
+                        && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken is string
+                        && getAfter(/databases/$(database)/documents/service_secrets/$(serviceId)).data.editToken.size() >= 24
+                      )
+                      || isAdmin()
+                    );
 
       // Helper function to check if caller is the authenticated owner of the service listing
       function isServiceOwner() {
@@ -325,8 +332,7 @@ service cloud.firestore {
           'hasPendingEdit',
           'pendingEdit',
           'ownerId',
-          'ownerEmail',
-          'editToken'
+          'ownerEmail'
         ]);
       }
 
@@ -425,26 +431,15 @@ service cloud.firestore {
     match /service_secrets/{serviceId} {
       allow read: if isAdmin();
       allow create: if isAdmin() || (
-        (
-          !exists(/databases/$(database)/documents/services/$(serviceId))
-          && !exists(/databases/$(database)/documents/service_secrets/$(serviceId))
-          && existsAfter(/databases/$(database)/documents/services/$(serviceId))
-          && request.resource.data.editToken is string
-          && request.resource.data.editToken.size() >= 16
-          && request.resource.data.serviceId == serviceId
-        )
-        || (
-          exists(/databases/$(database)/documents/services/$(serviceId))
-          && (
-            (request.auth != null && get(/databases/$(database)/documents/services/$(serviceId)).data.ownerId == request.auth.uid)
-            || (
-              get(/databases/$(database)/documents/services/$(serviceId)).data.ownerId != null
-              && request.resource.data.ownerId == get(/databases/$(database)/documents/services/$(serviceId)).data.ownerId
-            )
-          )
-          && request.resource.data.editToken is string
-          && request.resource.data.editToken.size() >= 16
-        )
+        !exists(/databases/$(database)/documents/services/$(serviceId))
+        && !exists(/databases/$(database)/documents/service_secrets/$(serviceId))
+        && existsAfter(/databases/$(database)/documents/services/$(serviceId))
+        && existsAfter(/databases/$(database)/documents/service_edit_tokens/$(request.resource.data.editToken))
+        && getAfter(/databases/$(database)/documents/service_edit_tokens/$(request.resource.data.editToken)).data.serviceId == serviceId
+        && request.resource.data.editToken is string
+        && request.resource.data.editToken.size() >= 24
+        && request.resource.data.serviceId == serviceId
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
       );
       allow update: if isAdmin() || (
         request.resource.data.verifiedToken == resource.data.editToken
@@ -458,8 +453,13 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow get: if true;
       allow create: if isAdmin() || (
-        token.size() >= 16
+        token.size() >= 24
         && request.resource.data.serviceId is string
+        && !exists(/databases/$(database)/documents/services/$(request.resource.data.serviceId))
+        && !exists(/databases/$(database)/documents/service_edit_tokens/$(token))
+        && existsAfter(/databases/$(database)/documents/services/$(request.resource.data.serviceId))
+        && existsAfter(/databases/$(database)/documents/service_secrets/$(request.resource.data.serviceId))
+        && getAfter(/databases/$(database)/documents/service_secrets/$(request.resource.data.serviceId)).data.editToken == token
       );
       allow update, delete: if isAdmin();
     }

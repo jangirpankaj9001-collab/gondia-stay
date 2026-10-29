@@ -275,7 +275,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    */
   const isServiceOwner = useCallback((service: ServiceItem): boolean => {
     if (isAdminAuthenticated) return true;
-    if (myServiceIds.includes(service.id)) return true;
     if (myServiceTokens[service.id]) return true;
     if (authUser && !isAdminAuthenticated) {
       if (service.ownerId && service.ownerId === authUser.uid) {
@@ -285,11 +284,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return true;
       }
     }
-    if (currentOwner.id && currentOwner.id !== '' && service.ownerId === currentOwner.id) {
-      return true;
-    }
     return false;
-  }, [isAdminAuthenticated, myServiceIds, myServiceTokens, authUser, currentOwner]);
+  }, [isAdminAuthenticated, myServiceTokens, authUser]);
 
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
     if (isAdminAuthenticated) return true;
@@ -849,7 +845,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: "Unauthorized: You can only edit your own service listing." };
     }
 
-    const result = await updateServiceInFirestore(serviceId, updatedFields, isAdminAuthenticated);
+    const token = myServiceTokens[serviceId] || targetService?.editToken;
+    const result = await updateServiceInFirestore(serviceId, updatedFields, isAdminAuthenticated, token);
     if (result.success) {
       const isApprovedLive = Boolean(targetService && targetService.status === 'approved' && !isAdminAuthenticated);
 

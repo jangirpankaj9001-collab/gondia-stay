@@ -225,7 +225,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     if (!verifyingService) return;
     const cleanInput = verifyInput.trim();
     if (!cleanInput) {
-      setVerifyError('Please enter the Owner ID or Edit Token for this service.');
+      setVerifyError('Please enter the private Edit Token for this service.');
       return;
     }
 
@@ -248,7 +248,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
           onEdit(target);
         }
       } else {
-        setVerifyError('Verification failed: The entered Owner ID or Edit Token does not match this service listing. Only the verified listing owner or admin can edit or delete this service.');
+        setVerifyError('Verification failed: The entered Edit Token does not match this service listing. Only the verified listing owner or admin can edit or delete this service.');
       }
     } catch {
       setVerifyError('Error checking service ownership. Please try again.');
@@ -811,7 +811,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                 Service: <span className="font-extrabold text-blue-700">{verifyingService.title}</span>
               </p>
               <p className="text-xs text-slate-500 leading-relaxed">
-                To {verifyingAction === 'delete' ? 'delete' : 'edit'} this service listing on this device, please verify ownership using your Service Owner ID or private Edit Token.
+                To {verifyingAction === 'delete' ? 'delete' : 'edit'} this service listing on this device, please enter your private Edit Token.
               </p>
               <p className="text-[11px] text-slate-400 leading-normal">
                 Only the listing owner and admin can {verifyingAction === 'delete' ? 'delete' : 'edit'} it; other owners cannot modify someone else's service.
@@ -827,7 +827,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
             <form onSubmit={handleVerifyOwnershipSubmit} className="space-y-3 pt-1">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Service Owner ID or Edit Token *
+                  Private Service Edit Token *
                 </label>
                 <input
                   type="text"
@@ -835,11 +835,11 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                   autoFocus
                   value={verifyInput}
                   onChange={(e) => setVerifyInput(e.target.value)}
-                  placeholder="Enter Owner ID or Edit Token"
+                  placeholder="Enter Edit Token (e.g. gst_srv_...)"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 focus:border-blue-600 rounded-xl text-xs text-slate-900 font-semibold focus:bg-white outline-none"
                 />
                 <p className="text-[10px] text-slate-500 font-medium mt-1">
-                  Provided when your service was registered (or your signed-in owner ID).
+                  Your private token provided upon creating this service. Once verified, this device will remember ownership.
                 </p>
               </div>
 
