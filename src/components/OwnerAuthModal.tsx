@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Key, UserCheck, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
-import { useApp, useBackHandler } from '../context/AppContext';
+import { useApp, useBackHandler, isAuthorizedAdminEmail } from '../context/AppContext';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
 interface OwnerAuthModalProps {
@@ -109,7 +109,9 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Signed In Successfully</h3>
-                <p className="text-xs text-slate-600 font-mono mt-0.5">{authUser.email}</p>
+                <p className="text-xs text-slate-600 font-mono mt-0.5">
+                  {isAuthorizedAdminEmail(authUser.email) ? 'Administrator Account' : authUser.email}
+                </p>
                 <p className="text-[10px] text-slate-400 font-mono mt-1">UID: {authUser.uid}</p>
               </div>
               <p className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">

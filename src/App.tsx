@@ -219,7 +219,7 @@ export const App: React.FC = () => {
 
   const [phoneInput, setPhoneInput] = useState(currentOwner.phone);
   const [selectedMapLocality, setSelectedMapLocality] = useState<string | null>(null);
-  const [adminEmail, setAdminEmail] = useState('jangirpankaj9001@gmail.com');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
@@ -1186,7 +1186,7 @@ export const App: React.FC = () => {
 
     const emailTrimmed = adminEmail.trim().toLowerCase();
     if (!isAuthorizedAdminEmail(emailTrimmed)) {
-      setAdminAuthError('Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj9001@gmail.com) can access this console.');
+      setAdminAuthError('Access Denied: Only the authorized GondiaStay administrator account can access this console.');
       return;
     }
 
@@ -2585,7 +2585,7 @@ export const App: React.FC = () => {
                 
                 {/* Admin Authentication Barrier */}
                 {!isAdminAuthenticated ? (
-                  authUser && authUser.email?.toLowerCase() !== 'jangirpankaj9001@gmail.com' ? (
+                  authUser && !isAuthorizedAdminEmail(authUser.email) ? (
                     /* 403 Forbidden Access Barrier for Non-Admin Logged In Users */
                     <div className="bg-white rounded-3xl border border-rose-200 p-6 sm:p-8 shadow-sm space-y-4 max-w-lg mx-auto text-center">
                       <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
@@ -2624,7 +2624,7 @@ export const App: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                  ) : authUser && authUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' && !authUser.emailVerified ? (
+                  ) : authUser && isAuthorizedAdminEmail(authUser.email) && !authUser.emailVerified ? (
                     /* Email Verification Barrier for Admin Account */
                     <div className="bg-white rounded-3xl border border-amber-200 p-6 sm:p-8 shadow-sm space-y-4 max-w-lg mx-auto text-center">
                       <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
@@ -2636,7 +2636,7 @@ export const App: React.FC = () => {
                         </span>
                         <h3 className="text-base font-extrabold text-slate-900 pt-1">Verify Email Ownership</h3>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                          You are authenticated as <strong className="text-slate-900 font-semibold">{authUser.email}</strong>, but this administrator account requires verified email ownership before administrative privileges (approval, rejection, deletion, and edits) can be exercised.
+                          You are authenticated with an administrator account, but this administrator account requires verified email ownership before administrative privileges (approval, rejection, deletion, and edits) can be exercised.
                         </p>
                         <p className="text-[11px] text-amber-700">
                           Please verify your email address to unlock the admin console.
@@ -2744,12 +2744,9 @@ export const App: React.FC = () => {
                             required
                             value={adminEmail}
                             onChange={(e) => setAdminEmail(e.target.value)}
-                            placeholder="jangirpankaj9001@gmail.com"
+                            placeholder="Enter administrator email address"
                             className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600 font-medium"
                           />
-                          <span className="text-[10px] text-slate-400 mt-1 block">
-                            Authorized account: jangirpankaj9001@gmail.com
-                          </span>
                         </div>
 
                         <div>
@@ -2802,7 +2799,7 @@ export const App: React.FC = () => {
                         <div>
                           <span>Admin Moderation Clearance Active (Firebase Authenticated)</span>
                           <span className="block text-[11px] font-normal text-emerald-700">
-                            Logged in as: <strong className="font-semibold">{adminUser?.email || 'Administrator'}</strong> • Real-time listener active
+                            Logged in as: <strong className="font-semibold">Administrator</strong> • Real-time listener active
                           </span>
                         </div>
                       </div>

@@ -422,7 +422,7 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
           <div className="space-y-1.5">
             <h3 className="text-base font-extrabold text-slate-900">Admin Authentication Required</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Cloud Firestore connection parameters, API credentials, and database security rules are private and restricted exclusively to the verified administrator account (<strong className="text-slate-700">jangirpankaj9001@gmail.com</strong>).
+              Cloud Firestore connection parameters, API credentials, and database security rules are private and restricted exclusively to the verified administrator account.
             </p>
           </div>
           <div className="flex gap-2.5 pt-2">
@@ -693,7 +693,7 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <FileCode className="w-4 h-4 text-slate-500" />
-                    firestore.rules (Admin: <span className="text-blue-700 font-mono">jangirpankaj9001@gmail.com</span>)
+                    firestore.rules (Admin Moderation Rules)
                   </span>
                   <button
                     onClick={handleCopyRules}

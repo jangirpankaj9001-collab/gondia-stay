@@ -1076,7 +1076,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Strictly enforce that only the authorized administrator email can attempt admin login
     if (!isAuthorized) {
-      const errorMsg = 'Access Denied: Only the authorized GondiaStay administrator account (jangirpankaj9001@gmail.com) can access the Admin Panel.';
+      const errorMsg = 'Access Denied: Only the authorized GondiaStay administrator account can access the Admin Panel.';
       showToast(errorMsg);
       return { success: false, error: errorMsg };
     }
