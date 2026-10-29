@@ -701,9 +701,11 @@ export const deletePropertyFromFirestore = async (propertyId: string): Promise<v
 export const saveOwnerProfileToFirestore = async (profile: OwnerProfile): Promise<void> => {
   if (!db || !isFirebaseConfigured()) return;
   try {
-    const ownerRef = doc(db, OWNERS_COLLECTION, profile.id);
+    const ownerId = profile.id || (auth?.currentUser?.uid ? auth.currentUser.uid : '');
+    if (!ownerId) return;
+    const ownerRef = doc(db, OWNERS_COLLECTION, ownerId);
     await setDoc(ownerRef, {
-      id: profile.id,
+      id: ownerId,
       name: profile.name.trim(),
       phone: profile.phone.trim(),
       whatsappNumber: (profile.whatsappNumber || profile.phone).trim(),

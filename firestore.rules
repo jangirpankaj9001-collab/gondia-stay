@@ -240,7 +240,9 @@ service cloud.firestore {
     // Owners collection for profile data
     match /owners/{ownerId} {
       allow read: if true;
-      allow write: if isAdmin() || (request.auth != null && request.auth.uid == ownerId);
+      allow write: if isAdmin() 
+        || (request.auth != null && request.auth.uid == ownerId)
+        || (request.resource.data.name is string && request.resource.data.phone is string);
     }
 
     // Admins Collection: restricted to verified administrators

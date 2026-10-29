@@ -511,13 +511,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...currentOwner,
       ...updates
     };
+    if (!updated.id && authUser?.uid) {
+      updated.id = authUser.uid;
+    }
+    if (!updated.id) {
+      const existingDeviceId = localStorage.getItem('gondia_stay_device_owner_id');
+      const deviceId = existingDeviceId || `owner_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      if (!existingDeviceId) {
+        localStorage.setItem('gondia_stay_device_owner_id', deviceId);
+      }
+      updated.id = deviceId;
+    }
     if (updates.phone && !updates.whatsappNumber && !currentOwner.whatsappNumber) {
       updated.whatsappNumber = updates.phone;
     }
     setCurrentOwner(updated);
     localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updated));
+    if (updated.id) {
+      localStorage.setItem(`gondia_stay_owner_${updated.id}`, JSON.stringify(updated));
+    }
 
-    if (isFirebaseConfigured()) {
+    if (isFirebaseConfigured() && updated.id) {
       try {
         await saveOwnerProfileToFirestore(updated);
         // Also update any properties belonging to this owner so tenant view sees new info

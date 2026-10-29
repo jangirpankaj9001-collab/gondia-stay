@@ -6,47 +6,36 @@ import {
   Bookmark, 
   UserCheck, 
   ShieldCheck, 
-  ChevronDown,
   Sparkles,
   PhoneCall,
   Menu,
   MoreVertical,
   X,
   Database,
-  MessageCircle,
-  Plus,
-  LogOut
+  Plus
 } from 'lucide-react';
 import { useApp, useBackHandler } from '../context/AppContext';
-import { formatDisplayPhone, openWhatsApp } from '../utils/contact';
 import { ServicesHouseIcon } from './BottomNav';
 
 export const Header: React.FC = () => {
   const { 
     activeTab, 
     navigateTo, 
-    currentOwner, 
     favorites,
     properties,
     isFirebaseConnected,
     isFirestoreLoading,
     setIsFirebaseModalOpen,
-    isOwnerAuthenticated,
-    authUser,
-    logoutOwner,
-    logoutAdmin,
     openPostListing,
     isAdminAuthenticated,
     ownerSubTab,
     setOwnerSubTab
   } = useApp();
 
-  const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Close open menus first when pressing Android back button
   useBackHandler(mobileMenuOpen, () => setMobileMenuOpen(false), 'mobile-menu');
-  useBackHandler(showOwnerMenu, () => setShowOwnerMenu(false), 'owner-menu');
 
   const pendingCount = properties.filter(p => (p.status || '').toLowerCase() === 'pending').length;
 
@@ -204,206 +193,6 @@ export const Header: React.FC = () => {
                 }`} />
               </button>
             )}
-
-            <div className="relative">
-              <button
-                onClick={() => setShowOwnerMenu(!showOwnerMenu)}
-                className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 transition-colors"
-                title={isAdminAuthenticated ? "Administrator Console" : isOwnerAuthenticated ? "Landlord Profile" : "Owner Profile"}
-              >
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${
-                  isAdminAuthenticated ? 'bg-indigo-700' : isOwnerAuthenticated ? 'bg-blue-600' : 'bg-slate-500'
-                }`}>
-                  {isAdminAuthenticated ? 'A' : (currentOwner.name ? currentOwner.name[0].toUpperCase() : (authUser?.email ? authUser.email[0].toUpperCase() : 'O'))}
-                </div>
-                <div className="text-left hidden lg:block">
-                  <div className="leading-tight">
-                    {isAdminAuthenticated 
-                      ? 'Administrator' 
-                      : (isOwnerAuthenticated 
-                          ? (currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'My Account') 
-                          : 'Owner Portal')}
-                  </div>
-                  <div className="text-[10px] text-slate-500">
-                    {isAdminAuthenticated 
-                      ? 'Admin Console' 
-                      : (isOwnerAuthenticated 
-                          ? (currentOwner.phone ? formatDisplayPhone(currentOwner.phone) : 'Profile not set') 
-                          : 'Not signed in')}
-                  </div>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-              </button>
-
-              {showOwnerMenu && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setShowOwnerMenu(false)} 
-                  />
-                  <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in zoom-in-95 space-y-3">
-                    {isAdminAuthenticated ? (
-                      /* Admin Profile Popup */
-                      <>
-                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                          <div className="w-10 h-10 rounded-full bg-indigo-700 text-white flex items-center justify-center font-bold text-sm">
-                            A
-                          </div>
-                          <div>
-                            <div className="text-xs font-extrabold text-slate-900">
-                              System Administrator
-                            </div>
-                            <div className="text-[10px] text-indigo-600 font-bold flex items-center gap-1">
-                              <ShieldCheck className="w-3 h-3" /> Full Moderation Rights
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400 text-[11px]">Admin Email:</span>
-                            <span className="font-bold text-slate-800 text-[11px] truncate max-w-[150px]">{authUser?.email || 'Admin'}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400 text-[11px]">Status:</span>
-                            <span className="font-bold text-emerald-600">Active Session</span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigateTo('owner');
-                            setOwnerSubTab('moderation');
-                            setShowOwnerMenu(false);
-                          }}
-                          className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold text-center shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Admin Moderation Panel</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await logoutAdmin();
-                            setShowOwnerMenu(false);
-                          }}
-                          className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 text-xs font-bold text-center border border-slate-200 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Sign Out Admin</span>
-                        </button>
-                      </>
-                    ) : isOwnerAuthenticated ? (
-                      /* Logged In Owner Profile Popup */
-                      <>
-                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                          <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
-                            {currentOwner.name ? currentOwner.name[0].toUpperCase() : (authUser?.email ? authUser.email[0].toUpperCase() : 'O')}
-                          </div>
-                          <div>
-                            <div className="text-xs font-extrabold text-slate-900">
-                              {currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : (authUser?.email?.split('@')[0] || 'Landlord')}
-                            </div>
-                            <div className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                              <ShieldCheck className="w-3 h-3" /> {currentOwner.phone ? 'Verified Property Owner' : 'Profile Incomplete'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5 text-xs text-slate-600">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400 text-[11px]">Contact Phone:</span>
-                            <span className="font-bold text-slate-800">
-                              {currentOwner.phone ? formatDisplayPhone(currentOwner.phone) : <span className="text-slate-400 font-normal italic">Not set</span>}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400 text-[11px]">WhatsApp:</span>
-                            <span className="font-bold text-emerald-700">
-                              {(currentOwner.whatsappNumber || currentOwner.phone) ? formatDisplayPhone(currentOwner.whatsappNumber || currentOwner.phone) : <span className="text-slate-400 font-normal italic">Not set</span>}
-                            </span>
-                          </div>
-                        </div>
-
-                        {Boolean(currentOwner.whatsappNumber || currentOwner.phone) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openWhatsApp(currentOwner.whatsappNumber || currentOwner.phone, `Hello ${currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'Landlord'}, regarding GondiaStay owner account.`);
-                              setShowOwnerMenu(false);
-                            }}
-                            className="w-full py-2 px-3 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
-                          >
-                            <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                            <span>WhatsApp Chat</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigateTo('owner');
-                            setShowOwnerMenu(false);
-                          }}
-                          className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold text-center shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                          <span>Owner Hub & My Properties</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await logoutOwner();
-                            setShowOwnerMenu(false);
-                          }}
-                          className="w-full py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 text-xs font-semibold text-center border border-slate-200 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Sign Out</span>
-                        </button>
-                      </>
-                    ) : (
-                      /* Guest / Not signed in */
-                      <>
-                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                          <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">
-                            <UserCheck className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="text-xs font-extrabold text-slate-900">
-                              Owner Portal
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              Sign in to manage your listings
-                            </div>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-600">
-                          Sign in or register as a landlord to list properties and manage bookings in Gondia.
-                        </p>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigateTo('owner');
-                            setOwnerSubTab('listings');
-                            setShowOwnerMenu(false);
-                          }}
-                          className="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold text-center shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                          <span>Sign In as Landlord</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
 
             {/* 3-dot menu button - accessible on any phone or computer */}
             <button

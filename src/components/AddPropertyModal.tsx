@@ -142,18 +142,19 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
-  const { isOwnerAuthenticated, isAdminAuthenticated, authUser } = useApp();
+  const { isOwnerAuthenticated, isAdminAuthenticated, authUser, updateOwnerProfile } = useApp();
   const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
+  const isOwnerWithProfile = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
 
   // Landlord Contact
   const [ownerName, setOwnerName] = useState(
-    (!propertyToEdit && isRealOwnerLoggedIn && currentOwner?.name) ? currentOwner.name : ''
+    (!propertyToEdit && isOwnerWithProfile && currentOwner?.name) ? currentOwner.name : ''
   );
   const [ownerPhone, setOwnerPhone] = useState(
-    (!propertyToEdit && isRealOwnerLoggedIn && currentOwner?.phone) ? currentOwner.phone : ''
+    (!propertyToEdit && isOwnerWithProfile && currentOwner?.phone) ? currentOwner.phone : ''
   );
   const [ownerWhatsappNumber, setOwnerWhatsappNumber] = useState(
-    (!propertyToEdit && isRealOwnerLoggedIn && (currentOwner?.whatsappNumber || currentOwner?.phone)) 
+    (!propertyToEdit && isOwnerWithProfile && (currentOwner?.whatsappNumber || currentOwner?.phone)) 
       ? (currentOwner.whatsappNumber || currentOwner.phone) 
       : ''
   );
@@ -247,7 +248,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setPickerLocation(defaultCoords);
       setHasCustomPin(false);
 
-      const shouldAutoFill = Boolean(isRealOwnerLoggedIn && currentOwner?.name);
+      const shouldAutoFill = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
       setOwnerName(shouldAutoFill ? (currentOwner?.name || '') : '');
       setOwnerPhone(shouldAutoFill ? (currentOwner?.phone || '') : '');
       setOwnerWhatsappNumber(shouldAutoFill ? (currentOwner?.whatsappNumber || currentOwner?.phone || '') : '');
@@ -258,7 +259,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setIsSuccess(false);
       setSavedPropertyInfo(null);
     }
-  }, [isOpen, propertyToEdit, currentOwner, isRealOwnerLoggedIn]);
+  }, [isOpen, propertyToEdit, currentOwner, isAdminAuthenticated]);
 
   const handleLocalityChange = (newLocality: string) => {
     setLocality(newLocality);
@@ -598,6 +599,17 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         });
         setIsSuccess(true);
         if (onSuccessToast) onSuccessToast('Listing updated successfully!');
+        if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
+          try {
+            await updateOwnerProfile({
+              name: ownerName.trim(),
+              phone: ownerPhone.trim(),
+              whatsappNumber: (ownerWhatsappNumber || ownerPhone).trim()
+            });
+          } catch (e) {
+            console.warn('Failed to update owner profile:', e);
+          }
+        }
       } else {
         // Create new property listing linked to actual logged in owner
         const actualOwnerId = (isRealOwnerLoggedIn && authUser?.uid)
@@ -652,6 +664,17 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         });
         setIsSuccess(true);
         if (onSuccessToast) onSuccessToast('Property listing submitted for admin approval!');
+        if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
+          try {
+            await updateOwnerProfile({
+              name: ownerName.trim(),
+              phone: ownerPhone.trim(),
+              whatsappNumber: (ownerWhatsappNumber || ownerPhone).trim()
+            });
+          } catch (e) {
+            console.warn('Failed to update owner profile:', e);
+          }
+        }
       }
     } catch (err: any) {
       console.error('Failed to save property listing:', err);

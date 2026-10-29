@@ -50,13 +50,30 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   serviceToEdit = null,
   isAdmin = false
 }) => {
-  const { saveService, updateService, saveServiceId } = useApp();
+  const { 
+    saveService, 
+    updateService, 
+    saveServiceId,
+    currentOwner,
+    isAdminAuthenticated,
+    updateOwnerProfile
+  } = useApp();
+
+  const isOwnerWithProfile = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
 
   const [category, setCategory] = useState<ServiceCategory>('MESS_TIFFIN');
   const [title, setTitle] = useState('');
-  const [providerName, setProviderName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [providerName, setProviderName] = useState(
+    (!serviceToEdit && isOwnerWithProfile && currentOwner?.name) ? currentOwner.name : ''
+  );
+  const [phone, setPhone] = useState(
+    (!serviceToEdit && isOwnerWithProfile && currentOwner?.phone) ? currentOwner.phone : ''
+  );
+  const [whatsappNumber, setWhatsappNumber] = useState(
+    (!serviceToEdit && isOwnerWithProfile && (currentOwner?.whatsappNumber || currentOwner?.phone)) 
+      ? (currentOwner.whatsappNumber || currentOwner.phone) 
+      : ''
+  );
   const [charges, setCharges] = useState('');
   const [chargeUnit, setChargeUnit] = useState('month');
   const [description, setDescription] = useState('');
@@ -134,11 +151,12 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         setFormError(null);
         setSubmissionSuccess(false);
       } else {
+        const shouldAutoFill = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
         setCategory('MESS_TIFFIN');
         setTitle('');
-        setProviderName('');
-        setPhone('');
-        setWhatsappNumber('');
+        setProviderName(shouldAutoFill ? (currentOwner?.name || '') : '');
+        setPhone(shouldAutoFill ? (currentOwner?.phone || '') : '');
+        setWhatsappNumber(shouldAutoFill ? (currentOwner?.whatsappNumber || currentOwner?.phone || '') : '');
         setCharges('');
         setChargeUnit('month');
         setDescription('');
@@ -157,7 +175,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
     } else if (!isOpen) {
       activeServiceIdRef.current = null;
     }
-  }, [serviceToEdit, isOpen, isAdmin]);
+  }, [serviceToEdit, isOpen, isAdmin, currentOwner, isAdminAuthenticated]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cardInputRef = useRef<HTMLInputElement>(null);
@@ -346,6 +364,17 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           if (onServiceUpdated) {
             onServiceUpdated(updatedFull);
           }
+          if (!isAdmin && providerName.trim() && formattedPhone) {
+            try {
+              await updateOwnerProfile({
+                name: providerName.trim(),
+                phone: formattedPhone,
+                whatsappNumber: formattedWhatsapp || formattedPhone
+              });
+            } catch (e) {
+              console.warn('Failed to update owner profile:', e);
+            }
+          }
           onClose();
           return;
         } else {
@@ -398,6 +427,17 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
             id: result.serviceId,
             status: (isAdmin ? adminStatus : 'pending') as any
           } as ServiceItem);
+        }
+        if (!isAdmin && providerName.trim() && formattedPhone) {
+          try {
+            await updateOwnerProfile({
+              name: providerName.trim(),
+              phone: formattedPhone,
+              whatsappNumber: formattedWhatsapp || formattedPhone
+            });
+          } catch (e) {
+            console.warn('Failed to update owner profile:', e);
+          }
         }
       } else {
         setFormError(result.error || 'Failed to save service. Please try again.');
