@@ -179,6 +179,9 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   // Delete confirmation dialog state
   const [serviceToDelete, setServiceToDelete] = useState<ServiceItem | null>(null);
 
+  // Provider ownership verification state
+  const [verifyingService, setVerifyingService] = useState<ServiceItem | null>(null);
+
   // Swipeable photo gallery modal state
   const [selectedGalleryProvider, setSelectedGalleryProvider] = useState<ServiceItem | null>(null);
   const [galleryInitialIndex, setGalleryInitialIndex] = useState(0);
