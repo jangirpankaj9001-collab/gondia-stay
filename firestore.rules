@@ -2,23 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to verify admin authorization
+    // Helper function to verify admin authorization:
+    // Strictly jangirpankaj9001@gmail.com with email_verified == true is the ONLY authorization path
     function isAdmin() {
-      return request.auth != null && (
-        // Firebase custom claim: admin == true (with verified email)
-        (request.auth.token.admin == true && request.auth.token.email_verified == true)
-        // Or authorized admin email match strictly for verified administrator account
-        || (
-          request.auth.token.email != null 
-          && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
-          && request.auth.token.email_verified == true
-        )
-        // Or registered in Firestore admins collection with verified email
-        || (
-          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-          && request.auth.token.email_verified == true
-        )
-      );
+      return request.auth != null
+        && request.auth.token.email != null 
+        && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+        && request.auth.token.email_verified == true;
     }
 
     // Properties Collection: Gondia Stay listings
@@ -250,8 +240,7 @@ service cloud.firestore {
     match /owners/{ownerId} {
       allow read: if true;
       allow write: if isAdmin() 
-        || (request.auth != null && request.auth.uid == ownerId)
-        || (request.resource.data.name is string && request.resource.data.phone is string);
+        || (request.auth != null && request.auth.uid == ownerId);
     }
 
     // Admins Collection: restricted to verified administrators
@@ -441,74 +430,16 @@ service cloud.firestore {
           ));
       }
 
-      // Permitted rating update on approved services:
-      // Strictly enforces mathematical integrity to prevent rating-total manipulation:
-      // - Review count must increment by exactly 1
-      // - Rating total must increase by a valid 1-5 star score
-      // - Rating total must remain within [reviewCount * 1.0, reviewCount * 5.0]
-      // - Average rating must remain within [1.0, 5.0]
-      function isValidRatingUpdate() {
-        return (resource.data.status in ['approved', 'APPROVED'])
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'reviewCount', 'ratingTotal', 'updatedAt'])
-          && request.resource.data.rating is number
-          && request.resource.data.rating >= 1.0
-          && request.resource.data.rating <= 5.0
-          && request.resource.data.reviewCount is number
-          && request.resource.data.reviewCount >= 1
-          && request.resource.data.ratingTotal is number
-          && request.resource.data.ratingTotal >= request.resource.data.reviewCount * 1.0
-          && request.resource.data.ratingTotal <= request.resource.data.reviewCount * 5.0
-          && (
-            (
-              ('reviewCount' in resource.data) && resource.data.reviewCount is number && resource.data.reviewCount > 0
-              && request.resource.data.reviewCount == resource.data.reviewCount + 1
-              && (
-                ('ratingTotal' in resource.data) && resource.data.ratingTotal is number
-                ? (
-                  request.resource.data.ratingTotal >= resource.data.ratingTotal + 1.0
-                  && request.resource.data.ratingTotal <= resource.data.ratingTotal + 5.0
-                )
-                : (
-                  request.resource.data.ratingTotal >= (resource.data.rating * resource.data.reviewCount) + 1.0
-                  && request.resource.data.ratingTotal <= (resource.data.rating * resource.data.reviewCount) + 5.0
-                )
-              )
-            )
-            || (
-              (!('reviewCount' in resource.data) || resource.data.reviewCount == null || resource.data.reviewCount == 0)
-              && request.resource.data.reviewCount == 1
-              && request.resource.data.ratingTotal >= 1.0
-              && request.resource.data.ratingTotal <= 5.0
-            )
-          );
-      }
-
       // 3. Update:
       // - Verified admin can update/publish directly, approve, or reject.
-      // - Users can submit 1-5 star ratings on approved services.
       // - Authorized service owner (authenticated or holding verified edit token) can submit pendingEdit for admin reapproval on approved listings (keeping live listing unchanged).
       // - Authorized service owner (authenticated or holding verified edit token) can update pending drafts (keeping status pending).
       allow update: if isAdmin() 
-        || isValidRatingUpdate()
         || isValidProviderPendingEditSubmission()
         || isValidPendingServiceDraftUpdate();
 
       // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder
       allow delete: if isAdmin() || isServiceOwner() || hasValidServiceDeleteToken();
-
-      // Service Ratings Subcollection: Stores each individual user rating (1-5 stars)
-      match /ratings/{ratingId} {
-        allow read: if true;
-        // Prevent duplicate rating abuse: can create only if doc doesn't exist yet!
-        allow create: if !exists(/databases/$(database)/documents/services/$(serviceId)/ratings/$(ratingId))
-          && request.resource.data.score is number
-          && request.resource.data.score >= 1
-          && request.resource.data.score <= 5
-          && request.resource.data.serviceId == serviceId;
-        // Cannot overwrite existing rating (prevent rating manipulation/alteration)
-        allow update: if false;
-        allow delete: if isAdmin();
-      }
     }
 
     // Service Secrets: Stores private edit token and owner ID for each service

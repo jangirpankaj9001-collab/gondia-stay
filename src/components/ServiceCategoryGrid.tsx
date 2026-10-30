@@ -8,7 +8,6 @@ import {
   ShieldCheck, 
   ChefHat, 
   Sparkles,
-  Star, 
   MapPin, 
   Phone, 
   MessageCircle, 
@@ -28,7 +27,6 @@ import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
-import { RateServiceModal } from './RateServiceModal';
 import { verifyServiceOwnershipSecurely } from '../firebase/servicesService';
 
 interface SubCategoryConfig {
@@ -160,8 +158,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     showToast 
   } = useApp();
 
-  // State for opening the rating popup when top-right stars are tapped
-  const [ratingModalService, setRatingModalService] = useState<ServiceItem | null>(null);
+
 
   // Currently opened category in dedicated view (null means grid of 8 icons is shown)
   const [activeDedicatedCategory, setActiveDedicatedCategory] = useState<ServiceCategory | null>(
@@ -476,29 +473,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                           )}
                         </div>
 
-                        {/* Rating Overlay Button (Clickable to rate provider) */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRatingModalService(provider);
-                          }}
-                          className="absolute top-3 right-3 bg-white/95 hover:bg-amber-50 active:scale-95 transition-all backdrop-blur-md px-2.5 py-1 rounded-xl shadow-xs flex items-center gap-1.5 text-[11px] font-extrabold text-slate-900 border border-slate-200/60 cursor-pointer group/rate"
-                          title="Tap to rate this service provider"
-                        >
-                          {typeof provider.rating === 'number' && provider.rating > 0 && typeof provider.reviewCount === 'number' && provider.reviewCount > 0 ? (
-                            <>
-                              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 group-hover/rate:scale-110 transition-transform" />
-                              <span>{provider.rating.toFixed(1)}</span>
-                              <span className="text-slate-400 text-[10px]">({provider.reviewCount})</span>
-                            </>
-                          ) : (
-                            <>
-                              <Star className="w-3.5 h-3.5 text-amber-500 group-hover/rate:scale-110 transition-transform" />
-                              <span className="text-amber-700 text-[10px] font-bold">No ratings yet.</span>
-                            </>
-                          )}
-                        </button>
+
 
                         {/* Charges Bottom Pill on Image */}
                         <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md border border-slate-200 px-3 py-1 rounded-xl shadow-sm">
@@ -896,12 +871,6 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
         }}
       />
 
-      {/* 5-Star Rating Popup Modal */}
-      <RateServiceModal
-        isOpen={Boolean(ratingModalService)}
-        service={ratingModalService}
-        onClose={() => setRatingModalService(null)}
-      />
     </div>
   );
 };

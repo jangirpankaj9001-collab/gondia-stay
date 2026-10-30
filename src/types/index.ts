@@ -238,9 +238,6 @@ export interface ServiceItem {
   timing?: string;
   experienceYears?: number;
   status: ListingStatus;
-  rating?: number;
-  reviewCount?: number;
-  ratingTotal?: number;
   isFeatured?: boolean;
   specialties?: string[];
   createdAt?: number;

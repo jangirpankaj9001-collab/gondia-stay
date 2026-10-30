@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  Star, 
   MapPin, 
   Clock, 
   Phone, 
@@ -28,7 +27,6 @@ import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
-import { RateServiceModal } from './RateServiceModal';
 
 interface ServiceCardProps {
   service: ServiceItem;
@@ -51,7 +49,6 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const [showRateModal, setShowRateModal] = useState(false);
 
   // Close gallery, visiting card or photo preview first when pressing Android back button
   useBackHandler(showGallery, () => setShowGallery(false), 'service-gallery-modal');
@@ -140,30 +137,6 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               {renderCategoryIcon(service.category)}
               <span>{categoryMeta.shortLabel}</span>
             </span>
-
-            {/* Rating / Review Button (Clickable to rate provider) */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowRateModal(true);
-              }}
-              className="bg-black/75 hover:bg-black/90 active:scale-95 transition-all backdrop-blur-md text-white text-xs font-black px-2.5 py-1 rounded-xl flex items-center gap-1.5 cursor-pointer border border-white/20 group/rate"
-              title="Tap to rate this service provider"
-            >
-              {typeof service.rating === 'number' && service.rating > 0 && typeof service.reviewCount === 'number' && service.reviewCount > 0 ? (
-                <>
-                  <Star className="w-3.5 h-3.5 text-amber-400 fill-current group-hover/rate:scale-110 transition-transform" />
-                  <span>{service.rating.toFixed(1)}</span>
-                  <span className="text-slate-400 text-[10px]">({service.reviewCount})</span>
-                </>
-              ) : (
-                <>
-                  <Star className="w-3.5 h-3.5 text-amber-400 group-hover/rate:scale-110 transition-transform" />
-                  <span className="text-amber-200 text-[11px] font-bold">No ratings yet.</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Highlight Badge for Mess/Tiffin if highlighted */}
@@ -485,13 +458,6 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
         isOpen={showGallery}
         provider={service}
         onClose={() => setShowGallery(false)}
-      />
-
-      {/* 5-Star Rating Popup Modal */}
-      <RateServiceModal
-        isOpen={showRateModal}
-        service={service}
-        onClose={() => setShowRateModal(false)}
       />
     </>
   );

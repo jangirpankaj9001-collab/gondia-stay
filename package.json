@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc && vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "test": "node test/ownerProfileSecurity.test.js && firebase emulators:exec --only firestore \"node test/serviceLifecycle.test.js\""
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",
@@ -21,6 +22,7 @@
     "vite": "^6.1.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

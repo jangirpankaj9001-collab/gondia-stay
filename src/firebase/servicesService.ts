@@ -68,14 +68,7 @@ export const getCachedServices = (): ServiceItem[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Filter out deleted IDs and any legacy dummy service IDs
         const validCached = parsed
-          .filter((s: any) => s && s.id && !deletedIds.has(s.id) && !DUMMY_SERVICE_IDS.has(s.id))
-          .map((s: any) => {
-            const isLegacyDefault = s.rating === 5.0 && s.reviewCount === 1 && typeof s.ratingTotal !== 'number';
-            if (isLegacyDefault) {
-              return { ...s, rating: 0, reviewCount: 0, ratingTotal: 0 };
-            }
-            return s;
-          });
+          .filter((s: any) => s && s.id && !deletedIds.has(s.id) && !DUMMY_SERVICE_IDS.has(s.id));
         return validCached;
       }
     }
@@ -177,13 +170,6 @@ export const subscribeToFirestoreServices = (
         timing: data.timing || '8:00 AM - 8:00 PM',
         experienceYears: typeof data.experienceYears === 'number' ? data.experienceYears : 1,
         status: (data.status || 'pending').toLowerCase() as any,
-        rating: typeof data.rating === 'number' && typeof data.reviewCount === 'number' && data.reviewCount > 0 && typeof data.ratingTotal === 'number'
-          ? data.rating
-          : (typeof data.rating === 'number' && typeof data.reviewCount === 'number' && data.reviewCount > 0 && data.rating < 5.0 ? data.rating : 0),
-        reviewCount: typeof data.reviewCount === 'number' && (typeof data.ratingTotal === 'number' || (typeof data.rating === 'number' && data.rating < 5.0))
-          ? data.reviewCount
-          : 0,
-        ratingTotal: typeof data.ratingTotal === 'number' ? data.ratingTotal : undefined,
         isFeatured: Boolean(data.isFeatured),
         specialties: Array.isArray(data.specialties) ? data.specialties : [],
         createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
@@ -224,47 +210,6 @@ export const subscribeToFirestoreServices = (
     }
 
     onUpdate(merged);
-
-    // Verify and calibrate actual user ratings from the ratings subcollection
-    if (db && isFirebaseConfigured() && merged.length > 0) {
-      const firestore = db;
-      Promise.all(merged.map(async (service) => {
-        try {
-          const ratingsCol = collection(firestore, SERVICES_COLLECTION, service.id, 'ratings');
-          const ratingsSnap = await getDocs(ratingsCol);
-          if (!ratingsSnap.empty) {
-            let total = 0;
-            let count = 0;
-            ratingsSnap.forEach(rDoc => {
-              const r = rDoc.data();
-              if (typeof r.score === 'number' && r.score >= 1 && r.score <= 5) {
-                total += r.score;
-                count += 1;
-              }
-            });
-            if (count > 0) {
-              const avg = Math.round((total / count) * 10) / 10;
-              return { ...service, rating: avg, reviewCount: count, ratingTotal: total };
-            }
-          } else if (!service.ratingTotal) {
-            return { ...service, rating: 0, reviewCount: 0, ratingTotal: 0 };
-          }
-        } catch {
-          // If subcollection read fails, keep current record
-        }
-        return service;
-      })).then((calibrated) => {
-        const hasChange = calibrated.some((cs, idx) => 
-          cs.rating !== merged[idx]?.rating || cs.reviewCount !== merged[idx]?.reviewCount
-        );
-        if (hasChange) {
-          try {
-            localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(calibrated));
-          } catch {}
-          onUpdate(calibrated);
-        }
-      }).catch(() => {});
-    }
   };
 
   const handleQueryError = (err: any) => {
@@ -412,9 +357,6 @@ export const saveServiceToFirestore = async (
     timing: (serviceData.timing || '8:00 AM - 8:00 PM').trim().substring(0, 100),
     experienceYears: typeof serviceData.experienceYears === 'number' ? serviceData.experienceYears : 1,
     status: cleanStatus as any,
-    rating: typeof serviceData.rating === 'number' ? serviceData.rating : 0,
-    reviewCount: typeof serviceData.reviewCount === 'number' ? serviceData.reviewCount : 0,
-    ratingTotal: typeof serviceData.ratingTotal === 'number' ? serviceData.ratingTotal : 0,
     isFeatured: Boolean(serviceData.isFeatured),
     specialties: Array.isArray(serviceData.specialties) ? serviceData.specialties : [],
     createdAt: typeof serviceData.createdAt === 'number' ? serviceData.createdAt : Date.now(),
@@ -928,150 +870,4 @@ export const deleteServiceInFirestore = async (
     console.error('[GondiaStay] Error deleting service from Firestore:', err);
     return false;
   }
-};
-
-/**
- * Submits a 1-5 star rating for a service listing in Cloud Firestore.
- * Calculates the new average rating and updated reviewCount.
- * Saves the rating record in services/{serviceId}/ratings/{clientId} to prevent repeats.
- */
-export const rateServiceInFirestore = async (
-  serviceId: string,
-  score: number,
-  clientId?: string
-): Promise<{ success: boolean; newRating: number; newReviewCount: number; error?: string }> => {
-  const safeScore = Math.max(1, Math.min(5, Math.round(score)));
-
-  // Retrieve current cached record to determine baseline
-  const cached = getCachedServices();
-  const target = cached.find(s => s.id === serviceId);
-
-  const hasTargetRatings = Boolean(
-    target &&
-    typeof target.reviewCount === 'number' &&
-    target.reviewCount > 0 &&
-    typeof target.rating === 'number' &&
-    target.rating > 0
-  );
-  const prevRating: number = (hasTargetRatings && typeof target?.rating === 'number') ? target.rating : 0;
-  const prevCount: number = (hasTargetRatings && typeof target?.reviewCount === 'number') ? target.reviewCount : 0;
-  const prevTotal: number = (hasTargetRatings && typeof target?.ratingTotal === 'number') ? target.ratingTotal : (prevRating * prevCount);
-
-  let finalCount = prevCount + 1;
-  let finalTotal = prevTotal + safeScore;
-  let finalRating = Math.round((finalTotal / finalCount) * 10) / 10;
-
-  if (db && isFirebaseConfigured()) {
-    try {
-      const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
-      const snap = await getDoc(srvRef);
-      if (snap.exists()) {
-        const data = snap.data();
-
-        // Calculate from existing ratings in subcollection if available
-        let scores: number[] = [];
-        try {
-          const ratingsCol = collection(db, SERVICES_COLLECTION, serviceId, 'ratings');
-          const ratingsSnap = await getDocs(ratingsCol);
-          ratingsSnap.forEach(rDoc => {
-            const rData = rDoc.data();
-            if (typeof rData.score === 'number' && rData.score >= 1 && rData.score <= 5) {
-              if (!clientId || rDoc.id !== clientId) {
-                scores.push(rData.score);
-              }
-            }
-          });
-        } catch {}
-
-        if (scores.length > 0) {
-          scores.push(safeScore);
-          finalCount = scores.length;
-          finalTotal = scores.reduce((sum, val) => sum + val, 0);
-          finalRating = Math.round((finalTotal / finalCount) * 10) / 10;
-        } else {
-          const hasDocRatings = Boolean(
-            typeof data.reviewCount === 'number' &&
-            data.reviewCount > 0 &&
-            typeof data.rating === 'number' &&
-            data.rating > 0 &&
-            (typeof data.ratingTotal === 'number' || data.rating < 5.0)
-          );
-          const docCount = hasDocRatings ? data.reviewCount : 0;
-          const docTotal = hasDocRatings ? (data.ratingTotal ?? (data.rating * docCount)) : 0;
-
-          finalCount = docCount + 1;
-          finalTotal = docTotal + safeScore;
-          finalRating = Math.round((finalTotal / finalCount) * 10) / 10;
-        }
-
-        if (clientId) {
-          const ratingDocRef = doc(db, SERVICES_COLLECTION, serviceId, 'ratings', clientId);
-          const existingSnap = await getDoc(ratingDocRef);
-          if (existingSnap.exists()) {
-            return {
-              success: false,
-              newRating: prevRating,
-              newReviewCount: prevCount,
-              error: 'You have already submitted a rating for this service.'
-            };
-          }
-        }
-
-        const batch = writeBatch(db);
-        batch.update(srvRef, {
-          rating: finalRating,
-          reviewCount: finalCount,
-          ratingTotal: finalTotal,
-          updatedAt: Date.now()
-        });
-
-        if (clientId) {
-          const ratingDocRef = doc(db, SERVICES_COLLECTION, serviceId, 'ratings', clientId);
-          batch.set(ratingDocRef, {
-            clientId,
-            serviceId,
-            score: safeScore,
-            createdAt: Date.now()
-          });
-        }
-
-        await batch.commit();
-      }
-    } catch (err: any) {
-      console.warn('[GondiaStay] Firestore rating update notice:', err);
-      const msg = err?.message || String(err);
-      if (msg.includes('permission') || msg.includes('PERMISSION_DENIED')) {
-        return {
-          success: false,
-          newRating: prevRating,
-          newReviewCount: prevCount,
-          error: 'Only one rating per user is permitted.'
-        };
-      }
-      // Fallback: proceed with local update
-    }
-  }
-
-  // Always update local cache
-  try {
-    const updated = cached.map(s => {
-      if (s.id === serviceId) {
-        return {
-          ...s,
-          rating: finalRating,
-          reviewCount: finalCount,
-          ratingTotal: finalTotal,
-          updatedAt: Date.now()
-        };
-      }
-      return s;
-    });
-    localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
-  } catch {}
-
-  return {
-    success: true,
-    newRating: finalRating,
-    newReviewCount: finalCount
-  };
 };
