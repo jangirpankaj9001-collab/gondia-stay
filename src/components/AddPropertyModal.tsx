@@ -142,7 +142,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
-  const { isOwnerAuthenticated, isAdminAuthenticated, authUser, updateOwnerProfile } = useApp();
+  const { isOwnerAuthenticated, isAdminAuthenticated, authUser, updateOwnerProfile, saveListingToken } = useApp();
   const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
   const isOwnerWithProfile = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
 
@@ -654,6 +654,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         };
 
         const res = await onSaveProperty(newProp, false);
+        if (res?.propertyId && res?.editToken) {
+          saveListingToken(res.propertyId, res.editToken);
+        }
         setSavedPropertyInfo({
           id: res?.propertyId || newProp.id,
           title: newProp.title,
@@ -764,6 +767,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                 <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-500">
                   Landlord: <span className="font-bold text-slate-800">{savedPropertyInfo.ownerName}</span> • {savedPropertyInfo.ownerPhone}
                 </div>
+                <p className="text-[10px] text-emerald-600 font-semibold pt-1 border-t border-slate-200/40">
+                  ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
+                </p>
               </div>
 
               <div className="pt-2 flex items-center justify-center gap-3">

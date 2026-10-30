@@ -49,7 +49,8 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
 
   const isFav = favorites.includes(property.id);
   const occupied = isOccupied(property.occupancyStatus);
-  const canManageOccupancy = Boolean(isAdminAuthenticated || isPropertyOwner(property) || isOwnerView);
+  const isOwner = Boolean(isAdminAuthenticated || isPropertyOwner(property));
+  const canManageOccupancy = isOwner;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const mainPhoto = property.photos && property.photos.length > 0 
@@ -296,7 +297,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
             </div>
           )}
 
-          {isOwnerView ? (
+          {(isOwnerView && isOwner) ? (
             /* Landlord controls */
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs bg-blue-50/50 p-2 rounded-lg border border-blue-100">
@@ -311,24 +312,26 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => toggleFeatured(property.id)}
-                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border transition-colors ${
-                    property.isFeatured 
-                      ? 'bg-amber-50 text-amber-800 border-amber-300' 
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  {property.isFeatured ? 'Highlighted' : 'Highlight (Free)'}
-                </button>
+                {isAdminAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => toggleFeatured(property.id)}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border transition-colors cursor-pointer ${
+                      property.isFeatured 
+                        ? 'bg-amber-50 text-amber-800 border-amber-300' 
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    {property.isFeatured ? 'Highlighted' : 'Highlight (Free)'}
+                  </button>
+                )}
 
-                {onEdit && (
+                {isOwner && onEdit && (
                   <button
                     type="button"
                     onClick={() => onEdit(property)}
-                    className="p-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1"
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer border border-blue-200"
                     title="Edit listing"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
@@ -336,11 +339,11 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
                   </button>
                 )}
 
-                {onDelete && (
+                {isOwner && onDelete && (
                   <button
                     type="button"
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold flex items-center gap-1"
+                    className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold flex items-center gap-1 cursor-pointer border border-red-200"
                     title="Delete listing"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

@@ -65,7 +65,7 @@ import {
   getFileFingerprint,
   getCachedPhotoUrl
 } from './firebase/storageService';
-import { fetchPropertyDirect } from './firebase/propertiesService';
+import { fetchPropertyDirect, fetchPropertyByEditToken } from './firebase/propertiesService';
 import { fetchServiceByEditToken } from './firebase/servicesService';
 import { useApp, useBackHandler, isAuthorizedAdminEmail } from './context/AppContext';
 import { Header } from './components/Header';
@@ -253,6 +253,26 @@ export const App: React.FC = () => {
             navigateTo('owner');
             setOwnerSubTab('new');
             showToast('Private edit link verified! You can update your listing.');
+          } else {
+            showToast('Listing not found or invalid private edit link.');
+          }
+        }).catch(err => {
+          console.error('Error fetching property via edit link:', err);
+        });
+      }
+
+      // Check URL parameters for standalone property edit link (?token=gst_...)
+      if (token && token.startsWith('gst_') && !token.startsWith('gst_srv_') && !editPropId) {
+        fetchPropertyByEditToken(token).then(({ property, propertyId }) => {
+          if (propertyId) {
+            saveListingToken(propertyId, token);
+            setCurrentEditToken(token);
+            if (property) {
+              handleEditClick(property, token);
+              navigateTo('owner');
+              setOwnerSubTab('new');
+              showToast('Private edit link verified! You can update your listing.');
+            }
           } else {
             showToast('Listing not found or invalid private edit link.');
           }
@@ -1117,10 +1137,6 @@ export const App: React.FC = () => {
 
   const handleEditClick = (property: PropertyListing, token?: string) => {
     let tokenToUse = token || currentEditToken || myListingTokens[property.id];
-    if (!tokenToUse && !isAdminAuthenticated) {
-      tokenToUse = `edit_${property.id}_${Date.now()}`;
-      saveListingToken(property.id, tokenToUse);
-    }
     if (tokenToUse) {
       setCurrentEditToken(tokenToUse);
     }
@@ -3618,14 +3634,49 @@ export const App: React.FC = () => {
         {activeTab === 'detail' && selectedProperty && (
           <div className="max-w-4xl mx-auto space-y-6">
             
-            {/* Back Button */}
-            <button
-              onClick={() => goBack()}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Listings in Gondia
-            </button>
+            {/* Header row with Back and Owner/Admin Edit & Delete buttons */}
+            <div className="flex items-center justify-between gap-3">
+              <button
+                onClick={() => goBack()}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Listings in Gondia
+              </button>
+
+              {(isAdminAuthenticated || isPropertyOwner(selectedProperty)) && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleEditClick(selectedProperty, myListingTokens[selectedProperty.id])}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-blue-200"
+                    title="Edit listing details"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit Listing</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setDeleteConfirmState({
+                        isOpen: true,
+                        itemType: 'property',
+                        itemTitle: selectedProperty.title,
+                        onConfirm: () => {
+                          deleteProperty(selectedProperty.id);
+                          setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+                          navigateTo('explore');
+                        }
+                      });
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-rose-200"
+                    title="Delete listing"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Main Detail Card */}
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-md">

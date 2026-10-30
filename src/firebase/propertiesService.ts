@@ -429,6 +429,13 @@ export const savePropertyToFirestore = async (
 
     await batch.commit();
 
+    // Securely associate token with owner's device in local storage
+    try {
+      const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_listing_tokens') || '{}');
+      savedTokens[propId] = token;
+      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(savedTokens));
+    } catch {}
+
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     return {
       propertyId: propId,
@@ -509,6 +516,80 @@ export const fetchPropertyDirect = async (propertyId: string, token?: string): P
     return null;
   }
 };
+
+/**
+ * Resolves a property listing and property ID directly using an unguessable private edit token.
+ * Enables automatic verification of private property edit links (?token=gst_... or ?edit=<id>&token=...).
+ */
+export const fetchPropertyByEditToken = async (
+  token: string,
+  propertyIdHint?: string
+): Promise<{ property: PropertyListing | null; propertyId: string | null }> => {
+  if (!token) return { property: null, propertyId: null };
+  const cleanToken = token.trim();
+  if (!cleanToken) return { property: null, propertyId: null };
+
+  if (!db || !isFirebaseConfigured()) {
+    const cached = getCachedProperties();
+    const match = cached.find(p => propertyIdHint && p.id === propertyIdHint);
+    return { property: match || null, propertyId: match?.id || propertyIdHint || null };
+  }
+
+  try {
+    let resolvedPropId = propertyIdHint;
+    let propData: any = null;
+
+    // Direct lookup in property_edit_tokens
+    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, cleanToken);
+    const tokenSnap = await getDoc(tokenRef);
+    if (tokenSnap.exists()) {
+      const data = tokenSnap.data();
+      if (data?.propertyId) {
+        resolvedPropId = data.propertyId;
+        propData = data.propertyData;
+      }
+    }
+
+    if (!resolvedPropId) {
+      return { property: null, propertyId: null };
+    }
+
+    // If propertyData was cached on token document
+    if (propData) {
+      return {
+        property: {
+          ...(propData as PropertyListing),
+          id: resolvedPropId,
+          status: (propData.status || 'pending').toLowerCase() as any,
+          occupancyStatus: (propData.occupancyStatus || 'AVAILABLE').toUpperCase() as any
+        },
+        propertyId: resolvedPropId
+      };
+    }
+
+    // Fetch the property document
+    const propRef = doc(db, PROPERTIES_COLLECTION, resolvedPropId);
+    const propSnap = await getDoc(propRef);
+    if (propSnap.exists()) {
+      const data = propSnap.data();
+      return {
+        property: {
+          ...(data as PropertyListing),
+          id: propSnap.id,
+          status: (data.status || 'pending').toLowerCase() as any,
+          occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any
+        },
+        propertyId: resolvedPropId
+      };
+    }
+
+    return { property: null, propertyId: resolvedPropId };
+  } catch (err) {
+    console.warn('[GondiaStay] Error fetching property by edit token:', err);
+    return { property: null, propertyId: propertyIdHint || null };
+  }
+};
+
 
 /**
  * Updates rental occupancy status ('AVAILABLE' or 'OCCUPIED') in Firestore.

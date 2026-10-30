@@ -283,6 +283,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   }, [isAdminAuthenticated, myServiceTokens, authUser]);
 
+  /**
+   * Secure property ownership check:
+   * - Admin always has full access
+   * - Valid private edit token possessed by this device in myListingTokens
+   * - Logged-in Firebase account matching property.ownerId or property.ownerEmail
+   * Strictly prevents other owners from modifying or deleting someone else's property.
+   */
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
     if (isAdminAuthenticated) return true;
     if (myListingTokens[property.id]) return true;
@@ -290,18 +297,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (property.ownerId && property.ownerId === authUser.uid) return true;
       if (property.ownerEmail && authUser.email && property.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) return true;
     }
-    if (currentOwner.id && currentOwner.id !== '' && property.ownerId === currentOwner.id) return true;
-    if (!isAdminAuthenticated && currentOwner.phone && currentOwner.phone.trim().length >= 10) {
-      const pPhone = (property.ownerPhone || property.ownerWhatsappNumber || '').replace(/\D/g, '');
-      const oPhone = (currentOwner.phone || '').replace(/\D/g, '');
-      if (pPhone.length >= 10 && oPhone.length >= 10) {
-        if (pPhone.endsWith(oPhone.slice(-10)) || oPhone.endsWith(pPhone.slice(-10))) {
-          return true;
-        }
-      }
-    }
     return false;
-  }, [isAdminAuthenticated, myListingTokens, authUser, currentOwner]);
+  }, [isAdminAuthenticated, myListingTokens, authUser]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
@@ -667,8 +664,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /**
    * Deletes a property listing directly from Cloud Firestore.
+   * Only the actual listing owner or admin can delete it.
    */
   const deleteProperty = async (propertyId: string): Promise<void> => {
+    const targetProp = properties.find(p => p.id === propertyId);
+    if (!isAdminAuthenticated && targetProp && !isPropertyOwner(targetProp)) {
+      showToast("Unauthorized: Only the listing owner or admin can delete this property.");
+      return;
+    }
+
     if (isFirebaseConfigured()) {
       try {
         await deletePropertyFromFirestore(propertyId);
@@ -678,6 +682,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setProperties(prev => prev.filter(p => p.id !== propertyId));
+    setMyListingTokens(prev => {
+      const updated = { ...prev };
+      delete updated[propertyId];
+      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated));
+      return updated;
+    });
     showToast("Listing removed successfully.");
 
     if (selectedProperty?.id === propertyId) {
