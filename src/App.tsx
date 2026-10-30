@@ -66,6 +66,7 @@ import {
   getCachedPhotoUrl
 } from './firebase/storageService';
 import { fetchPropertyDirect } from './firebase/propertiesService';
+import { fetchServiceByEditToken } from './firebase/servicesService';
 import { useApp, useBackHandler, isAuthorizedAdminEmail } from './context/AppContext';
 import { Header } from './components/Header';
 import { BottomNav, ServicesHouseIcon } from './components/BottomNav';
@@ -160,6 +161,10 @@ export const App: React.FC = () => {
     myListingTokens,
     saveListingToken,
     getListingToken,
+    myServiceTokens,
+    saveServiceToken,
+    getServiceToken,
+    saveServiceId,
     ownerSubTab,
     setOwnerSubTab,
     openPostListing
@@ -253,6 +258,35 @@ export const App: React.FC = () => {
           }
         }).catch(err => {
           console.error('Error fetching property via edit link:', err);
+        });
+      }
+
+      // Check URL parameters for private service edit link (?service=<id>&token=<token> or ?token=gst_srv_...)
+      const serviceEditId = searchParams.get('service') || searchParams.get('serviceEdit') || hashParams.get('service') || hashParams.get('serviceEdit');
+      const isServiceToken = Boolean(token && (token.startsWith('gst_srv_') || serviceEditId));
+
+      if (isServiceToken && token) {
+        if (serviceEditId) {
+          saveServiceId(serviceEditId);
+          saveServiceToken(serviceEditId, token);
+        }
+
+        fetchServiceByEditToken(token, serviceEditId || undefined).then(({ service, serviceId }) => {
+          const resolvedId = serviceId || serviceEditId;
+          if (resolvedId) {
+            saveServiceId(resolvedId);
+            saveServiceToken(resolvedId, token);
+            if (service) {
+              setServiceToEdit(service);
+              setIsAddServiceModalOpen(true);
+            }
+            navigateTo('services');
+            showToast('Private service edit link verified! You can update your service listing.');
+          } else {
+            showToast('Service listing not found or invalid private edit link.');
+          }
+        }).catch(err => {
+          console.error('Error fetching service via edit link:', err);
         });
       }
 

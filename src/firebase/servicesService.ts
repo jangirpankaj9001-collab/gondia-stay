@@ -871,3 +871,56 @@ export const deleteServiceInFirestore = async (
     return false;
   }
 };
+
+/**
+ * Resolves a service listing and ID using an unguessable private edit token.
+ * Enables automatic verification of private service edit links (?token=gst_srv_... or ?service=<id>&token=...).
+ */
+export const fetchServiceByEditToken = async (
+  token: string,
+  serviceIdHint?: string
+): Promise<{ service: ServiceItem | null; serviceId: string | null }> => {
+  if (!token) return { service: null, serviceId: null };
+  const cleanToken = token.trim();
+  if (!cleanToken) return { service: null, serviceId: null };
+
+  if (!db || !isFirebaseConfigured()) {
+    const cached = getCachedServices();
+    const match = cached.find(s => s.editToken === cleanToken || (serviceIdHint && s.id === serviceIdHint));
+    return { service: match || null, serviceId: match?.id || serviceIdHint || null };
+  }
+
+  try {
+    let resolvedServiceId = serviceIdHint;
+
+    // Direct lookup in service_edit_tokens
+    const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
+    const tokenSnap = await getDoc(tokenRef);
+    if (tokenSnap.exists()) {
+      const data = tokenSnap.data();
+      if (data?.serviceId) {
+        resolvedServiceId = data.serviceId;
+      }
+    }
+
+    if (!resolvedServiceId) {
+      return { service: null, serviceId: null };
+    }
+
+    // Fetch the service document
+    const srvRef = doc(db, SERVICES_COLLECTION, resolvedServiceId);
+    const srvSnap = await getDoc(srvRef);
+    if (srvSnap.exists()) {
+      return {
+        service: { id: srvSnap.id, ...srvSnap.data() } as ServiceItem,
+        serviceId: resolvedServiceId
+      };
+    }
+
+    return { service: null, serviceId: resolvedServiceId };
+  } catch (err) {
+    console.warn('[GondiaStay] Error fetching service by edit token:', err);
+    return { service: null, serviceId: serviceIdHint || null };
+  }
+};
+

@@ -19,15 +19,13 @@ import {
   Pencil,
   Clock,
   Camera,
-  Trash2,
-  KeyRound
+  Trash2
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { ServiceGalleryModal, extractServicePhotos } from './ServiceGalleryModal';
-import { verifyServiceOwnershipSecurely } from '../firebase/servicesService';
 
 interface SubCategoryConfig {
   id: ServiceCategory;
@@ -178,81 +176,12 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
     locality: string;
   } | null>(null);
 
-  // Provider ownership verification state to unlock editing or deleting from another device
-  const [verifyingService, setVerifyingService] = useState<ServiceItem | null>(null);
-  const [verifyingAction, setVerifyingAction] = useState<'edit' | 'delete'>('edit');
-  const [verifyInput, setVerifyInput] = useState('');
-  const [verifyError, setVerifyError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
-
   // Delete confirmation dialog state
   const [serviceToDelete, setServiceToDelete] = useState<ServiceItem | null>(null);
 
   // Swipeable photo gallery modal state
   const [selectedGalleryProvider, setSelectedGalleryProvider] = useState<ServiceItem | null>(null);
   const [galleryInitialIndex, setGalleryInitialIndex] = useState(0);
-
-  const handleProviderEditClick = (provider: ServiceItem) => {
-    if (isAdmin || isServiceOwner(provider)) {
-      if (onEdit) onEdit(provider);
-      return;
-    }
-    // Need ownership verification via Owner ID or Edit Token
-    setVerifyingService(provider);
-    setVerifyingAction('edit');
-    setVerifyInput('');
-    setVerifyError(null);
-  };
-
-  const handleProviderDeleteClick = (provider: ServiceItem) => {
-    if (isAdmin || isServiceOwner(provider)) {
-      // Ask for confirmation before deletion
-      setServiceToDelete(provider);
-      return;
-    }
-    // Need ownership verification via Owner ID or Edit Token before asking for delete confirmation
-    setVerifyingService(provider);
-    setVerifyingAction('delete');
-    setVerifyInput('');
-    setVerifyError(null);
-  };
-
-  const handleVerifyOwnershipSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!verifyingService) return;
-    const cleanInput = verifyInput.trim();
-    if (!cleanInput) {
-      setVerifyError('Please enter the private Edit Token for this service.');
-      return;
-    }
-
-    setIsVerifying(true);
-    setVerifyError(null);
-
-    try {
-      const isOwner = await verifyServiceOwnershipSecurely(verifyingService, cleanInput);
-      if (isOwner) {
-        saveServiceId(verifyingService.id);
-        saveServiceToken(verifyingService.id, cleanInput);
-        showToast(`Ownership verified for "${verifyingService.title}"!`);
-        const target = verifyingService;
-        const action = verifyingAction;
-        setVerifyingService(null);
-        if (action === 'delete') {
-          // Ask for confirmation before deletion
-          setServiceToDelete(target);
-        } else if (onEdit) {
-          onEdit(target);
-        }
-      } else {
-        setVerifyError('Verification failed: The entered Edit Token does not match this service listing. Only the verified listing owner or admin can edit or delete this service.');
-      }
-    } catch {
-      setVerifyError('Error checking service ownership. Please try again.');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
 
   // Helper to check if a service item belongs to a category (with COOK / MAID alias)
   const matchesSubcategory = (itemCategory: string, targetId: ServiceCategory): boolean => {
@@ -644,13 +573,13 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                             </button>
                           )}
                         </div>
-                      ) : onEdit ? (
+                      ) : (isAdmin || isServiceOwner(provider)) && onEdit ? (
                         <div className="pt-2 flex items-center gap-2 border-t border-slate-100 flex-wrap sm:flex-nowrap">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleProviderEditClick(provider);
+                              onEdit(provider);
                             }}
                             className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
                             title="Edit Service Listing (Provider)"
@@ -664,7 +593,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleProviderDeleteClick(provider);
+                                setServiceToDelete(provider);
                               }}
                               className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200 shrink-0"
                               title="Delete Service Listing (Owner)"
@@ -759,92 +688,7 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
         </div>
       )}
 
-      {/* Provider Ownership Verification Modal to Unlock Editing or Deleting from Another Device */}
-      {verifyingService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-xl ${verifyingAction === 'delete' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'} flex items-center justify-center`}>
-                  {verifyingAction === 'delete' ? <Trash2 className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}
-                </div>
-                <h3 className="text-sm font-extrabold text-slate-900">
-                  {verifyingAction === 'delete' ? 'Verify Ownership to Delete' : 'Verify Service Ownership'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setVerifyingService(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-slate-800">
-                Service: <span className="font-extrabold text-blue-700">{verifyingService.title}</span>
-              </p>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                To {verifyingAction === 'delete' ? 'delete' : 'edit'} this service listing on this device, please enter your private Edit Token.
-              </p>
-              <p className="text-[11px] text-slate-400 leading-normal">
-                Only the listing owner and admin can {verifyingAction === 'delete' ? 'delete' : 'edit'} it; other owners cannot modify someone else's service.
-              </p>
-            </div>
-
-            {verifyError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium">
-                {verifyError}
-              </div>
-            )}
-
-            <form onSubmit={handleVerifyOwnershipSubmit} className="space-y-3 pt-1">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Private Service Edit Token *
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  value={verifyInput}
-                  onChange={(e) => setVerifyInput(e.target.value)}
-                  placeholder="Enter Edit Token (e.g. gst_srv_...)"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 focus:border-blue-600 rounded-xl text-xs text-slate-900 font-semibold focus:bg-white outline-none"
-                />
-                <p className="text-[10px] text-slate-500 font-medium mt-1">
-                  Your private token provided upon creating this service. Once verified, this device will remember ownership.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setVerifyingService(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isVerifying}
-                  className={`px-5 py-2 ${verifyingAction === 'delete' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'} text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5`}
-                >
-                  {isVerifying ? (
-                    <span>Verifying...</span>
-                  ) : (
-                    <>
-                      {verifyingAction === 'delete' ? <Trash2 className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                      <span>{verifyingAction === 'delete' ? 'Verify & Delete' : 'Verify & Edit'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmationModal

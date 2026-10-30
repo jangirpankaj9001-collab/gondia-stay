@@ -54,6 +54,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
     saveService, 
     updateService, 
     saveServiceId,
+    saveServiceToken,
     currentOwner,
     isAdminAuthenticated,
     updateOwnerProfile
@@ -413,6 +414,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
 
       if (result.success) {
         saveServiceId(result.serviceId);
+        if (result.editToken) {
+          saveServiceToken(result.serviceId, result.editToken);
+        }
         setCreatedCredentials({
           serviceId: result.serviceId,
           ownerId: result.ownerId,
@@ -558,8 +562,11 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       <Copy className="w-3 h-3" />
                       <span>{copiedCredentials ? 'Credentials Copied!' : 'Copy Credentials'}</span>
                     </button>
-                    <p className="text-[10px] text-slate-500 italic">
-                      Save these credentials to edit or delete your listing from any other device.
+                    <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                      ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
+                    </p>
+                    <p className="text-[10px] text-slate-500 italic mt-0.5">
+                      Save these credentials if you ever need to manage your service from a different device.
                     </p>
                   </div>
                 )}
