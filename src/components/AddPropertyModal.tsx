@@ -175,6 +175,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isReapprovalSubmitted, setIsReapprovalSubmitted] = useState(false);
+  const [showReapprovalPopup, setShowReapprovalPopup] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{ propertyId: string; ownerId?: string; editToken?: string; editUrl?: string } | null>(null);
   const [copiedCredentials, setCopiedCredentials] = useState(false);
   const [savedPropertyInfo, setSavedPropertyInfo] = useState<{
@@ -234,6 +235,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setFormError(null);
       setIsSuccess(false);
       setIsReapprovalSubmitted(false);
+      setShowReapprovalPopup(false);
       setCreatedCredentials(null);
       setCopiedCredentials(false);
     } else {
@@ -270,6 +272,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setFormError(null);
       setIsSuccess(false);
       setIsReapprovalSubmitted(false);
+      setShowReapprovalPopup(false);
       setSavedPropertyInfo(null);
       setCreatedCredentials(null);
       setCopiedCredentials(false);
@@ -627,6 +630,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerName: updated.ownerName || '',
           ownerPhone: updated.ownerPhone || ''
         });
+        if (propertyToEdit && !isAdmin) {
+          setShowReapprovalPopup(true);
+        }
         setIsSuccess(true);
         if (onSuccessToast) {
           onSuccessToast(isApprovedListing ? 'Proposed changes submitted for admin reapproval!' : 'Listing updated successfully!');
@@ -1511,15 +1517,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting || isUploadingPhotos}
-                  className={`px-6 py-2.5 active:scale-95 text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer ${
-                    propertyToEdit && !isAdmin
-                      ? (propertyToEdit.hasPendingEdit || isReapprovalSubmitted)
-                        ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
-                        : isApproved(propertyToEdit.status)
-                          ? 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white'
-                          : 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
-                      : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
-                  }`}
+                  className="px-6 py-2.5 active:scale-95 text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white"
                 >
                   {(isSubmitting || isUploadingPhotos) ? (
                     <>
@@ -1527,22 +1525,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       <span>{isUploadingPhotos ? 'Uploading Photos...' : 'Saving Listing...'}</span>
                     </>
                   ) : propertyToEdit && !isAdmin ? (
-                    (propertyToEdit.hasPendingEdit || isReapprovalSubmitted) ? (
-                      <>
-                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
-                        <span>Pending Approval</span>
-                      </>
-                    ) : isApproved(propertyToEdit.status) ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
-                        <span>Approved ✓</span>
-                      </>
-                    ) : (
-                      <>
-                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
-                        <span>Pending Approval</span>
-                      </>
-                    )
+                    <span>Submit for Reapproval</span>
                   ) : (
                     <span>
                       {propertyToEdit
@@ -1550,12 +1533,55 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                         : 'Submit for Admin Approval'}
                     </span>
                   )}
+                  {/* Reapproval status state: Submit for Reapproval when editing, Approved ✓ when verified */}
                 </button>
               </div>
             </form>
           )}
         </div>
       </div>
+
+      {/* Dedicated Reapproval Confirmation Popup Modal */}
+      {showReapprovalPopup && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 text-center space-y-4 animate-in zoom-in-95">
+            <button
+              type="button"
+              onClick={() => {
+                setShowReapprovalPopup(false);
+                onClose();
+              }}
+              className="absolute top-3.5 right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+              <Clock className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900">
+              Changes Submitted for Reapproval
+            </h3>
+            <p className="text-xs text-slate-700 leading-relaxed font-medium">
+              Your property has been submitted for reapproval. Updated details will appear publicly once approved by the admin &amp; previously approved listing will be publicly visible with its original details until the edited version is approved
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowReapprovalPopup(false);
+                onClose();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+            >
+              Got it, Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

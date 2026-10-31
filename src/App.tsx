@@ -2460,33 +2460,6 @@ export const App: React.FC = () => {
                             </button>
                           </div>
 
-                          {myListingTokens[property.id] && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const link = `${window.location.origin}/?edit=${property.id}&token=${myListingTokens[property.id]}`;
-                                navigator.clipboard.writeText(link);
-                                setCopiedPropId(property.id);
-                                showToast('Private edit link copied! Save this link to edit your listing.');
-                                setTimeout(() => setCopiedPropId(null), 2500);
-                              }}
-                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                              title="Copy private unguessable edit link"
-                            >
-                              {copiedPropId === property.id ? (
-                                <>
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <LinkIcon className="w-3.5 h-3.5" />
-                                  <span>Edit Link</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-
                           {isAdminAuthenticated && (
                             <button
                               onClick={() => toggleFeatured(property.id)}
@@ -2498,33 +2471,15 @@ export const App: React.FC = () => {
                             </button>
                           )}
 
+                          {/* Functional Edit Button beside Delete button */}
                           <button
+                            type="button"
                             onClick={() => handleEditClick(property, myListingTokens[property.id])}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                              property.hasPendingEdit
-                                ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600 shadow-2xs'
-                                : isApproved(property.status)
-                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold border border-emerald-300'
-                                  : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600'
-                            }`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-blue-200/80 shadow-2xs"
                             title="Edit Listing Details"
                           >
-                            {property.hasPendingEdit ? (
-                              <>
-                                <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                                <span>Pending Approval</span>
-                              </>
-                            ) : isApproved(property.status) ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>Approved ✓</span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                                <span>Pending Approval</span>
-                              </>
-                            )}
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
                           </button>
 
                           <button
