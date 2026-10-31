@@ -16,9 +16,10 @@ import {
   ShieldCheck,
   ArrowRight,
   Home,
-  CheckCircle
+  CheckCircle,
+  Clock
 } from 'lucide-react';
-import { PropertyListing, isOccupied, isApproved } from '../types';
+import { PropertyListing, isOccupied, isApproved, isPending } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatDisplayPhone, openWhatsApp, dialPhone } from '../utils/contact';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
@@ -97,9 +98,16 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
                 Featured
               </span>
             )}
-            {property.status === 'PENDING' && isOwnerView && (
-              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold px-2 py-0.5 rounded-lg">
-                Pending Review
+            {isOwner && property.hasPendingEdit && (
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-xs font-black px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                <Clock className="w-3.5 h-3.5 text-amber-700" />
+                <span>Pending Approval</span>
+              </span>
+            )}
+            {isOwner && !property.hasPendingEdit && isPending(property.status) && (
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-xs font-black px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                <Clock className="w-3.5 h-3.5 text-amber-700" />
+                <span>Pending Approval</span>
               </span>
             )}
           </div>
@@ -331,11 +339,37 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
                   <button
                     type="button"
                     onClick={() => onEdit(property)}
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer border border-blue-200"
-                    title="Edit listing"
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                      property.hasPendingEdit
+                        ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600 shadow-xs'
+                        : isApproved(property.status)
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold border border-emerald-300'
+                          : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600 shadow-xs'
+                    }`}
+                    title={
+                      property.hasPendingEdit
+                        ? 'Proposed changes pending admin approval. Click to view or edit.'
+                        : isApproved(property.status)
+                          ? 'Listing approved & live. Click to edit.'
+                          : 'Pending admin approval. Click to view or edit.'
+                    }
                   >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    Edit
+                    {property.hasPendingEdit ? (
+                      <>
+                        <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                        <span>Pending Approval</span>
+                      </>
+                    ) : isApproved(property.status) ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Approved ✓</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                        <span>Pending Approval</span>
+                      </>
+                    )}
                   </button>
                 )}
 

@@ -26,7 +26,9 @@ import {
   ServiceCategory, 
   SERVICE_CATEGORIES, 
   ServiceItem, 
-  GONDIA_LOCALITIES 
+  GONDIA_LOCALITIES,
+  isApproved,
+  isPending
 } from '../types';
 import { uploadServicePhoto, uploadMultipleServicePhotos } from '../firebase/storageService';
 import { saveServiceToFirestore, updateServiceInFirestore } from '../firebase/servicesService';
@@ -98,6 +100,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
+  const [isReapprovalSubmitted, setIsReapprovalSubmitted] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{ serviceId: string; ownerId?: string; editToken?: string } | null>(null);
   const [copiedCredentials, setCopiedCredentials] = useState(false);
 
@@ -151,6 +154,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         setAdminStatus((source.status as any) || 'approved');
         setFormError(null);
         setSubmissionSuccess(false);
+        setIsReapprovalSubmitted(false);
       } else {
         const shouldAutoFill = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
         setCategory('MESS_TIFFIN');
@@ -172,6 +176,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         setAdminStatus('pending');
         setFormError(null);
         setSubmissionSuccess(false);
+        setIsReapprovalSubmitted(false);
       }
     } else if (!isOpen) {
       activeServiceIdRef.current = null;
@@ -346,7 +351,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         const result = await updateService(serviceToEdit.id, updatedServiceData);
         if (result.success) {
           saveServiceId(serviceToEdit.id);
-          const isApprovedLive = serviceToEdit.status === 'approved' && !isAdmin;
+          const isApprovedLive = isApproved(serviceToEdit.status) && !isAdmin;
           const updatedFull: ServiceItem = {
             ...serviceToEdit,
             ...(isApprovedLive ? {
@@ -376,8 +381,14 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
               console.warn('Failed to update owner profile:', e);
             }
           }
-          onClose();
-          return;
+          if (isApprovedLive) {
+            setIsReapprovalSubmitted(true);
+            setSubmissionSuccess(true);
+            return;
+          } else {
+            onClose();
+            return;
+          }
         } else {
           setFormError(result.error || 'Failed to update service in Firestore.');
           return;
@@ -503,85 +514,125 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           
           {submissionSuccess ? (
             /* Success confirmation view */
-            <div className="text-center py-8 space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-9 h-9" />
-              </div>
-              <div className="space-y-1.5 max-w-md mx-auto">
-                <h3 className="text-xl font-black text-slate-900">
-                  {isAdmin ? 'Service Listing Published!' : 'Service Submitted Successfully!'}
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {isAdmin ? (
-                    'Your service has been approved and is now live publicly for all visitors in Gondia.'
-                  ) : (
-                    'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'
-                  )}
-                </p>
-              </div>
+            (() => {
+              const isReapproval = isReapprovalSubmitted || Boolean(serviceToEdit && !isAdmin && isApproved(serviceToEdit.status));
+              return (
+                <div className="text-center py-6 sm:py-8 space-y-4">
+                  <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
+                    isReapproval ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
+                  }`}>
+                    {isReapproval ? <Clock className="w-9 h-9" /> : <CheckCircle2 className="w-9 h-9" />}
+                  </div>
 
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto text-left space-y-2 text-xs">
-                <div>
-                  <p className="font-bold text-slate-800">{title}</p>
-                  <p className="text-slate-600">{currentCategoryMeta.label} • {providerName}</p>
-                  <p className="text-blue-600 font-semibold">{phone}</p>
-                </div>
+                  <div className="space-y-2 max-w-md mx-auto">
+                    {isReapproval && (
+                      <div className="flex justify-center">
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
+                          <Clock className="w-4 h-4 text-slate-950" />
+                          <span>Pending Approval</span>
+                        </span>
+                      </div>
+                    )}
+                    <h3 className="text-xl font-black text-slate-900">
+                      {isReapproval
+                        ? 'Changes Submitted for Reapproval'
+                        : isAdmin
+                          ? 'Service Listing Published!'
+                          : 'Service Submitted Successfully!'}
+                    </h3>
 
-                {createdCredentials && (createdCredentials.ownerId || createdCredentials.editToken) && (
-                  <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-blue-700 font-bold text-[11px]">
-                      <KeyRound className="w-3.5 h-3.5" />
-                      <span>Owner Management Credentials</span>
+                    {isReapproval ? (
+                      <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
+                        <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                          <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>Changes will become public only after admin approval</span>
+                        </p>
+                        <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                          Your live service listing remains active and visible to customers across Gondia. All proposed edits are kept strictly private and hidden from public users until an administrator reviews and approves them.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {isAdmin ? (
+                          'Your service has been approved and is now live publicly for all visitors in Gondia.'
+                        ) : (
+                          'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'
+                        )}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto text-left space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{title}</p>
+                        <p className="text-slate-600">{currentCategoryMeta.label} • {providerName}</p>
+                        <p className="text-blue-600 font-semibold">{phone}</p>
+                      </div>
+                      {isReapproval && (
+                        <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                          <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+                        </span>
+                      )}
                     </div>
-                    {createdCredentials.ownerId && (
-                      <div className="bg-white p-2 rounded-lg border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Owner ID</span>
-                        <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
-                          {createdCredentials.ownerId}
-                        </code>
+
+                    {createdCredentials && (createdCredentials.ownerId || createdCredentials.editToken) && (
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-blue-700 font-bold text-[11px]">
+                          <KeyRound className="w-3.5 h-3.5" />
+                          <span>Owner Management Credentials</span>
+                        </div>
+                        {createdCredentials.ownerId && (
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-[10px] text-slate-400 block font-bold">Owner ID</span>
+                            <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
+                              {createdCredentials.ownerId}
+                            </code>
+                          </div>
+                        )}
+                        {createdCredentials.editToken && (
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-[10px] text-slate-400 block font-bold">Private Edit Token</span>
+                            <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
+                              {createdCredentials.editToken}
+                            </code>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const creds = `Service: ${title}\nOwner ID: ${createdCredentials.ownerId || 'N/A'}\nEdit Token: ${createdCredentials.editToken || 'N/A'}`;
+                            navigator.clipboard.writeText(creds);
+                            setCopiedCredentials(true);
+                            setTimeout(() => setCopiedCredentials(false), 2500);
+                          }}
+                          className="w-full py-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>{copiedCredentials ? 'Credentials Copied!' : 'Copy Credentials'}</span>
+                        </button>
+                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                          ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
+                        </p>
+                        <p className="text-[10px] text-slate-500 italic mt-0.5">
+                          Save these credentials if you ever need to manage your service from a different device.
+                        </p>
                       </div>
                     )}
-                    {createdCredentials.editToken && (
-                      <div className="bg-white p-2 rounded-lg border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block font-bold">Private Edit Token</span>
-                        <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
-                          {createdCredentials.editToken}
-                        </code>
-                      </div>
-                    )}
+                  </div>
+
+                  <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        const creds = `Service: ${title}\nOwner ID: ${createdCredentials.ownerId || 'N/A'}\nEdit Token: ${createdCredentials.editToken || 'N/A'}`;
-                        navigator.clipboard.writeText(creds);
-                        setCopiedCredentials(true);
-                        setTimeout(() => setCopiedCredentials(false), 2500);
-                      }}
-                      className="w-full py-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      onClick={onClose}
+                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
                     >
-                      <Copy className="w-3 h-3" />
-                      <span>{copiedCredentials ? 'Credentials Copied!' : 'Copy Credentials'}</span>
+                      Close & View Home Services
                     </button>
-                    <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-                      ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
-                    </p>
-                    <p className="text-[10px] text-slate-500 italic mt-0.5">
-                      Save these credentials if you ever need to manage your service from a different device.
-                    </p>
                   </div>
-                )}
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
-                >
-                  Close & View Home Services
-                </button>
-              </div>
-            </div>
+                </div>
+              );
+            })()
           ) : (
             /* Form view */
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -1096,22 +1147,45 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting || isUploadingPhoto}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-extrabold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 cursor-pointer"
+                  className={`px-6 py-2.5 text-xs font-extrabold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 cursor-pointer ${
+                    serviceToEdit && !isAdmin
+                      ? (serviceToEdit.hasPendingEdit || isReapprovalSubmitted)
+                        ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
+                        : isApproved(serviceToEdit.status)
+                          ? 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white'
+                          : 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
+                      : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
+                  }`}
                 >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <Loader2 className="w-4 h-4 animate-spin text-current" />
                       <span>Saving Service...</span>
                     </>
+                  ) : serviceToEdit && !isAdmin ? (
+                    (serviceToEdit.hasPendingEdit || isReapprovalSubmitted) ? (
+                      <>
+                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
+                        <span>Pending Approval</span>
+                      </>
+                    ) : isApproved(serviceToEdit.status) ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                        <span>Approved ✓</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
+                        <span>Pending Approval</span>
+                      </>
+                    )
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-white" />
                       <span>
                         {isAdmin
                           ? (serviceToEdit ? 'Publish Changes Directly' : 'Publish Service Listing')
-                          : (serviceToEdit && serviceToEdit.status === 'approved'
-                              ? 'Submit Changes for Reapproval'
-                              : 'Submit for Verification')}
+                          : 'Submit for Verification'}
                       </span>
                     </>
                   )}

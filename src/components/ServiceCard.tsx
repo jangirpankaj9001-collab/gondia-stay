@@ -160,11 +160,11 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 {isPending(service.status) ? 'Pending Approval' : 'Rejected'}
               </span>
             </div>
-          ) : service.hasPendingEdit ? (
+          ) : (service.hasPendingEdit && canEdit) ? (
             <div className="absolute top-12 right-3">
               <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm bg-amber-400 text-slate-950 flex items-center gap-1">
                 <Clock className="w-3 h-3 text-slate-950" />
-                <span>Edit Pending</span>
+                <span>Pending Approval</span>
               </span>
             </div>
           ) : null}
@@ -364,11 +364,37 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                     e.stopPropagation();
                     if (onEdit) onEdit(service);
                   }}
-                  className="flex-1 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
-                  title="Edit Your Service Listing"
+                  className={`flex-1 py-2 px-3 text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer border ${
+                    service.hasPendingEdit
+                      ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600 shadow-xs'
+                      : isApproved(service.status)
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold border border-emerald-300'
+                        : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border border-amber-600 shadow-xs'
+                  }`}
+                  title={
+                    service.hasPendingEdit
+                      ? 'Proposed changes pending admin approval. Click to view or edit.'
+                      : isApproved(service.status)
+                        ? 'Service approved & live. Click to edit.'
+                        : 'Pending admin approval. Click to view or edit.'
+                  }
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Edit Service Listing</span>
+                  {service.hasPendingEdit ? (
+                    <>
+                      <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                      <span>Pending Approval</span>
+                    </>
+                  ) : isApproved(service.status) ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Approved ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                      <span>Pending Approval</span>
+                    </>
+                  )}
                 </button>
                 {onDelete && (
                   <button
@@ -381,14 +407,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                     title="Delete Service Listing (Owner)"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Service Listing</span>
+                    <span>Delete</span>
                   </button>
-                )}
-                {service.hasPendingEdit && (
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-1 rounded-lg border border-amber-300 shrink-0 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-amber-700" />
-                    <span>Edit Pending</span>
-                  </span>
                 )}
               </div>
             ) : null}

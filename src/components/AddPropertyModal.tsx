@@ -22,7 +22,8 @@ import {
   Calendar,
   Check,
   Crosshair,
-  Info
+  Info,
+  Clock
 } from 'lucide-react';
 import { GondiaMap } from './GondiaMap';
 import {
@@ -36,7 +37,9 @@ import {
   GONDIA_LOCALITIES,
   GONDIA_LOCALITY_COORDS,
   PROPERTY_TYPES,
-  ACCOMMODATION_TYPES
+  ACCOMMODATION_TYPES,
+  isApproved,
+  isPending
 } from '../types';
 import {
   compressAndResizeImage,
@@ -169,6 +172,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isReapprovalSubmitted, setIsReapprovalSubmitted] = useState(false);
   const [savedPropertyInfo, setSavedPropertyInfo] = useState<{
     id: string;
     title: string;
@@ -224,6 +228,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setPhotos(existingItems);
       setFormError(null);
       setIsSuccess(false);
+      setIsReapprovalSubmitted(false);
     } else {
       setTitle('');
       setAddress('');
@@ -257,6 +262,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setPhotos([]);
       setFormError(null);
       setIsSuccess(false);
+      setIsReapprovalSubmitted(false);
       setSavedPropertyInfo(null);
     }
   }, [isOpen, propertyToEdit, currentOwner, isAdminAuthenticated]);
@@ -588,6 +594,11 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           longitude: finalLng
         };
 
+        const isApprovedListing = Boolean(propertyToEdit && !isAdmin && isApproved(propertyToEdit.status));
+        if (isApprovedListing) {
+          setIsReapprovalSubmitted(true);
+        }
+
         await onSaveProperty(updated, true, editToken || undefined);
         setSavedPropertyInfo({
           id: updated.id,
@@ -598,7 +609,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerPhone: updated.ownerPhone || ''
         });
         setIsSuccess(true);
-        if (onSuccessToast) onSuccessToast('Listing updated successfully!');
+        if (onSuccessToast) {
+          onSuccessToast(isApprovedListing ? 'Proposed changes submitted for admin reapproval!' : 'Listing updated successfully!');
+        }
         if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
           try {
             await updateOwnerProfile({
@@ -736,52 +749,86 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
           {isSuccess && savedPropertyInfo ? (
             /* SUCCESS CONFIRMATION VIEW */
-            <div className="text-center py-8 space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-9 h-9" />
-              </div>
-              <div className="space-y-1.5 max-w-md mx-auto">
-                <h3 className="text-xl font-black text-slate-900">
-                  {propertyToEdit
-                    ? (!isAdmin && propertyToEdit.status === 'approved'
-                        ? 'Proposed Changes Submitted for Reapproval!'
-                        : 'Property Listing Updated!')
-                    : 'Property Submitted Successfully!'}
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {isAdmin
-                    ? 'Your property listing has been saved & published directly to Cloud Firestore.'
-                    : (propertyToEdit && propertyToEdit.status === 'approved'
-                        ? 'Your live approved listing remains fully active and visible to tenants across Gondia. Proposed changes will be reviewed by an administrator before updating the live listing.'
-                        : 'Your property has been submitted with status "Pending". It will appear publicly on GondiaStay across all devices as soon as verified by our administrator.')}
-                </p>
-              </div>
+            (() => {
+              const isReapproval = isReapprovalSubmitted || Boolean(propertyToEdit && !isAdmin && isApproved(propertyToEdit.status));
+              return (
+                <div className="text-center py-6 sm:py-8 space-y-4">
+                  <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
+                    isReapproval ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
+                  }`}>
+                    {isReapproval ? <Clock className="w-9 h-9" /> : <CheckCircle2 className="w-9 h-9" />}
+                  </div>
 
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto text-left space-y-1 text-xs">
-                <p className="font-black text-slate-900 text-sm">{savedPropertyInfo.title}</p>
-                <p className="text-slate-600 flex items-center gap-1 font-medium">
-                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                  {savedPropertyInfo.locality}, Gondia
-                </p>
-                <p className="font-extrabold text-blue-700 text-sm mt-1">₹{savedPropertyInfo.rent}/month</p>
-                <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-500">
-                  Landlord: <span className="font-bold text-slate-800">{savedPropertyInfo.ownerName}</span> • {savedPropertyInfo.ownerPhone}
+                  <div className="space-y-2 max-w-md mx-auto">
+                    {isReapproval && (
+                      <div className="flex justify-center">
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
+                          <Clock className="w-4 h-4 text-slate-950" />
+                          <span>Pending Approval</span>
+                        </span>
+                      </div>
+                    )}
+                    <h3 className="text-xl font-black text-slate-900">
+                      {isReapproval
+                        ? 'Changes Submitted for Reapproval'
+                        : propertyToEdit
+                          ? (isAdmin ? 'Property Listing Published!' : 'Property Listing Updated!')
+                          : 'Property Submitted Successfully!'}
+                    </h3>
+
+                    {isReapproval ? (
+                      <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
+                        <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                          <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>Changes will become public only after admin approval</span>
+                        </p>
+                        <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                          Your live listing remains active and visible to tenants across Gondia. All proposed edits are kept strictly private and hidden from public users until an administrator reviews and approves them.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {isAdmin
+                          ? 'Your property listing has been saved & published directly to Cloud Firestore.'
+                          : 'Your property has been submitted with status "Pending". It will appear publicly on GondiaStay across all devices as soon as verified by our administrator.'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto text-left space-y-1 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-black text-slate-900 text-sm truncate">{savedPropertyInfo.title}</p>
+                      {isReapproval && (
+                        <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                          <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-slate-600 flex items-center gap-1 font-medium">
+                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                      {savedPropertyInfo.locality}, Gondia
+                    </p>
+                    <p className="font-extrabold text-blue-700 text-sm mt-1">₹{savedPropertyInfo.rent}/month</p>
+                    <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-500">
+                      Landlord: <span className="font-bold text-slate-800">{savedPropertyInfo.ownerName}</span> • {savedPropertyInfo.ownerPhone}
+                    </div>
+                    <p className="text-[10px] text-emerald-600 font-semibold pt-1 border-t border-slate-200/40">
+                      ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-extrabold rounded-xl shadow-md transition-all cursor-pointer"
+                    >
+                      Close & View My Properties
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[10px] text-emerald-600 font-semibold pt-1 border-t border-slate-200/40">
-                  ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
-                </p>
-              </div>
-
-              <div className="pt-2 flex items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-extrabold rounded-xl shadow-md transition-all cursor-pointer"
-                >
-                  Close & View My Properties
-                </button>
-              </div>
-            </div>
+              );
+            })()
           ) : (
             /* PROPERTY FORM VIEW */
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -1394,22 +1441,45 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting || isUploadingPhotos}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 active:scale-95 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                  className={`px-6 py-2.5 active:scale-95 text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer ${
+                    propertyToEdit && !isAdmin
+                      ? (propertyToEdit.hasPendingEdit || isReapprovalSubmitted)
+                        ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
+                        : isApproved(propertyToEdit.status)
+                          ? 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white'
+                          : 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
+                      : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
+                  }`}
                 >
-                  {(isSubmitting || isUploadingPhotos) && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>
-                    {isUploadingPhotos
-                      ? 'Uploading Photos...'
-                      : isSubmitting
-                        ? 'Saving Listing...'
-                        : propertyToEdit
-                          ? (isAdmin
-                              ? 'Save & Publish Directly'
-                              : (propertyToEdit.status === 'approved'
-                                  ? 'Submit Changes for Reapproval'
-                                  : 'Update Listing'))
-                          : 'Submit for Admin Approval'}
-                  </span>
+                  {(isSubmitting || isUploadingPhotos) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-current" />
+                      <span>{isUploadingPhotos ? 'Uploading Photos...' : 'Saving Listing...'}</span>
+                    </>
+                  ) : propertyToEdit && !isAdmin ? (
+                    (propertyToEdit.hasPendingEdit || isReapprovalSubmitted) ? (
+                      <>
+                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
+                        <span>Pending Approval</span>
+                      </>
+                    ) : isApproved(propertyToEdit.status) ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                        <span>Approved ✓</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
+                        <span>Pending Approval</span>
+                      </>
+                    )
+                  ) : (
+                    <span>
+                      {propertyToEdit
+                        ? (isAdmin ? 'Save & Publish Directly' : 'Update Listing')
+                        : 'Submit for Admin Approval'}
+                    </span>
+                  )}
                 </button>
               </div>
             </form>
