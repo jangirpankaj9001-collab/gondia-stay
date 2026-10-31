@@ -631,9 +631,11 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerPhone: updated.ownerPhone || ''
         });
         if (propertyToEdit && !isAdmin) {
+          setIsReapprovalSubmitted(true);
           setShowReapprovalPopup(true);
+        } else {
+          setIsSuccess(true);
         }
-        setIsSuccess(true);
         if (onSuccessToast) {
           onSuccessToast(isApprovedListing ? 'Proposed changes submitted for admin reapproval!' : 'Listing updated successfully!');
         }
@@ -1516,8 +1518,14 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || isUploadingPhotos}
-                  className="px-6 py-2.5 active:scale-95 text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white"
+                  disabled={isSubmitting || isUploadingPhotos || isReapprovalSubmitted}
+                  className={`px-6 py-2.5 active:scale-95 text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer ${
+                    propertyToEdit && !isAdmin
+                      ? isReapprovalSubmitted
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
+                  }`}
                 >
                   {(isSubmitting || isUploadingPhotos) ? (
                     <>
@@ -1525,7 +1533,14 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       <span>{isUploadingPhotos ? 'Uploading Photos...' : 'Saving Listing...'}</span>
                     </>
                   ) : propertyToEdit && !isAdmin ? (
-                    <span>Submit for Reapproval</span>
+                    isReapprovalSubmitted ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                        <span>Submitted</span>
+                      </>
+                    ) : (
+                      <span>Submit for Reapproval</span>
+                    )
                   ) : (
                     <span>
                       {propertyToEdit
@@ -1533,7 +1548,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                         : 'Submit for Admin Approval'}
                     </span>
                   )}
-                  {/* Reapproval status state: Submit for Reapproval when editing, Approved ✓ when verified */}
+                  {/* Reapproval status state: Submit for Reapproval when editing, changes to Submitted when tapped. (Historical: Pending Approval / Approved ✓) */}
                 </button>
               </div>
             </form>
@@ -1567,7 +1582,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
               Changes Submitted for Reapproval
             </h3>
             <p className="text-xs text-slate-700 leading-relaxed font-medium">
-              Your property has been submitted for reapproval. Updated details will appear publicly once approved by the admin &amp; previously approved listing will be publicly visible with its original details until the edited version is approved
+              Your property has been submitted for reapproval. Updated details will appear publicly once approved by the admin.
             </p>
             <button
               type="button"

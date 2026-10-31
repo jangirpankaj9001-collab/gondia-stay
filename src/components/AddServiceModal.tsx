@@ -101,6 +101,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
   const [isReapprovalSubmitted, setIsReapprovalSubmitted] = useState(false);
+  const [showReapprovalPopup, setShowReapprovalPopup] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{ serviceId: string; ownerId?: string; editToken?: string } | null>(null);
   const [copiedCredentials, setCopiedCredentials] = useState(false);
 
@@ -155,6 +156,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         setFormError(null);
         setSubmissionSuccess(false);
         setIsReapprovalSubmitted(false);
+        setShowReapprovalPopup(false);
       } else {
         const shouldAutoFill = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
         setCategory('MESS_TIFFIN');
@@ -177,6 +179,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         setFormError(null);
         setSubmissionSuccess(false);
         setIsReapprovalSubmitted(false);
+        setShowReapprovalPopup(false);
       }
     } else if (!isOpen) {
       activeServiceIdRef.current = null;
@@ -381,9 +384,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
               console.warn('Failed to update owner profile:', e);
             }
           }
-          if (isApprovedLive) {
+          if (serviceToEdit && !isAdmin) {
             setIsReapprovalSubmitted(true);
-            setSubmissionSuccess(true);
+            setShowReapprovalPopup(true);
             return;
           } else {
             onClose();
@@ -1146,14 +1149,12 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || isUploadingPhoto}
+                  disabled={isSubmitting || isUploadingPhoto || isReapprovalSubmitted}
                   className={`px-6 py-2.5 text-xs font-extrabold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 cursor-pointer ${
                     serviceToEdit && !isAdmin
-                      ? (serviceToEdit.hasPendingEdit || isReapprovalSubmitted)
-                        ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
-                        : isApproved(serviceToEdit.status)
-                          ? 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white'
-                          : 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-950 font-black border border-amber-600'
+                      ? isReapprovalSubmitted
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
                       : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
                   }`}
                 >
@@ -1163,21 +1164,13 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       <span>Saving Service...</span>
                     </>
                   ) : serviceToEdit && !isAdmin ? (
-                    (serviceToEdit.hasPendingEdit || isReapprovalSubmitted) ? (
-                      <>
-                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
-                        <span>Pending Approval</span>
-                      </>
-                    ) : isApproved(serviceToEdit.status) ? (
+                    isReapprovalSubmitted ? (
                       <>
                         <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
-                        <span>Approved ✓</span>
+                        <span>Submitted</span>
                       </>
                     ) : (
-                      <>
-                        <Clock className="w-4 h-4 text-slate-950 shrink-0" />
-                        <span>Pending Approval</span>
-                      </>
+                      <span>Submit for Reapproval</span>
                     )
                   ) : (
                     <>
@@ -1189,12 +1182,55 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       </span>
                     </>
                   )}
+                  {/* Reapproval status state: displays Submit for Reapproval, changes to Submitted when tapped. (Historical: Pending Approval / Approved ✓) */}
                 </button>
               </div>
             </form>
           )}
         </div>
       </div>
+
+      {/* Dedicated Reapproval Confirmation Popup Modal */}
+      {showReapprovalPopup && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 text-center space-y-4 animate-in zoom-in-95">
+            <button
+              type="button"
+              onClick={() => {
+                setShowReapprovalPopup(false);
+                onClose();
+              }}
+              className="absolute top-3.5 right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+              <Clock className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900">
+              Changes Submitted for Reapproval
+            </h3>
+            <p className="text-xs text-slate-700 leading-relaxed font-medium">
+              Your service has been submitted for reapproval. Updated details will appear publicly once approved by the admin.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowReapprovalPopup(false);
+                onClose();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+            >
+              Got it, Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Enlarged Photo Preview Lightbox */}
       {previewModalPhoto && (
