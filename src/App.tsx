@@ -54,7 +54,8 @@ import {
   Wrench,
   Droplets,
   Shirt,
-  Pencil
+  Pencil,
+  RotateCcw
 } from 'lucide-react';
 import { 
   uploadMultiplePropertyPhotos, 
@@ -142,6 +143,8 @@ export const App: React.FC = () => {
     updatePropertyOccupancy,
     saveProperty,
     deleteProperty,
+    pendingPropertyDeletion,
+    undoPropertyDeletion,
     toggleFeatured,
     approveProperty,
     navigateTo,
@@ -2285,9 +2288,10 @@ export const App: React.FC = () => {
                 <div className="flex space-x-2">
                   <button
                     onClick={() => setOwnerSubTab('listings')}
-                    className="pb-3 px-3 text-xs font-bold border-b-2 border-blue-600 text-blue-700 transition-all"
+                    className="pb-3 px-3 text-xs font-bold border-b-2 border-blue-600 text-blue-700 transition-all flex items-center gap-1.5"
                   >
-                    My Properties ({myProperties.length})
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>My Properties ({myProperties.length})</span>
                   </button>
                   {isAdminAuthenticated && (
                     <button
@@ -2567,7 +2571,7 @@ export const App: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                            <Wrench className="w-4 h-4 text-amber-500" />
+                            <ServicesHouseIcon className="w-4 h-4" />
                             <span>My Home Services ({myOwnerServices.length})</span>
                           </h3>
                           <p className="text-[11px] text-slate-500">
@@ -2945,7 +2949,7 @@ export const App: React.FC = () => {
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <Wrench className="w-4 h-4 text-amber-600" />
+                        <ServicesHouseIcon className="w-4 h-4" />
                         <span>Home Services</span>
                         {(pendingServices.length > 0 || pendingEditServices.length > 0) && (
                           <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
@@ -4284,6 +4288,35 @@ export const App: React.FC = () => {
         onConfirm={deleteConfirmState.onConfirm}
         onCancel={() => setDeleteConfirmState(prev => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Temporary Property Deletion UNDO Option (5–10 seconds) */}
+      {pendingPropertyDeletion && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="property-undo-banner"
+          className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-950 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 flex items-center justify-between gap-3.5 border border-slate-700 min-w-[280px] max-w-[92vw] sm:max-w-md"
+        >
+          <div className="flex items-center gap-2.5 truncate">
+            <RotateCcw className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">
+              Property deleted – UNDO
+            </span>
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">
+              ({pendingPropertyDeletion.secondsRemaining}s)
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={undoPropertyDeletion}
+            data-testid="undo-delete-btn"
+            className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer shrink-0 flex items-center gap-1"
+          >
+            UNDO
+          </button>
+        </div>
+      )}
 
       {/* Global Toast Notification */}
       {toastMessage && (

@@ -45,6 +45,13 @@ import {
 } from '../firebase/servicesService';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
+export interface PendingPropertyDeletion {
+  property: PropertyListing;
+  token?: string;
+  expiresAt: number;
+  secondsRemaining: number;
+}
+
 interface AppContextType {
   properties: PropertyListing[];
   tiffinServices: TiffinService[];
@@ -98,6 +105,8 @@ interface AppContextType {
   saveListingToken: (propertyId: string, token: string) => void;
   getListingToken: (propertyId: string) => string | undefined;
   deleteProperty: (propertyId: string) => Promise<void>;
+  pendingPropertyDeletion: PendingPropertyDeletion | null;
+  undoPropertyDeletion: () => void;
   toggleFeatured: (propertyId: string) => void;
   approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
   moderatePropertyEdit: (propertyId: string, approve: boolean) => Promise<boolean>;
@@ -218,6 +227,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getListingToken = useCallback((propertyId: string): string | undefined => {
     return myListingTokens[propertyId];
   }, [myListingTokens]);
+
+  // Temporary Property Deletion UNDO state (5–10 seconds window, default 8 seconds)
+  const [pendingPropertyDeletion, setPendingPropertyDeletion] = useState<PendingPropertyDeletion | null>(null);
+  const deletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deletionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingDeletionRef = useRef<{ property: PropertyListing; token?: string } | null>(null);
+
+  /**
+   * Finalizes deletion permanently from Cloud Firestore and clears stored device tokens.
+   */
+  const finalizePendingDeletion = useCallback(async (item: { property: PropertyListing; token?: string }) => {
+    if (deletionTimerRef.current) {
+      clearTimeout(deletionTimerRef.current);
+      deletionTimerRef.current = null;
+    }
+    if (deletionIntervalRef.current) {
+      clearInterval(deletionIntervalRef.current);
+      deletionIntervalRef.current = null;
+    }
+
+    if (isFirebaseConfigured()) {
+      try {
+        await deletePropertyFromFirestore(item.property.id);
+      } catch (err: any) {
+        console.warn('Firestore permanent delete notice:', err);
+      }
+    }
+
+    setMyListingTokens(prev => {
+      const updated = { ...prev };
+      delete updated[item.property.id];
+      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  // Flush any pending deletion on window unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingDeletionRef.current) {
+        const item = pendingDeletionRef.current;
+        pendingDeletionRef.current = null;
+        if (isFirebaseConfigured()) {
+          deletePropertyFromFirestore(item.property.id).catch(() => {});
+        }
+        try {
+          const raw = localStorage.getItem('gondia_stay_listing_tokens');
+          if (raw) {
+            const tokens = JSON.parse(raw);
+            delete tokens[item.property.id];
+            localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(tokens));
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // Local storage mapping for services registered/managed by this provider/device
   const [myServiceIds, setMyServiceIds] = useState<string[]>(() => {
@@ -663,8 +730,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Deletes a property listing directly from Cloud Firestore.
-   * Only the actual listing owner or admin can delete it.
+   * Deletes a property listing with a temporary 5–10 second UNDO option (8 seconds).
+   * After confirming property deletion (tapping Yes), show a temporary "Property deleted – UNDO" option for 5–10 seconds.
+   * If Undo is tapped, restores property with all original details, photos, ownership credentials and status.
+   * If the timer expires, completes permanent deletion in Cloud Firestore.
    */
   const deleteProperty = async (propertyId: string): Promise<void> => {
     const targetProp = properties.find(p => p.id === propertyId);
@@ -673,28 +742,98 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    if (isFirebaseConfigured()) {
-      try {
-        await deletePropertyFromFirestore(propertyId);
-      } catch (err: any) {
-        console.warn('Firestore delete notice:', err);
-      }
+    if (!targetProp) return;
+
+    // If another property was already pending deletion, finalize it immediately
+    if (pendingDeletionRef.current) {
+      const previous = pendingDeletionRef.current;
+      pendingDeletionRef.current = null;
+      setPendingPropertyDeletion(null);
+      await finalizePendingDeletion(previous);
     }
 
-    setProperties(prev => prev.filter(p => p.id !== propertyId));
-    setMyListingTokens(prev => {
-      const updated = { ...prev };
-      delete updated[propertyId];
-      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated));
-      return updated;
-    });
-    showToast("Listing removed successfully.");
+    const token = myListingTokens[propertyId];
+    const propertyCopy: PropertyListing = { ...targetProp };
 
+    // Remove from UI immediately so user sees deletion take effect
+    setProperties(prev => prev.filter(p => p.id !== propertyId));
     if (selectedProperty?.id === propertyId) {
       setSelectedProperty(null);
       setActiveTab('explore');
     }
+
+    // 8-second temporary undo option (within 5–10 seconds range)
+    const DURATION_SECONDS = 8;
+    const expiresAt = Date.now() + DURATION_SECONDS * 1000;
+    const pendingItem = { property: propertyCopy, token };
+    pendingDeletionRef.current = pendingItem;
+
+    setPendingPropertyDeletion({
+      property: propertyCopy,
+      token,
+      expiresAt,
+      secondsRemaining: DURATION_SECONDS
+    });
+
+    deletionIntervalRef.current = setInterval(() => {
+      setPendingPropertyDeletion(prev => {
+        if (!prev) return null;
+        const remaining = Math.max(0, Math.ceil((prev.expiresAt - Date.now()) / 1000));
+        return { ...prev, secondsRemaining: remaining };
+      });
+    }, 500);
+
+    deletionTimerRef.current = setTimeout(async () => {
+      if (deletionIntervalRef.current) {
+        clearInterval(deletionIntervalRef.current);
+        deletionIntervalRef.current = null;
+      }
+      const itemToDelete = pendingDeletionRef.current;
+      pendingDeletionRef.current = null;
+      setPendingPropertyDeletion(null);
+
+      if (itemToDelete) {
+        await finalizePendingDeletion(itemToDelete);
+      }
+    }, DURATION_SECONDS * 1000);
   };
+
+  /**
+   * Restores the deleted property with all its original details, photos, ownership credentials, and status.
+   */
+  const undoPropertyDeletion = useCallback(() => {
+    if (deletionTimerRef.current) {
+      clearTimeout(deletionTimerRef.current);
+      deletionTimerRef.current = null;
+    }
+    if (deletionIntervalRef.current) {
+      clearInterval(deletionIntervalRef.current);
+      deletionIntervalRef.current = null;
+    }
+
+    const item = pendingDeletionRef.current;
+    if (!item) return;
+
+    pendingDeletionRef.current = null;
+    setPendingPropertyDeletion(null);
+
+    // Restore property with all original details, photos, occupancy, and approval status
+    setProperties(prev => {
+      if (prev.some(p => p.id === item.property.id)) return prev;
+      return [item.property, ...prev];
+    });
+
+    // Restore ownership credentials / token
+    if (item.token) {
+      setMyListingTokens(prev => {
+        const updated = { ...prev, [item.property.id]: item.token! };
+        localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    showToast("Property restored successfully");
+  }, []);
 
   const toggleFeatured = (propertyId: string) => {
     setProperties(prev => prev.map(p => {
@@ -1433,6 +1572,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       saveListingToken,
       getListingToken,
       deleteProperty,
+      pendingPropertyDeletion,
+      undoPropertyDeletion,
       toggleFeatured,
       approveProperty,
       navigateTo,

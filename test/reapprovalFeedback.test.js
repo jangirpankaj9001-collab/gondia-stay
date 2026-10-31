@@ -113,4 +113,27 @@ test('Reapproval Feedback & UI State Consistency for Properties & Services', asy
       'App.tsx owner listing buttons display Approved ✓'
     );
   });
+
+  await t.test('8. Property Submission Success screen matches Service Confirmation screen', () => {
+    assert.ok(
+      addPropertyContent.includes('Property Submitted Successfully!'),
+      'AddPropertyModal includes Property Submitted Successfully! title'
+    );
+    assert.ok(
+      addPropertyContent.includes('Owner Management Credentials'),
+      'AddPropertyModal includes Owner Management Credentials block'
+    );
+    assert.ok(
+      addPropertyContent.includes('Private Edit Token'),
+      'AddPropertyModal includes Private Edit Token'
+    );
+    assert.ok(
+      addPropertyContent.includes('Automatically linked to this device'),
+      'AddPropertyModal includes device link reassurance'
+    );
+    assert.ok(
+      addPropertyContent.includes('Close & View My Properties'),
+      'AddPropertyModal includes Close & View My Properties button'
+    );
+  });
 });

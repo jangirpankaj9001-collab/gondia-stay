@@ -23,7 +23,9 @@ import {
   Check,
   Crosshair,
   Info,
-  Clock
+  Clock,
+  Copy,
+  KeyRound
 } from 'lucide-react';
 import { GondiaMap } from './GondiaMap';
 import {
@@ -173,11 +175,14 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isReapprovalSubmitted, setIsReapprovalSubmitted] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{ propertyId: string; ownerId?: string; editToken?: string; editUrl?: string } | null>(null);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
   const [savedPropertyInfo, setSavedPropertyInfo] = useState<{
     id: string;
     title: string;
     locality: string;
     rent: number;
+    propertyType?: string;
     ownerName: string;
     ownerPhone: string;
   } | null>(null);
@@ -229,6 +234,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setFormError(null);
       setIsSuccess(false);
       setIsReapprovalSubmitted(false);
+      setCreatedCredentials(null);
+      setCopiedCredentials(false);
     } else {
       setTitle('');
       setAddress('');
@@ -264,6 +271,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setIsSuccess(false);
       setIsReapprovalSubmitted(false);
       setSavedPropertyInfo(null);
+      setCreatedCredentials(null);
+      setCopiedCredentials(false);
     }
   }, [isOpen, propertyToEdit, currentOwner, isAdminAuthenticated]);
 
@@ -599,12 +608,22 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           setIsReapprovalSubmitted(true);
         }
 
-        await onSaveProperty(updated, true, editToken || undefined);
+        const res = await onSaveProperty(updated, true, editToken || undefined);
+        if (res?.propertyId && res?.editToken) {
+          saveListingToken(res.propertyId, res.editToken);
+        }
+        setCreatedCredentials({
+          propertyId: updated.id,
+          ownerId: updated.ownerId,
+          editToken: res?.editToken || editToken,
+          editUrl: res?.editUrl
+        });
         setSavedPropertyInfo({
           id: updated.id,
           title: updated.title,
           locality: updated.locality,
           rent: updated.monthlyRent,
+          propertyType: updated.propertyType,
           ownerName: updated.ownerName || '',
           ownerPhone: updated.ownerPhone || ''
         });
@@ -670,11 +689,18 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         if (res?.propertyId && res?.editToken) {
           saveListingToken(res.propertyId, res.editToken);
         }
+        setCreatedCredentials({
+          propertyId: res?.propertyId || newProp.id,
+          ownerId: actualOwnerId,
+          editToken: res?.editToken,
+          editUrl: res?.editUrl
+        });
         setSavedPropertyInfo({
           id: res?.propertyId || newProp.id,
           title: newProp.title,
           locality: newProp.locality,
           rent: newProp.monthlyRent,
+          propertyType: newProp.propertyType,
           ownerName: newProp.ownerName || '',
           ownerPhone: newProp.ownerPhone || ''
         });
@@ -771,8 +797,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                     <h3 className="text-xl font-black text-slate-900">
                       {isReapproval
                         ? 'Changes Submitted for Reapproval'
-                        : propertyToEdit
-                          ? (isAdmin ? 'Property Listing Published!' : 'Property Listing Updated!')
+                        : isAdmin
+                          ? 'Property Listing Published!'
                           : 'Property Submitted Successfully!'}
                     </h3>
 
@@ -788,40 +814,84 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       </div>
                     ) : (
                       <p className="text-xs text-slate-600 leading-relaxed">
-                        {isAdmin
-                          ? 'Your property listing has been saved & published directly to Cloud Firestore.'
-                          : 'Your property has been submitted with status "Pending". It will appear publicly on GondiaStay across all devices as soon as verified by our administrator.'}
+                        {isAdmin ? (
+                          'Your property listing has been approved and is now live publicly for all visitors in Gondia.'
+                        ) : (
+                          'Your property listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'
+                        )}
                       </p>
                     )}
                   </div>
 
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto text-left space-y-1 text-xs">
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-sm mx-auto text-left space-y-2 text-xs">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-black text-slate-900 text-sm truncate">{savedPropertyInfo.title}</p>
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{savedPropertyInfo.title}</p>
+                        <p className="text-slate-600">
+                          {savedPropertyInfo.propertyType || propertyType} • {savedPropertyInfo.locality}, Gondia
+                        </p>
+                        <p className="text-blue-600 font-semibold">₹{savedPropertyInfo.rent.toLocaleString('en-IN')}/month</p>
+                        <p className="text-slate-500 text-[11px] mt-0.5">
+                          Landlord: <span className="font-semibold text-slate-700">{savedPropertyInfo.ownerName}</span> • {savedPropertyInfo.ownerPhone}
+                        </p>
+                      </div>
                       {isReapproval && (
                         <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
                           <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
                         </span>
                       )}
                     </div>
-                    <p className="text-slate-600 flex items-center gap-1 font-medium">
-                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                      {savedPropertyInfo.locality}, Gondia
-                    </p>
-                    <p className="font-extrabold text-blue-700 text-sm mt-1">₹{savedPropertyInfo.rent}/month</p>
-                    <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-500">
-                      Landlord: <span className="font-bold text-slate-800">{savedPropertyInfo.ownerName}</span> • {savedPropertyInfo.ownerPhone}
-                    </div>
-                    <p className="text-[10px] text-emerald-600 font-semibold pt-1 border-t border-slate-200/40">
-                      ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
-                    </p>
+
+                    {createdCredentials && (createdCredentials.ownerId || createdCredentials.editToken) && (
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-blue-700 font-bold text-[11px]">
+                          <KeyRound className="w-3.5 h-3.5" />
+                          <span>Owner Management Credentials</span>
+                        </div>
+                        {createdCredentials.ownerId && (
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-[10px] text-slate-400 block font-bold">Owner ID</span>
+                            <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
+                              {createdCredentials.ownerId}
+                            </code>
+                          </div>
+                        )}
+                        {createdCredentials.editToken && (
+                          <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <span className="text-[10px] text-slate-400 block font-bold">Private Edit Token</span>
+                            <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
+                              {createdCredentials.editToken}
+                            </code>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const creds = `Property: ${savedPropertyInfo.title}\nProperty ID: ${savedPropertyInfo.id}\nOwner ID: ${createdCredentials.ownerId || 'N/A'}\nEdit Token: ${createdCredentials.editToken || 'N/A'}`;
+                            navigator.clipboard.writeText(creds);
+                            setCopiedCredentials(true);
+                            setTimeout(() => setCopiedCredentials(false), 2500);
+                          }}
+                          className="w-full py-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>{copiedCredentials ? 'Credentials Copied!' : 'Copy Credentials'}</span>
+                        </button>
+                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                          ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
+                        </p>
+                        <p className="text-[10px] text-slate-500 italic mt-0.5">
+                          Save these credentials if you ever need to manage your property from a different device.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="pt-2 flex items-center justify-center gap-3">
+                  <div className="pt-2">
                     <button
                       type="button"
                       onClick={onClose}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-extrabold rounded-xl shadow-md transition-all cursor-pointer"
+                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
                     >
                       Close & View My Properties
                     </button>
