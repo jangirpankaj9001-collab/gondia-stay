@@ -109,4 +109,16 @@ test('Owner Section Property & Service Reapproval Workflow (User Requests 8 & 9)
       'AppContext provides handlers to moderate pending edits'
     );
   });
+
+  await t.test('8. In Owner → My Home Services, remove the "Pending Approval" button', () => {
+    // Check that My Home Services block does not render the "Pending Approval" button
+    const myHomeServicesSection = appContent.slice(
+      appContent.indexOf('My Home Services'),
+      appContent.indexOf('ownerSubTab === \'moderation\'')
+    );
+    assert.ok(
+      !myHomeServicesSection.includes('<span>Pending Approval</span>'),
+      'My Home Services must not render the "Pending Approval" button'
+    );
+  });
 });

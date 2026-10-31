@@ -2584,38 +2584,21 @@ export const App: React.FC = () => {
                               </div>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setServiceToEdit(srv);
-                                setIsAddServiceModalOpen(true);
-                              }}
-                              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border self-end sm:self-center ${
-                                srv.hasPendingEdit
-                                  ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border-amber-600 shadow-2xs'
-                                  : isApproved(srv.status)
-                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold border-emerald-300'
-                                    : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-black border-amber-600'
-                              }`}
-                              title="Edit Service Listing"
-                            >
-                              {srv.hasPendingEdit ? (
-                                <>
-                                  <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                                  <span>Pending Approval</span>
-                                </>
-                              ) : isApproved(srv.status) ? (
-                                <>
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                  <span>Approved ✓</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Clock className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                                  <span>Pending Approval</span>
-                                </>
-                              )}
-                            </button>
+                            {/* Approved status / edit button - Pending Approval button removed per request */}
+                            {isApproved(srv.status) && !srv.hasPendingEdit && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setServiceToEdit(srv);
+                                  setIsAddServiceModalOpen(true);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border self-end sm:self-center bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold border-emerald-300"
+                                title="Edit Service Listing"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>Approved ✓</span>
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
