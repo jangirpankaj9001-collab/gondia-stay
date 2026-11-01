@@ -2381,7 +2381,7 @@ export const App: React.FC = () => {
                               {property.hasPendingEdit && (
                                 <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
                                   <Clock className="w-3 h-3 text-amber-700" />
-                                  <span>Proposed Edit Pending Reapproval</span>
+                                  <span>Proposed Edit: Pending Reapproval</span>
                                 </span>
                               )}
 
@@ -2572,9 +2572,9 @@ export const App: React.FC = () => {
                                     {isApproved(srv.status) ? 'Approved · Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
                                   </span>
                                   {srv.hasPendingEdit && (
-                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center gap-1">
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
                                       <Clock className="w-3 h-3 text-amber-700" />
-                                      <span>Edit Pending Approval</span>
+                                      <span>Proposed Edit: Pending Reapproval</span>
                                     </span>
                                   )}
                                   <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">

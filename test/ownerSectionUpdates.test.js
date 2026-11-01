@@ -237,6 +237,27 @@ test('Owner Section Property & Service Reapproval Workflow (User Requests 8 & 9)
       'My Home Services only lists services owned by the current user'
     );
   });
+
+  await t.test('13. In Owner Section → My Properties and My Home Services: show exact label "Proposed Edit: Pending Reapproval"', () => {
+    const myPropertiesSection = appContent.slice(
+      appContent.indexOf('My Properties ('),
+      appContent.indexOf('My Home Services Section')
+    );
+    const myHomeServicesSection = appContent.slice(
+      appContent.indexOf('My Home Services Section'),
+      appContent.indexOf('{/* Sub-tab 2: Admin Approval Workflow */}')
+    );
+
+    // Both sections show exact requested label for pending edits
+    assert.ok(
+      myPropertiesSection.includes('property.hasPendingEdit') && myPropertiesSection.includes('<span>Proposed Edit: Pending Reapproval</span>'),
+      'My Properties displays exact "Proposed Edit: Pending Reapproval" label when property.hasPendingEdit is true'
+    );
+    assert.ok(
+      myHomeServicesSection.includes('srv.hasPendingEdit') && myHomeServicesSection.includes('<span>Proposed Edit: Pending Reapproval</span>'),
+      'My Home Services displays exact "Proposed Edit: Pending Reapproval" label when srv.hasPendingEdit is true'
+    );
+  });
 });
 
 
