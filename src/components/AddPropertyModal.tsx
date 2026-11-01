@@ -193,38 +193,43 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     if (!isOpen) return;
 
     if (propertyToEdit) {
-      setTitle(propertyToEdit.title || '');
-      setAddress(propertyToEdit.address || '');
-      const loc = propertyToEdit.locality || GONDIA_LOCALITIES[1] || 'Civil Lines';
+      // Load pending edit draft if exists and not admin, else current live listing
+      const source = (propertyToEdit.hasPendingEdit && propertyToEdit.pendingEdit && !isAdmin)
+        ? { ...propertyToEdit, ...propertyToEdit.pendingEdit }
+        : propertyToEdit;
+
+      setTitle(source.title || '');
+      setAddress(source.address || '');
+      const loc = source.locality || GONDIA_LOCALITIES[1] || 'Civil Lines';
       setLocality(loc);
-      setPropertyType(propertyToEdit.propertyType || 'FLAT');
-      setAccommodationType(propertyToEdit.accommodationType || '1_BHK');
-      setMonthlyRent(propertyToEdit.monthlyRent ?? 8000);
-      setSecurityDeposit(propertyToEdit.securityDeposit ?? (propertyToEdit.monthlyRent ? propertyToEdit.monthlyRent * 2 : 16000));
-      setBedrooms(propertyToEdit.bedrooms ?? 1);
-      setBathrooms(propertyToEdit.bathrooms ?? 1);
-      setKitchenAvailable(propertyToEdit.kitchenAvailable || 'PRIVATE');
-      setHallAvailable(propertyToEdit.hallAvailable !== undefined ? propertyToEdit.hallAvailable : true);
-      setFurnishing(propertyToEdit.furnishing || 'SEMI_FURNISHED');
-      setSuitableTenants(propertyToEdit.suitableTenants && propertyToEdit.suitableTenants.length > 0 ? propertyToEdit.suitableTenants : ['ALL']);
-      setAvailableFrom(propertyToEdit.availableFrom || 'Immediate');
-      setOccupancyStatus((propertyToEdit.occupancyStatus as any) || 'AVAILABLE');
-      setAmenities(propertyToEdit.amenities || ['24/7 Water', 'Wi-Fi']);
-      setDescription(propertyToEdit.description || '');
+      setPropertyType(source.propertyType || 'FLAT');
+      setAccommodationType(source.accommodationType || '1_BHK');
+      setMonthlyRent(source.monthlyRent ?? 8000);
+      setSecurityDeposit(source.securityDeposit ?? (source.monthlyRent ? source.monthlyRent * 2 : 16000));
+      setBedrooms(source.bedrooms ?? 1);
+      setBathrooms(source.bathrooms ?? 1);
+      setKitchenAvailable(source.kitchenAvailable || 'PRIVATE');
+      setHallAvailable(source.hallAvailable !== undefined ? source.hallAvailable : true);
+      setFurnishing(source.furnishing || 'SEMI_FURNISHED');
+      setSuitableTenants(source.suitableTenants && source.suitableTenants.length > 0 ? source.suitableTenants : ['ALL']);
+      setAvailableFrom(source.availableFrom || 'Immediate');
+      setOccupancyStatus((source.occupancyStatus as any) || 'AVAILABLE');
+      setAmenities(source.amenities || ['24/7 Water', 'Wi-Fi']);
+      setDescription(source.description || '');
 
       // Restore exact latitude and longitude or fallback to locality center
-      const hasCoords = typeof propertyToEdit.latitude === 'number' && typeof propertyToEdit.longitude === 'number' && propertyToEdit.latitude !== 0;
-      const initialLat = hasCoords ? propertyToEdit.latitude : (GONDIA_LOCALITY_COORDS[loc]?.lat || 21.4602);
-      const initialLng = hasCoords ? propertyToEdit.longitude : (GONDIA_LOCALITY_COORDS[loc]?.lng || 80.1945);
+      const hasCoords = typeof source.latitude === 'number' && typeof source.longitude === 'number' && source.latitude !== 0;
+      const initialLat = hasCoords ? source.latitude : (GONDIA_LOCALITY_COORDS[loc]?.lat || 21.4602);
+      const initialLng = hasCoords ? source.longitude : (GONDIA_LOCALITY_COORDS[loc]?.lng || 80.1945);
       setPickerLocation({ lat: initialLat, lng: initialLng });
       setHasCustomPin(hasCoords);
 
-      setOwnerName(propertyToEdit.ownerName || '');
-      setOwnerPhone(propertyToEdit.ownerPhone || '');
-      setOwnerWhatsappNumber(propertyToEdit.ownerWhatsappNumber || propertyToEdit.ownerPhone || '');
-      setOwnerPreferredContact(propertyToEdit.ownerPreferredContact || 'BOTH');
+      setOwnerName(source.ownerName || '');
+      setOwnerPhone(source.ownerPhone || '');
+      setOwnerWhatsappNumber(source.ownerWhatsappNumber || source.ownerPhone || '');
+      setOwnerPreferredContact(source.ownerPreferredContact || 'BOTH');
 
-      const existingItems: PhotoItem[] = (propertyToEdit.photos || []).map((url, idx) => ({
+      const existingItems: PhotoItem[] = (source.photos || []).map((url, idx) => ({
         id: `existing_${idx}_${Date.now()}`,
         url,
         isExisting: true,
@@ -482,6 +487,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       return;
     }
 
+    if (propertyToEdit && !isAdmin) {
+      setIsReapprovalSubmitted(true);
+    }
     setIsSubmitting(true);
 
     try {
@@ -606,11 +614,6 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           longitude: finalLng
         };
 
-        const isApprovedListing = Boolean(propertyToEdit && !isAdmin && isApproved(propertyToEdit.status));
-        if (isApprovedListing) {
-          setIsReapprovalSubmitted(true);
-        }
-
         const res = await onSaveProperty(updated, true, editToken || undefined);
         if (res?.propertyId && res?.editToken) {
           saveListingToken(res.propertyId, res.editToken);
@@ -630,15 +633,6 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerName: updated.ownerName || '',
           ownerPhone: updated.ownerPhone || ''
         });
-        if (propertyToEdit && !isAdmin) {
-          setIsReapprovalSubmitted(true);
-          setShowReapprovalPopup(true);
-        } else {
-          setIsSuccess(true);
-        }
-        if (onSuccessToast) {
-          onSuccessToast(isApprovedListing ? 'Proposed changes submitted for admin reapproval!' : 'Listing updated successfully!');
-        }
         if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
           try {
             await updateOwnerProfile({
@@ -648,6 +642,16 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
             });
           } catch (e) {
             console.warn('Failed to update owner profile:', e);
+          }
+        }
+        if (propertyToEdit && !isAdmin) {
+          setIsReapprovalSubmitted(true);
+          setShowReapprovalPopup(true);
+          return;
+        } else {
+          setIsSuccess(true);
+          if (onSuccessToast) {
+            onSuccessToast('Listing updated successfully!');
           }
         }
       } else {
@@ -729,6 +733,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     } catch (err: any) {
       console.error('Failed to save property listing:', err);
       setFormError(err.message || 'Failed to save property. Please check your internet connection.');
+      if (propertyToEdit && !isAdmin) {
+        setIsReapprovalSubmitted(false);
+      }
     } finally {
       setIsSubmitting(false);
       setIsUploadingPhotos(false);
@@ -1527,20 +1534,25 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
                   }`}
                 >
-                  {(isSubmitting || isUploadingPhotos) ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-current" />
-                      <span>{isUploadingPhotos ? 'Uploading Photos...' : 'Saving Listing...'}</span>
-                    </>
-                  ) : propertyToEdit && !isAdmin ? (
+                  {propertyToEdit && !isAdmin ? (
                     isReapprovalSubmitted ? (
                       <>
                         <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
                         <span>Submitted</span>
                       </>
+                    ) : (isSubmitting || isUploadingPhotos) ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-current" />
+                        <span>{isUploadingPhotos ? 'Uploading Photos...' : 'Saving Listing...'}</span>
+                      </>
                     ) : (
                       <span>Submit for Reapproval</span>
                     )
+                  ) : (isSubmitting || isUploadingPhotos) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-current" />
+                      <span>{isUploadingPhotos ? 'Uploading Photos...' : 'Saving Listing...'}</span>
+                    </>
                   ) : (
                     <span>
                       {propertyToEdit

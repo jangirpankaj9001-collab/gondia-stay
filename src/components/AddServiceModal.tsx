@@ -299,6 +299,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       return;
     }
 
+    if (serviceToEdit && !isAdmin) {
+      setIsReapprovalSubmitted(true);
+    }
     setIsSubmitting(true);
 
     try {
@@ -461,6 +464,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
     } catch (err: any) {
       console.error('[GondiaStay] Service submission error:', err);
       setFormError(err?.message || 'An unexpected error occurred during submission.');
+      if (serviceToEdit && !isAdmin) {
+        setIsReapprovalSubmitted(false);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -1158,20 +1164,25 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                       : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
                   }`}
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-current" />
-                      <span>Saving Service...</span>
-                    </>
-                  ) : serviceToEdit && !isAdmin ? (
+                  {serviceToEdit && !isAdmin ? (
                     isReapprovalSubmitted ? (
                       <>
                         <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
                         <span>Submitted</span>
                       </>
+                    ) : isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-current" />
+                        <span>Saving Service...</span>
+                      </>
                     ) : (
                       <span>Submit for Reapproval</span>
                     )
+                  ) : isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-current" />
+                      <span>Saving Service...</span>
+                    </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-white" />
