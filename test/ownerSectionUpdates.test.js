@@ -192,6 +192,51 @@ test('Owner Section Property & Service Reapproval Workflow (User Requests 8 & 9)
       'AppContext updates submitted listing status upon approval'
     );
   });
+
+  await t.test('12. In Owner Section: My Properties and My Home Services render side-by-side Edit and red Delete buttons', () => {
+    const myPropertiesSection = appContent.slice(
+      appContent.indexOf('My Properties ('),
+      appContent.indexOf('My Home Services Section')
+    );
+    const myHomeServicesSection = appContent.slice(
+      appContent.indexOf('My Home Services Section'),
+      appContent.indexOf('{/* Sub-tab 2: Admin Approval Workflow */}')
+    );
+
+    // 1. My Properties has Edit button and red Delete button side by side
+    assert.ok(
+      myPropertiesSection.includes('handleEditClick(property, myListingTokens[property.id])'),
+      'My Properties has Edit button passing private listing token'
+    );
+    assert.ok(
+      myPropertiesSection.includes('<span>Delete</span>') && myPropertiesSection.includes('bg-rose-600'),
+      'My Properties has red Delete button with <span>Delete</span> text'
+    );
+
+    // 2. My Home Services has Edit and red Delete buttons side by side
+    assert.ok(
+      myHomeServicesSection.includes('setServiceToEdit(srv)') && myHomeServicesSection.includes('setIsAddServiceModalOpen(true)'),
+      'My Home Services has Edit button opening service modal for respective service'
+    );
+    assert.ok(
+      myHomeServicesSection.includes('deleteService(srv.id)') && myHomeServicesSection.includes('bg-rose-600'),
+      'My Home Services has red Delete button with deleteService for respective service'
+    );
+    assert.ok(
+      myHomeServicesSection.includes('<span>Edit</span>') && myHomeServicesSection.includes('<span>Delete</span>'),
+      'My Home Services renders both Edit and Delete buttons'
+    );
+
+    // 3. Security: Only respective owner or admin can edit/delete
+    assert.ok(
+      appContextContent.includes('isServiceOwner(targetService)'),
+      'deleteService gates deletion behind isServiceOwner and admin'
+    );
+    assert.ok(
+      appContent.includes('isServiceOwner(s)'),
+      'My Home Services only lists services owned by the current user'
+    );
+  });
 });
 
 

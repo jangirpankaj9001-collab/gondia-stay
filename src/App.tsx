@@ -2471,7 +2471,7 @@ export const App: React.FC = () => {
                             </button>
                           )}
 
-                          {/* Functional Edit Button beside Delete button */}
+                          {/* Functional Edit and red Delete buttons side by side */}
                           <button
                             type="button"
                             onClick={() => handleEditClick(property, myListingTokens[property.id])}
@@ -2483,6 +2483,7 @@ export const App: React.FC = () => {
                           </button>
 
                           <button
+                            type="button"
                             onClick={() => {
                               setDeleteConfirmState({
                                 isOpen: true,
@@ -2494,10 +2495,11 @@ export const App: React.FC = () => {
                                 }
                               });
                             }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-2xs"
                             title="Delete Listing"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
                           </button>
                         </div>
                       </div>
@@ -2584,6 +2586,41 @@ export const App: React.FC = () => {
                               </div>
                             </div>
 
+                            {/* Actions for owner: Edit and red Delete buttons side by side */}
+                            <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setServiceToEdit(srv);
+                                  setIsAddServiceModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-blue-200/80 shadow-2xs"
+                                title="Edit Service Details"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>Edit</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteConfirmState({
+                                    isOpen: true,
+                                    itemType: 'service',
+                                    itemTitle: srv.title,
+                                    onConfirm: () => {
+                                      deleteService(srv.id);
+                                      setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+                                    }
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-2xs"
+                                title="Delete Service"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
