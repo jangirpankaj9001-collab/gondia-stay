@@ -146,5 +146,17 @@ test('Owner Section Property & Service Reapproval Workflow (User Requests 8 & 9)
       'My Home Services status badge must display "Pending Approval" for pending items'
     );
   });
+
+  await t.test('10. In Owner → My Home Services, remove the "Approved ✓" button completely from each service card', () => {
+    const myHomeServicesSection = appContent.slice(
+      appContent.indexOf('My Home Services Section'),
+      appContent.indexOf('{/* Sub-tab 2: Admin Approval Workflow */}')
+    );
+    assert.ok(
+      !myHomeServicesSection.includes('Approved ✓'),
+      'My Home Services cards must not render the "Approved ✓" button'
+    );
+  });
 });
+
 

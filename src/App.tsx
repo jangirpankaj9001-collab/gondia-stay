@@ -2584,21 +2584,6 @@ export const App: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Approved status / edit button - Pending Approval button removed per request */}
-                            {isApproved(srv.status) && !srv.hasPendingEdit && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setServiceToEdit(srv);
-                                  setIsAddServiceModalOpen(true);
-                                }}
-                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border self-end sm:self-center bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold border-emerald-300"
-                                title="Edit Service Listing"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>Approved ✓</span>
-                              </button>
-                            )}
                           </div>
                         ))}
                       </div>
