@@ -145,6 +145,8 @@ export const App: React.FC = () => {
     deleteProperty,
     pendingPropertyDeletion,
     undoPropertyDeletion,
+    pendingServiceDeletion,
+    undoServiceDeletion,
     toggleFeatured,
     approveProperty,
     navigateTo,
@@ -3534,9 +3536,15 @@ export const App: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (window.confirm(`Permanently delete "${srv.title}" from Cloud Firestore?`)) {
-                                          deleteService(srv.id);
-                                        }
+                                        setDeleteConfirmState({
+                                          isOpen: true,
+                                          itemType: 'service',
+                                          itemTitle: srv.title,
+                                          onConfirm: () => {
+                                            deleteService(srv.id);
+                                            setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+                                          }
+                                        });
                                       }}
                                       className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                                       title="Delete service"
@@ -4249,7 +4257,8 @@ export const App: React.FC = () => {
         onCancel={() => setDeleteConfirmState(prev => ({ ...prev, isOpen: false }))}
       />
 
-      {/* Temporary Property Deletion UNDO Option (5–10 seconds) */}
+      {/* Temporary Property Deletion UNDO Option (7 seconds) */}
+      {/* Property deleted – UNDO */}
       {pendingPropertyDeletion && (
         <div
           role="status"
@@ -4260,7 +4269,7 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-2.5 truncate">
             <RotateCcw className="w-4 h-4 text-amber-400 shrink-0" />
             <span className="truncate">
-              Property deleted – UNDO
+              Deleted successfully
             </span>
             <span className="text-[11px] text-slate-400 font-normal shrink-0">
               ({pendingPropertyDeletion.secondsRemaining}s)
@@ -4273,7 +4282,36 @@ export const App: React.FC = () => {
             data-testid="undo-delete-btn"
             className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer shrink-0 flex items-center gap-1"
           >
-            UNDO
+            Undo
+          </button>
+        </div>
+      )}
+
+      {/* Temporary Service Deletion UNDO Option (7 seconds) */}
+      {pendingServiceDeletion && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="service-undo-banner"
+          className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-950 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 flex items-center justify-between gap-3.5 border border-slate-700 min-w-[280px] max-w-[92vw] sm:max-w-md"
+        >
+          <div className="flex items-center gap-2.5 truncate">
+            <RotateCcw className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">
+              Deleted successfully
+            </span>
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">
+              ({pendingServiceDeletion.secondsRemaining}s)
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={undoServiceDeletion}
+            data-testid="undo-service-delete-btn"
+            className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer shrink-0 flex items-center gap-1"
+          >
+            Undo
           </button>
         </div>
       )}

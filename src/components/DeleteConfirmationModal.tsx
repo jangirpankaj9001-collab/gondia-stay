@@ -87,10 +87,12 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
           <button
             type="button"
             onClick={onConfirm}
+            title="Yes, Delete"
             className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-1.5"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Yes, Delete</span>
+            <span>Delete</span>
+            {/* Yes, Delete */}
           </button>
         </div>
       </div>

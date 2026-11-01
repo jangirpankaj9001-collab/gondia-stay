@@ -52,6 +52,14 @@ export interface PendingPropertyDeletion {
   secondsRemaining: number;
 }
 
+export interface PendingServiceDeletion {
+  service: ServiceItem;
+  token?: string;
+  ownerId?: string;
+  expiresAt: number;
+  secondsRemaining: number;
+}
+
 interface AppContextType {
   properties: PropertyListing[];
   tiffinServices: TiffinService[];
@@ -107,6 +115,8 @@ interface AppContextType {
   deleteProperty: (propertyId: string) => Promise<void>;
   pendingPropertyDeletion: PendingPropertyDeletion | null;
   undoPropertyDeletion: () => void;
+  pendingServiceDeletion: PendingServiceDeletion | null;
+  undoServiceDeletion: () => void;
   toggleFeatured: (propertyId: string) => void;
   approveProperty: (propertyId: string, approve: boolean) => Promise<boolean>;
   moderatePropertyEdit: (propertyId: string, approve: boolean) => Promise<boolean>;
@@ -418,10 +428,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } catch {}
       }
+
+      if (pendingServiceDeletionRef.current) {
+        const item = pendingServiceDeletionRef.current;
+        pendingServiceDeletionRef.current = null;
+        if (isFirebaseConfigured()) {
+          deleteServiceInFirestore(item.service.id, item.token, item.ownerId, isAdminAuthenticated).catch(() => {});
+        }
+        removeSubmittedService(item.service.id);
+        try {
+          const raw = localStorage.getItem('gondia_stay_service_tokens');
+          if (raw) {
+            const tokens = JSON.parse(raw);
+            delete tokens[item.service.id];
+            localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(tokens));
+          }
+        } catch {}
+      }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+  }, [isAdminAuthenticated]);
 
   // Local storage mapping for services registered/managed by this provider/device
   const [myServiceIds, setMyServiceIds] = useState<string[]>(() => {
@@ -463,6 +490,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getServiceToken = useCallback((serviceId: string): string | undefined => {
     return myServiceTokens[serviceId];
   }, [myServiceTokens]);
+
+  // Temporary Service Deletion UNDO state (7 seconds window)
+  const [pendingServiceDeletion, setPendingServiceDeletion] = useState<PendingServiceDeletion | null>(null);
+  const serviceDeletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serviceDeletionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingServiceDeletionRef = useRef<{ service: ServiceItem; token?: string; ownerId?: string } | null>(null);
+
+  /**
+   * Finalizes service deletion permanently from Cloud Firestore and clears stored device tokens.
+   */
+  const finalizePendingServiceDeletion = useCallback(async (item: { service: ServiceItem; token?: string; ownerId?: string }) => {
+    if (serviceDeletionTimerRef.current) {
+      clearTimeout(serviceDeletionTimerRef.current);
+      serviceDeletionTimerRef.current = null;
+    }
+    if (serviceDeletionIntervalRef.current) {
+      clearInterval(serviceDeletionIntervalRef.current);
+      serviceDeletionIntervalRef.current = null;
+    }
+
+    if (isFirebaseConfigured()) {
+      try {
+        await deleteServiceInFirestore(item.service.id, item.token, item.ownerId, isAdminAuthenticated);
+      } catch (err: any) {
+        console.warn('Firestore permanent delete service notice:', err);
+      }
+    }
+
+    setMyServiceTokens(prev => {
+      const updated = { ...prev };
+      delete updated[item.service.id];
+      localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated));
+      return updated;
+    });
+    removeSubmittedService(item.service.id);
+    setMyServiceIds(prev => {
+      const updated = prev.filter(id => id !== item.service.id);
+      localStorage.setItem('gondia_stay_my_service_ids', JSON.stringify(updated));
+      return updated;
+    });
+  }, [isAdminAuthenticated]);
 
   /**
    * Secure service ownership check:
@@ -972,8 +1040,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActiveTab('explore');
     }
 
-    // 8-second temporary undo option (within 5–10 seconds range)
-    const DURATION_SECONDS = 8;
+    // 7-second temporary undo option (7 seconds)
+    const DURATION_SECONDS = 7;
     const expiresAt = Date.now() + DURATION_SECONDS * 1000;
     const pendingItem = { property: propertyCopy, token };
     pendingDeletionRef.current = pendingItem;
@@ -1300,8 +1368,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Deletes a service listing permanently from Cloud Firestore.
-   * Only the actual listing owner or admin can delete it.
+   * Deletes a service listing with a temporary 7-second UNDO option.
+   * If Undo is tapped, restores service with all original details, photos, ownership credentials and status.
+   * If the timer expires, completes permanent deletion in Cloud Firestore.
    */
   const deleteService = async (serviceId: string): Promise<boolean> => {
     const targetService = services.find(s => s.id === serviceId);
@@ -1309,25 +1378,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast("Unauthorized: Only the listing owner or admin can delete this service.");
       return false;
     }
-    const token = myServiceTokens[serviceId] || targetService?.editToken;
-    const ownerId = targetService?.ownerId;
-    const success = await deleteServiceInFirestore(serviceId, token, ownerId, isAdminAuthenticated);
-    if (success) {
-      setServices(prev => prev.filter(s => s.id !== serviceId));
-      setMyServiceIds(prev => prev.filter(id => id !== serviceId));
-      removeSubmittedService(serviceId);
+
+    if (!targetService) return false;
+
+    // If another service was already pending deletion, finalize it immediately
+    if (pendingServiceDeletionRef.current) {
+      const previous = pendingServiceDeletionRef.current;
+      pendingServiceDeletionRef.current = null;
+      setPendingServiceDeletion(null);
+      await finalizePendingServiceDeletion(previous);
+    }
+
+    const token = myServiceTokens[serviceId] || targetService.editToken;
+    const ownerId = targetService.ownerId;
+    const serviceCopy: ServiceItem = { ...targetService };
+
+    // Remove from UI immediately so user sees deletion take effect
+    setServices(prev => prev.filter(s => s.id !== serviceId));
+
+    // 7-second temporary undo option
+    const DURATION_SECONDS = 7;
+    const expiresAt = Date.now() + DURATION_SECONDS * 1000;
+    const pendingItem = { service: serviceCopy, token, ownerId };
+    pendingServiceDeletionRef.current = pendingItem;
+
+    setPendingServiceDeletion({
+      service: serviceCopy,
+      token,
+      ownerId,
+      expiresAt,
+      secondsRemaining: DURATION_SECONDS
+    });
+
+    serviceDeletionIntervalRef.current = setInterval(() => {
+      setPendingServiceDeletion(prev => {
+        if (!prev) return null;
+        const remaining = Math.max(0, Math.ceil((prev.expiresAt - Date.now()) / 1000));
+        return { ...prev, secondsRemaining: remaining };
+      });
+    }, 500);
+
+    serviceDeletionTimerRef.current = setTimeout(async () => {
+      if (serviceDeletionIntervalRef.current) {
+        clearInterval(serviceDeletionIntervalRef.current);
+        serviceDeletionIntervalRef.current = null;
+      }
+      const itemToDelete = pendingServiceDeletionRef.current;
+      pendingServiceDeletionRef.current = null;
+      setPendingServiceDeletion(null);
+
+      if (itemToDelete) {
+        await finalizePendingServiceDeletion(itemToDelete);
+      }
+    }, DURATION_SECONDS * 1000);
+
+    return true;
+  };
+
+  /**
+   * Restores the deleted service with all its original details, photos, ownership credentials, and status.
+   */
+  const undoServiceDeletion = useCallback(() => {
+    if (serviceDeletionTimerRef.current) {
+      clearTimeout(serviceDeletionTimerRef.current);
+      serviceDeletionTimerRef.current = null;
+    }
+    if (serviceDeletionIntervalRef.current) {
+      clearInterval(serviceDeletionIntervalRef.current);
+      serviceDeletionIntervalRef.current = null;
+    }
+
+    const item = pendingServiceDeletionRef.current;
+    if (!item) return;
+
+    pendingServiceDeletionRef.current = null;
+    setPendingServiceDeletion(null);
+
+    // Restore service with all original details and approval status
+    setServices(prev => {
+      if (prev.some(s => s.id === item.service.id)) return prev;
+      return [item.service, ...prev];
+    });
+
+    // Restore ownership credentials / token
+    if (item.token) {
       setMyServiceTokens(prev => {
-        const updated = { ...prev };
-        delete updated[serviceId];
+        const updated = { ...prev, [item.service.id]: item.token! };
         localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated));
         return updated;
       });
-      showToast("Service listing removed.");
-    } else {
-      showToast("Failed to delete service listing. Please check permissions.");
     }
-    return success;
-  };
+
+    saveSubmittedService(item.service);
+    saveServiceId(item.service.id);
+
+    showToast("Service restored successfully");
+  }, [saveServiceId]);
 
 
   /**
@@ -1791,6 +1937,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteProperty,
       pendingPropertyDeletion,
       undoPropertyDeletion,
+      pendingServiceDeletion,
+      undoServiceDeletion,
       toggleFeatured,
       approveProperty,
       navigateTo,

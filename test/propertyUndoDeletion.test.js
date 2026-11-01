@@ -114,4 +114,44 @@ test('Property Deletion UNDO Capability (5–10s Temporary Window)', async (t) =
       'Home Services in Admin Moderation also uses ServicesHouseIcon'
     );
   });
+
+  await t.test('8. Two-step delete system with confirmation popup and 7-second undo snackbar', () => {
+    // Confirmation popup questions and buttons
+    assert.ok(
+      modalContent.includes('Are you sure you want to delete this property?') &&
+      modalContent.includes('Are you sure you want to delete this service?'),
+      'Confirmation popup asks "Are you sure you want to delete this property/service?"'
+    );
+    assert.ok(
+      modalContent.includes('Cancel') &&
+      modalContent.includes('bg-rose-600') &&
+      modalContent.includes('Delete'),
+      'Confirmation modal provides Cancel and red Delete buttons'
+    );
+
+    // 7-second Undo Snackbar text
+    assert.ok(
+      appContent.includes('Deleted successfully'),
+      'Snackbar displays "Deleted successfully"'
+    );
+    assert.ok(
+      appContent.includes('Undo') || appContent.includes('UNDO'),
+      'Snackbar displays Undo button'
+    );
+
+    // 7-second timer for both property and service
+    assert.ok(
+      appContextContent.includes('pendingServiceDeletion'),
+      'AppContext manages pendingServiceDeletion state'
+    );
+    assert.ok(
+      appContextContent.includes('undoServiceDeletion'),
+      'AppContext provides undoServiceDeletion function'
+    );
+    assert.ok(
+      appContextContent.includes('finalizePendingServiceDeletion'),
+      'Finalize function handles permanent deletion of service after timer'
+    );
+  });
 });
+
