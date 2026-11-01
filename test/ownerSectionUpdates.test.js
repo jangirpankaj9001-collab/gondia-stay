@@ -113,12 +113,38 @@ test('Owner Section Property & Service Reapproval Workflow (User Requests 8 & 9)
   await t.test('8. In Owner → My Home Services, remove the "Pending Approval" button', () => {
     // Check that My Home Services block does not render the "Pending Approval" button
     const myHomeServicesSection = appContent.slice(
-      appContent.indexOf('My Home Services'),
-      appContent.indexOf('ownerSubTab === \'moderation\'')
+      appContent.indexOf('My Home Services Section'),
+      appContent.indexOf('{/* Sub-tab 2: Admin Approval Workflow */}')
     );
     assert.ok(
       !myHomeServicesSection.includes('<span>Pending Approval</span>'),
       'My Home Services must not render the "Pending Approval" button'
     );
   });
+
+  await t.test('9. In Owner → My Properties and My Home Services, show "Pending Approval" label and no "Pending Verification"', () => {
+    assert.ok(
+      !appContent.includes('Pending Verification'),
+      'App.tsx should no longer contain "Pending Verification"'
+    );
+
+    const myPropertiesSection = appContent.slice(
+      appContent.indexOf('My Properties ('),
+      appContent.indexOf('My Home Services Section')
+    );
+    const myHomeServicesSection = appContent.slice(
+      appContent.indexOf('My Home Services Section'),
+      appContent.indexOf('{/* Sub-tab 2: Admin Approval Workflow */}')
+    );
+
+    assert.ok(
+      myPropertiesSection.includes("isPending(property.status) ? 'Pending Approval' : 'Rejected'"),
+      'My Properties status badge must display "Pending Approval" for pending items'
+    );
+    assert.ok(
+      myHomeServicesSection.includes("isPending(srv.status) ? 'Pending Approval' : 'Rejected'"),
+      'My Home Services status badge must display "Pending Approval" for pending items'
+    );
+  });
 });
+

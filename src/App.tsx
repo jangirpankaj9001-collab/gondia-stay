@@ -2567,7 +2567,7 @@ export const App: React.FC = () => {
                                         ? 'bg-amber-100 text-amber-800'
                                         : 'bg-rose-100 text-rose-800'
                                   }`}>
-                                    {isApproved(srv.status) ? 'Approved • Live' : isPending(srv.status) ? 'Pending Verification' : 'Rejected'}
+                                    {isApproved(srv.status) ? 'Approved • Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
                                   </span>
                                   {srv.hasPendingEdit && (
                                     <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center gap-1">
