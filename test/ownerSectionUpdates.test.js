@@ -157,6 +157,42 @@ test('Owner Section Property & Service Reapproval Workflow (User Requests 8 & 9)
       'My Home Services cards must not render the "Approved ✓" button'
     );
   });
+
+  await t.test('11. Newly submitted property or service immediately appears in owner section with "Pending Approval", and updates to "Approved · Live" once approved', () => {
+    const myPropertiesSection = appContent.slice(
+      appContent.indexOf('My Properties ('),
+      appContent.indexOf('My Home Services Section')
+    );
+    const myHomeServicesSection = appContent.slice(
+      appContent.indexOf('My Home Services Section'),
+      appContent.indexOf('{/* Sub-tab 2: Admin Approval Workflow */}')
+    );
+
+    // 1. Both sections display "Approved · Live" once approved
+    assert.ok(
+      myPropertiesSection.includes("isApproved(property.status) ? 'Approved · Live' : isPending(property.status) ? 'Pending Approval' : 'Rejected'"),
+      'My Properties must display "Approved · Live" once approved and "Pending Approval" when pending'
+    );
+    assert.ok(
+      myHomeServicesSection.includes("isApproved(srv.status) ? 'Approved · Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'"),
+      'My Home Services must display "Approved · Live" once approved and "Pending Approval" when pending'
+    );
+
+    // 2. AppContext maintains submitted properties & services persistence and real-time merging
+    assert.ok(
+      appContextContent.includes('getSubmittedProperties') && appContextContent.includes('saveSubmittedProperty'),
+      'AppContext manages submitted properties persistence'
+    );
+    assert.ok(
+      appContextContent.includes('getSubmittedServices') && appContextContent.includes('saveSubmittedService'),
+      'AppContext manages submitted services persistence'
+    );
+    assert.ok(
+      appContextContent.includes('updateSubmittedPropertyStatus') && appContextContent.includes('updateSubmittedServiceStatus'),
+      'AppContext updates submitted listing status upon approval'
+    );
+  });
 });
+
 
 

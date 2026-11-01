@@ -145,11 +145,103 @@ export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
   return lower === 'jangirpankaj9001@gmail.com';
 };
 
+// Local persistence for owner submitted properties so they appear immediately in Owner -> My Properties even before admin approval
+export const getSubmittedProperties = (): PropertyListing[] => {
+  try {
+    const raw = localStorage.getItem('gondia_stay_my_submitted_properties');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveSubmittedProperty = (property: PropertyListing) => {
+  try {
+    const existing = getSubmittedProperties();
+    const updated = [property, ...existing.filter(p => p.id !== property.id)];
+    localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updated));
+  } catch {
+    // Ignore quota warnings
+  }
+};
+
+export const updateSubmittedPropertyStatus = (propertyId: string, newStatus: 'approved' | 'pending' | 'rejected') => {
+  try {
+    const existing = getSubmittedProperties();
+    const updated = existing.map(p => p.id === propertyId ? { ...p, status: newStatus } : p);
+    localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updated));
+  } catch {
+    // Ignore
+  }
+};
+
+export const removeSubmittedProperty = (propertyId: string) => {
+  try {
+    const existing = getSubmittedProperties();
+    const updated = existing.filter(p => p.id !== propertyId);
+    localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updated));
+  } catch {
+    // Ignore
+  }
+};
+
+// Local persistence for owner submitted services so they appear immediately in Owner -> My Home Services even before admin approval
+export const getSubmittedServices = (): ServiceItem[] => {
+  try {
+    const raw = localStorage.getItem('gondia_stay_my_submitted_services');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveSubmittedService = (service: ServiceItem) => {
+  try {
+    const existing = getSubmittedServices();
+    const updated = [service, ...existing.filter(s => s.id !== service.id)];
+    localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updated));
+  } catch {
+    // Ignore quota warnings
+  }
+};
+
+export const updateSubmittedServiceStatus = (serviceId: string, newStatus: 'approved' | 'pending' | 'rejected') => {
+  try {
+    const existing = getSubmittedServices();
+    const updated = existing.map(s => s.id === serviceId ? { ...s, status: newStatus } : s);
+    localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updated));
+  } catch {
+    // Ignore
+  }
+};
+
+export const removeSubmittedService = (serviceId: string) => {
+  try {
+    const existing = getSubmittedServices();
+    const updated = existing.filter(s => s.id !== serviceId);
+    localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updated));
+  } catch {
+    // Ignore
+  }
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Properties are loaded from Cloud Firestore, initialized with local cache for instant UI availability
-  const [properties, setProperties] = useState<PropertyListing[]>(() => getCachedProperties());
+  // Properties are loaded from Cloud Firestore, initialized with local cache + submitted pending listings for instant owner availability
+  const [properties, setProperties] = useState<PropertyListing[]>(() => {
+    const cached = getCachedProperties();
+    const submitted = getSubmittedProperties();
+    const map = new Map(cached.map(p => [p.id, p]));
+    const merged = [...cached];
+    submitted.forEach(p => {
+      if (!map.has(p.id)) {
+        merged.push(p);
+      }
+    });
+    merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return merged;
+  });
   const [isFirestoreLoading, setIsFirestoreLoading] = useState<boolean>(true);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured());
@@ -163,7 +255,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isOwnerAuthenticated, setIsOwnerAuthenticated] = useState<boolean>(false);
 
   // GondiaStay Services (Mess/Tiffin, Maid, Housekeeping, Laundry, Electrician, Plumber, Water Cans, Security)
-  const [services, setServices] = useState<ServiceItem[]>(() => getCachedServices());
+  const [services, setServices] = useState<ServiceItem[]>(() => {
+    const cached = getCachedServices();
+    const submitted = getSubmittedServices();
+    const map = new Map(cached.map(s => [s.id, s]));
+    const merged = [...cached];
+    submitted.forEach(s => {
+      if (!map.has(s.id)) {
+        merged.push(s);
+      }
+    });
+    merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return merged;
+  });
 
   const [tiffinServices, setTiffinServices] = useState<TiffinService[]>(() => {
     try {
@@ -228,6 +332,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return myListingTokens[propertyId];
   }, [myListingTokens]);
 
+  // Local storage mapping for property IDs registered by this device
+  const [myPropertyIds, setMyPropertyIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('gondia_stay_my_property_ids');
+      if (saved) return JSON.parse(saved);
+      const rawTokens = localStorage.getItem('gondia_stay_listing_tokens');
+      return rawTokens ? Object.keys(JSON.parse(rawTokens)) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const savePropertyId = useCallback((propertyId: string) => {
+    setMyPropertyIds(prev => {
+      if (prev.includes(propertyId)) return prev;
+      const updated = [...prev, propertyId];
+      localStorage.setItem('gondia_stay_my_property_ids', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const removePropertyId = useCallback((propertyId: string) => {
+    setMyPropertyIds(prev => {
+      const updated = prev.filter(id => id !== propertyId);
+      localStorage.setItem('gondia_stay_my_property_ids', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   // Temporary Property Deletion UNDO state (5–10 seconds window, default 8 seconds)
   const [pendingPropertyDeletion, setPendingPropertyDeletion] = useState<PendingPropertyDeletion | null>(null);
   const deletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -261,7 +394,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated));
       return updated;
     });
-  }, []);
+    removeSubmittedProperty(item.property.id);
+    removePropertyId(item.property.id);
+  }, [removePropertyId]);
 
   // Flush any pending deletion on window unload
   useEffect(() => {
@@ -272,6 +407,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (isFirebaseConfigured()) {
           deletePropertyFromFirestore(item.property.id).catch(() => {});
         }
+        removeSubmittedProperty(item.property.id);
+        removePropertyId(item.property.id);
         try {
           const raw = localStorage.getItem('gondia_stay_listing_tokens');
           if (raw) {
@@ -339,6 +476,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isServiceOwner = useCallback((service: ServiceItem): boolean => {
     if (isAdminAuthenticated) return true;
     if (myServiceTokens[service.id]) return true;
+    if (myServiceIds.includes(service.id)) return true;
     if (authUser && !isAdminAuthenticated) {
       if (service.ownerId && service.ownerId === authUser.uid) {
         return true;
@@ -348,24 +486,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return false;
-  }, [isAdminAuthenticated, myServiceTokens, authUser]);
+  }, [isAdminAuthenticated, myServiceTokens, myServiceIds, authUser]);
 
   /**
    * Secure property ownership check:
    * - Admin always has full access
    * - Valid private edit token possessed by this device in myListingTokens
+   * - Verified property ID registered by this device in myPropertyIds
    * - Logged-in Firebase account matching property.ownerId or property.ownerEmail
    * Strictly prevents other owners from modifying or deleting someone else's property.
    */
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
     if (isAdminAuthenticated) return true;
     if (myListingTokens[property.id]) return true;
+    if (myPropertyIds.includes(property.id)) return true;
     if (authUser && !isAdminAuthenticated) {
       if (property.ownerId && property.ownerId === authUser.uid) return true;
       if (property.ownerEmail && authUser.email && property.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) return true;
     }
     return false;
-  }, [isAdminAuthenticated, myListingTokens, authUser]);
+  }, [isAdminAuthenticated, myListingTokens, myPropertyIds, authUser]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
@@ -480,7 +620,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (remoteProperties) => {
         setIsFirestoreLoading(false);
         setFirestoreError(null);
-        setProperties(remoteProperties);
+        setProperties(() => {
+          const remoteMap = new Map(remoteProperties.map(p => [p.id, p]));
+          const merged: PropertyListing[] = [...remoteProperties];
+
+          const locallyTracked = getSubmittedProperties();
+          let localUpdated = false;
+          const updatedLocallyTracked = locallyTracked.map(localProp => {
+            const remoteVersion = remoteMap.get(localProp.id);
+            if (remoteVersion) {
+              if (remoteVersion.status !== localProp.status) {
+                localUpdated = true;
+                return { ...localProp, status: remoteVersion.status };
+              }
+            }
+            return localProp;
+          });
+          if (localUpdated) {
+            try {
+              localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updatedLocallyTracked));
+            } catch {
+              // Ignore
+            }
+          }
+
+          locallyTracked.forEach(localProp => {
+            if (!remoteMap.has(localProp.id)) {
+              merged.push(localProp);
+            }
+          });
+
+          merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          return merged;
+        });
       },
       (error) => {
         setIsFirestoreLoading(false);
@@ -503,7 +675,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsubscribe = subscribeToFirestoreServices(
       (remoteServices) => {
-        setServices(remoteServices);
+        setServices(() => {
+          const remoteMap = new Map(remoteServices.map(s => [s.id, s]));
+          const merged: ServiceItem[] = [...remoteServices];
+
+          const locallyTracked = getSubmittedServices();
+          let localUpdated = false;
+          const updatedLocallyTracked = locallyTracked.map(localSrv => {
+            const remoteVersion = remoteMap.get(localSrv.id);
+            if (remoteVersion) {
+              if (remoteVersion.status !== localSrv.status) {
+                localUpdated = true;
+                return { ...localSrv, status: remoteVersion.status };
+              }
+            }
+            return localSrv;
+          });
+          if (localUpdated) {
+            try {
+              localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updatedLocallyTracked));
+            } catch {
+              // Ignore
+            }
+          }
+
+          locallyTracked.forEach(localSrv => {
+            if (!remoteMap.has(localSrv.id)) {
+              merged.push(localSrv);
+            }
+          });
+
+          merged.sort((a, b) => {
+            if (a.isFeatured && !b.isFeatured) return -1;
+            if (!a.isFeatured && b.isFeatured) return 1;
+            return (b.createdAt || 0) - (a.createdAt || 0);
+          });
+          return merged;
+        });
       },
       (error) => {
         console.warn('[GondiaStay] Services sync notice:', error.message);
@@ -707,6 +915,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdAt: property.createdAt || Date.now(),
           updatedAt: Date.now()
         };
+        saveSubmittedProperty(newListing);
+        savePropertyId(result.propertyId);
         return [newListing, ...prev];
       });
 
@@ -832,8 +1042,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    saveSubmittedProperty(item.property);
+    savePropertyId(item.property.id);
+
     showToast("Property restored successfully");
-  }, []);
+  }, [savePropertyId]);
 
   const toggleFeatured = (propertyId: string) => {
     setProperties(prev => prev.map(p => {
@@ -878,6 +1091,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? { ...p, status: approve ? 'approved' : 'rejected', updatedAt: Date.now() }
         : p
     ));
+    updateSubmittedPropertyStatus(propertyId, approve ? 'approved' : 'rejected');
     showToast(approve ? "Listing approved in Cloud Firestore! Live for all visitors." : "Listing rejected.");
     return true;
   };
@@ -968,6 +1182,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timing: service.timing || '8:00 AM - 8:00 PM',
         createdAt: Date.now()
       };
+      saveSubmittedService(cleanService);
       setServices(prev => [cleanService, ...prev.filter(s => s.id !== result.serviceId)]);
     } else {
       showToast(result.error || "Failed to save service");
@@ -1034,6 +1249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const success = await moderateServiceInFirestore(serviceId, approve, adminEmail);
     if (success) {
       setServices(prev => prev.map(s => s.id === serviceId ? { ...s, status: (approve ? 'approved' : 'rejected') as any } : s));
+      updateSubmittedServiceStatus(serviceId, approve ? 'approved' : 'rejected');
       showToast(approve ? "Service approved! Live for all visitors in Gondia." : "Service rejected.");
     }
     return success;
@@ -1099,6 +1315,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (success) {
       setServices(prev => prev.filter(s => s.id !== serviceId));
       setMyServiceIds(prev => prev.filter(id => id !== serviceId));
+      removeSubmittedService(serviceId);
       setMyServiceTokens(prev => {
         const updated = { ...prev };
         delete updated[serviceId];
