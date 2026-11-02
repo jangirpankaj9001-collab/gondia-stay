@@ -2083,9 +2083,6 @@ export const App: React.FC = () => {
                       <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
                         {getOwnerGreeting(currentOwner.name)}
                       </h2>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Real Owner Account stored in Cloud Firestore • Gondia, Maharashtra
-                      </p>
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-center">
@@ -2151,73 +2148,75 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Inline Owner Profile Editor */}
+                  {/* Inline Owner Profile Editor - Compact 70% Size with Premium Glowing Blue Outline */}
                   {isEditingOwnerProfile && (
-                    <div className="bg-slate-800 p-5 rounded-2xl border border-blue-500/30 space-y-4 animate-in fade-in slide-in-from-top-2">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                          <UserCheck className="w-4 h-4 text-blue-400" />
-                          Edit Real Landlord Profile (Cloud Firestore)
+                    <div className="w-full max-w-xl mx-auto bg-gradient-to-b from-slate-800/95 via-slate-850/95 to-slate-900/95 p-3.5 sm:p-4 rounded-2xl border-2 border-blue-500/80 shadow-[0_0_24px_rgba(59,130,246,0.35)] ring-1 ring-blue-400/40 backdrop-blur-md space-y-3 animate-in fade-in slide-in-from-top-2">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-700/60">
+                        <h3 className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
+                          <UserCheck className="w-4 h-4 text-blue-400 shrink-0" />
+                          <span>Edit Real Landlord Profile</span>
                         </h3>
-                        <span className="text-[10px] text-slate-400">Syncs automatically to cloud</span>
+                        <span className="text-[10px] font-semibold text-blue-300 bg-blue-900/40 border border-blue-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" /> Auto-Synced
+                        </span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-300 block mb-1">Landlord Name *</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Landlord Name *</label>
                           <input
                             type="text"
                             value={ownerProfileForm.name}
                             onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, name: e.target.value })}
                             placeholder="e.g. Ramesh Patel"
-                            className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-semibold"
+                            className="w-full px-2.5 py-1.5 text-xs bg-slate-950/80 border border-slate-700/80 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 rounded-xl text-white font-semibold outline-none transition-all placeholder:text-slate-500"
                           />
                         </div>
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-300 block mb-1">Phone Number *</label>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Phone Number *</label>
                           <input
                             type="text"
                             value={ownerProfileForm.phone}
                             onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, phone: e.target.value })}
-                            placeholder="10-digit mobile (e.g. 98230 12345)"
-                            className={`w-full px-3 py-2 text-xs bg-slate-900 border ${
+                            placeholder="10-digit mobile"
+                            className={`w-full px-2.5 py-1.5 text-xs bg-slate-950/80 border ${
                               ownerProfileForm.phone && !isValidIndianMobileNumber(ownerProfileForm.phone)
-                                ? 'border-rose-500 focus:border-rose-400'
-                                : 'border-slate-700 focus:border-blue-500'
-                            } rounded-xl text-white font-semibold outline-none`}
+                                ? 'border-rose-500 focus:border-rose-400 focus:ring-1 focus:ring-rose-400'
+                                : 'border-slate-700/80 focus:border-blue-400 focus:ring-1 focus:ring-blue-400'
+                            } rounded-xl text-white font-semibold outline-none transition-all placeholder:text-slate-500`}
                           />
                           {ownerProfileForm.phone && !isValidIndianMobileNumber(ownerProfileForm.phone) && (
-                            <p className="text-[10px] text-rose-400 font-semibold mt-1">
-                              Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                            <p className="text-[10px] text-rose-400 font-semibold leading-tight mt-0.5">
+                              Must be valid 10-digit Indian mobile (starts 6-9)
                             </p>
                           )}
                         </div>
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-300 block mb-1">WhatsApp Number *</label>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">WhatsApp Number *</label>
                           <input
                             type="text"
                             value={ownerProfileForm.whatsappNumber}
                             onChange={(e) => setOwnerProfileForm({ ...ownerProfileForm, whatsappNumber: e.target.value })}
-                            placeholder="10-digit WhatsApp (e.g. 98230 12345)"
-                            className={`w-full px-3 py-2 text-xs bg-slate-900 border ${
+                            placeholder="10-digit WhatsApp"
+                            className={`w-full px-2.5 py-1.5 text-xs bg-slate-950/80 border ${
                               ownerProfileForm.whatsappNumber && !isValidIndianMobileNumber(ownerProfileForm.whatsappNumber)
                                 ? 'border-rose-500 focus:border-rose-400'
-                                : 'border-slate-700 focus:border-blue-500'
-                            } rounded-xl text-white font-semibold outline-none`}
+                                : 'border-slate-700/80 focus:border-blue-400 focus:ring-1 focus:ring-blue-400'
+                            } rounded-xl text-white font-semibold outline-none transition-all placeholder:text-slate-500`}
                           />
                           {ownerProfileForm.whatsappNumber && !isValidIndianMobileNumber(ownerProfileForm.whatsappNumber) && (
-                            <p className="text-[10px] text-rose-400 font-semibold mt-1">
-                              Must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+                            <p className="text-[10px] text-rose-400 font-semibold leading-tight mt-0.5">
+                              Must be valid 10-digit Indian mobile (starts 6-9)
                             </p>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex justify-end gap-2 pt-2">
+                      <div className="flex items-center justify-end gap-2 pt-1">
                         <button
                           type="button"
                           onClick={() => setIsEditingOwnerProfile(false)}
-                          className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-lg cursor-pointer"
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors border border-slate-700/60 cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -2244,9 +2243,9 @@ export const App: React.FC = () => {
                             });
                             setIsEditingOwnerProfile(false);
                           }}
-                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-lg shadow-xs cursor-pointer"
+                          className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white text-xs font-bold rounded-lg shadow-[0_0_12px_rgba(59,130,246,0.4)] transition-all cursor-pointer"
                         >
-                          Save Owner Profile & Token
+                          Save Owner Profile
                         </button>
                       </div>
                     </div>
