@@ -2012,6 +2012,20 @@ export const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto">
+                {Boolean(currentOwner.name || currentOwner.phone) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOwnerDashboardOpen(true);
+                      setIsEditingOwnerProfile(true);
+                    }}
+                    className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Edit Owner Profile"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Edit Profile</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsOwnerDashboardOpen(true)}
@@ -2072,7 +2086,7 @@ export const App: React.FC = () => {
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       <button
                         onClick={() => setIsEditingOwnerProfile(!isEditingOwnerProfile)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border border-slate-700 shadow-xs transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>{isEditingOwnerProfile ? 'Close Editor' : 'Edit Profile'}</span>
@@ -2089,36 +2103,6 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Persistent Device Token & Unique Owner ID Card */}
-                  <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs font-bold text-white">Device Identity & Server-Validated Token</span>
-                      </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-extrabold self-start sm:self-auto">
-                        <CheckCircle2 className="w-3 h-3" /> Auto-Recognized Device
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Unique Owner ID</span>
-                        <span className="font-mono text-xs text-blue-400 font-bold break-all block mt-0.5">
-                          {currentOwner.id || 'owner_generating...'}
-                        </span>
-                        <span className="text-[10px] text-slate-400 mt-1 block">Links all your properties and home services</span>
-                      </div>
-
-                      <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Persistent Device Token</span>
-                        <span className="font-mono text-[11px] text-amber-300 font-bold truncate block mt-0.5" title={currentOwner.deviceToken}>
-                          {currentOwner.deviceToken ? `${currentOwner.deviceToken.substring(0, 24)}...` : 'gondia_devtoken_active'}
-                        </span>
-                        <span className="text-[10px] text-slate-400 mt-1 block">Server-side validated on this browser</span>
-                      </div>
-                    </div>
-                  </div>
 
                   {/* Owner Contact and WhatsApp Number Card */}
                   <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">

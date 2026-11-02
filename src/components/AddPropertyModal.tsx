@@ -858,49 +858,12 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       )}
                     </div>
 
-                    {createdCredentials && (createdCredentials.ownerId || createdCredentials.editToken) && (
-                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-blue-700 font-bold text-[11px]">
-                          <KeyRound className="w-3.5 h-3.5" />
-                          <span>Owner Management Credentials</span>
-                        </div>
-                        {createdCredentials.ownerId && (
-                          <div className="bg-white p-2 rounded-lg border border-slate-200">
-                            <span className="text-[10px] text-slate-400 block font-bold">Owner ID</span>
-                            <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
-                              {createdCredentials.ownerId}
-                            </code>
-                          </div>
-                        )}
-                        {createdCredentials.editToken && (
-                          <div className="bg-white p-2 rounded-lg border border-slate-200">
-                            <span className="text-[10px] text-slate-400 block font-bold">Private Edit Token</span>
-                            <code className="text-[11px] font-mono font-bold text-slate-800 select-all break-all">
-                              {createdCredentials.editToken}
-                            </code>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const creds = `Property: ${savedPropertyInfo.title}\nProperty ID: ${savedPropertyInfo.id}\nOwner ID: ${createdCredentials.ownerId || 'N/A'}\nEdit Token: ${createdCredentials.editToken || 'N/A'}`;
-                            navigator.clipboard.writeText(creds);
-                            setCopiedCredentials(true);
-                            setTimeout(() => setCopiedCredentials(false), 2500);
-                          }}
-                          className="w-full py-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>{copiedCredentials ? 'Credentials Copied!' : 'Copy Credentials'}</span>
-                        </button>
-                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-                          ✓ Automatically linked to this device. Your Edit and Delete buttons will work directly without entering a token.
-                        </p>
-                        <p className="text-[10px] text-slate-500 italic mt-0.5">
-                          Save these credentials if you ever need to manage your property from a different device.
-                        </p>
-                      </div>
-                    )}
+                    <div className="pt-2 border-t border-slate-200">
+                      <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/60">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.</span>
+                      </p>
+                    </div>
                   </div>
 
                   <div className="pt-2">

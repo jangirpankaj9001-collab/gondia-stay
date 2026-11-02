@@ -27,7 +27,7 @@ test('Owner Section -> My Dashboard: Persistent Profile, Device Token & Auto-Fil
     );
   });
 
-  await t.test('2. Unique Owner ID & Persistent Device Token Generation', () => {
+  await t.test('2. Unique Owner ID & Persistent Device Token: Generated, stored securely and HIDDEN from UI', () => {
     assert.ok(
       propServiceContent.includes('generateDeviceToken') &&
       propServiceContent.includes('gondia_devtoken_'),
@@ -42,10 +42,18 @@ test('Owner Section -> My Dashboard: Persistent Profile, Device Token & Auto-Fil
       typesContent.includes('deviceToken?: string'),
       'OwnerProfile interface includes deviceToken property'
     );
+    // User requirement: "Hide all IDs and tokens from UI"
     assert.ok(
-      appContent.includes('Unique Owner ID') &&
-      appContent.includes('Persistent Device Token'),
-      'My Dashboard visually renders the Unique Owner ID and Persistent Device Token badges'
+      !appContent.includes('Unique Owner ID') &&
+      !appContent.includes('Persistent Device Token') &&
+      !addPropContent.includes('Owner Management Credentials') &&
+      !addServiceContent.includes('Owner Management Credentials'),
+      'All technical Owner IDs and Device Tokens must be strictly hidden from the UI across all screens'
+    );
+    // User requirement: "Show Edit Profile for recognized owners"
+    assert.ok(
+      appContent.includes('Edit Profile'),
+      'My Dashboard and Owner Section show Edit Profile for recognized owners'
     );
   });
 
