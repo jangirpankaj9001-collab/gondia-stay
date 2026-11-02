@@ -2019,10 +2019,10 @@ export const App: React.FC = () => {
                       setIsOwnerDashboardOpen(true);
                       setIsEditingOwnerProfile(true);
                     }}
-                    className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Edit Owner Profile"
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Edit Landlord Profile"
                   >
-                    <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                    <Edit3 className="w-3.5 h-3.5" />
                     <span>Edit Profile</span>
                   </button>
                 )}
@@ -2065,10 +2065,15 @@ export const App: React.FC = () => {
                   {/* Top Bar inside expanded dashboard */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
                     <div>
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="bg-blue-600/30 text-blue-400 border border-blue-500/30 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                           Verified Landlord Console
                         </span>
+                        {Boolean(currentOwner.name || currentOwner.phone) && (
+                          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3" /> Auto-Recognized Owner
+                          </span>
+                        )}
                         {isFirebaseConnected && (
                           <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                             <Database className="w-3 h-3" /> Cloud Firestore Active
@@ -2086,7 +2091,7 @@ export const App: React.FC = () => {
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       <button
                         onClick={() => setIsEditingOwnerProfile(!isEditingOwnerProfile)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl border border-blue-500 shadow-xs transition-colors cursor-pointer"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>{isEditingOwnerProfile ? 'Close Editor' : 'Edit Profile'}</span>
@@ -2102,7 +2107,6 @@ export const App: React.FC = () => {
                       </button>
                     </div>
                   </div>
-
 
                   {/* Owner Contact and WhatsApp Number Card */}
                   <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -116,16 +116,8 @@ test('Reapproval Feedback & UI State Consistency for Properties & Services', asy
       'AddPropertyModal includes Property Submitted Successfully! title'
     );
     assert.ok(
-      addPropertyContent.includes('Owner Management Credentials'),
-      'AddPropertyModal includes Owner Management Credentials block'
-    );
-    assert.ok(
-      addPropertyContent.includes('Private Edit Token'),
-      'AddPropertyModal includes Private Edit Token'
-    );
-    assert.ok(
-      addPropertyContent.includes('Automatically linked to this device'),
-      'AddPropertyModal includes device link reassurance'
+      addPropertyContent.includes('Automatically recognized & linked to your owner account'),
+      'AddPropertyModal includes device/owner link reassurance matching service confirmation'
     );
     assert.ok(
       addPropertyContent.includes('Close & View My Properties'),

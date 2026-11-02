@@ -163,9 +163,11 @@ export const subscribeToFirestoreProperties = (
 
   const propertiesRef = collection(db, PROPERTIES_COLLECTION);
   let activeUnsubscribe: Unsubscribe | null = null;
+  let isUnsubscribed = false;
   let hasReceivedData = false;
 
   const handleSnapshot = (snapshot: any) => {
+    if (isUnsubscribed) return;
     hasReceivedData = true;
     const items: PropertyListing[] = [];
     snapshot.forEach((docSnap: any) => {
@@ -195,6 +197,7 @@ export const subscribeToFirestoreProperties = (
   };
 
   const handleAllFailed = (lastError: any) => {
+    if (isUnsubscribed) return;
     console.warn('[GondiaStay] All Firestore properties queries encountered notice:', lastError);
     const cached = getCachedProperties();
     if (cached.length > 0) {
@@ -214,28 +217,31 @@ export const subscribeToFirestoreProperties = (
 
   // Strategy 4: Filtered query for uppercase 'APPROVED'
   const startUpperStatusListener = () => {
+    if (isUnsubscribed) return;
     try {
       const q = query(propertiesRef, where('status', '==', 'APPROVED'));
       activeUnsubscribe = onSnapshot(
         q,
         handleSnapshot,
         (error) => {
-          handleAllFailed(error);
+          if (!isUnsubscribed) handleAllFailed(error);
         }
       );
     } catch (err: any) {
-      handleAllFailed(err);
+      if (!isUnsubscribed) handleAllFailed(err);
     }
   };
 
   // Strategy 3: Filtered query for status in ['approved', 'APPROVED']
   const startInFilterListener = () => {
+    if (isUnsubscribed) return;
     try {
       const q = query(propertiesRef, where('status', 'in', ['approved', 'APPROVED']));
       activeUnsubscribe = onSnapshot(
         q,
         handleSnapshot,
         (error) => {
+          if (isUnsubscribed) return;
           console.warn('[GondiaStay] In-status filter query notice, trying uppercase filter:', error);
           if (!hasReceivedData) {
             startUpperStatusListener();
@@ -245,18 +251,20 @@ export const subscribeToFirestoreProperties = (
         }
       );
     } catch {
-      startUpperStatusListener();
+      if (!isUnsubscribed) startUpperStatusListener();
     }
   };
 
   // Strategy 2: Filtered query for status == 'approved'
   const startFilteredListener = () => {
+    if (isUnsubscribed) return;
     try {
       const q = query(propertiesRef, where('status', '==', 'approved'));
       activeUnsubscribe = onSnapshot(
         q,
         handleSnapshot,
         (error) => {
+          if (isUnsubscribed) return;
           console.warn('[GondiaStay] Filtered approved query notice, trying in-status filter:', error);
           if (!hasReceivedData) {
             startInFilterListener();
@@ -266,37 +274,42 @@ export const subscribeToFirestoreProperties = (
         }
       );
     } catch {
-      startInFilterListener();
+      if (!isUnsubscribed) startInFilterListener();
     }
   };
 
-  // Strategy 1: Direct collection query (matches allow read: if true, or admin viewing all)
+  // Strategy 1: Direct collection query (for verified admin viewing all listings)
   const startDirectListener = () => {
+    if (isUnsubscribed) return;
     try {
       activeUnsubscribe = onSnapshot(
         propertiesRef,
         handleSnapshot,
         (error) => {
-          console.warn('[GondiaStay] Direct properties query notice, trying approved status filter:', error);
-          if (!hasReceivedData) {
-            startFilteredListener();
-          } else {
-            onError(error);
-          }
+          if (isUnsubscribed) return;
+          console.warn('[GondiaStay] Direct properties query notice, switching to approved status filter:', error);
+          // If admin signs out or token is revoked, transition smoothly to approved filter instead of surfacing error
+          startFilteredListener();
         }
       );
     } catch {
-      startFilteredListener();
+      if (!isUnsubscribed) startFilteredListener();
     }
   };
 
   // If user is verified admin, prioritize direct full collection listener
-  // If public visitor, try direct first (matches open read rules), fallback to approved status filters
-  startDirectListener();
+  // If public visitor (or after admin signs out), query only approved listings to comply with Firestore security rules
+  if (isAdmin) {
+    startDirectListener();
+  } else {
+    startFilteredListener();
+  }
 
   return () => {
+    isUnsubscribed = true;
     if (activeUnsubscribe) {
       activeUnsubscribe();
+      activeUnsubscribe = null;
     }
   };
 };
