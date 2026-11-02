@@ -317,6 +317,7 @@ export interface OwnerProfile {
   phone: string;
   whatsappNumber?: string;
   email?: string;
+  deviceToken?: string;
 }
 
 export const DEFAULT_OWNER_PROFILE: OwnerProfile = {
@@ -324,5 +325,6 @@ export const DEFAULT_OWNER_PROFILE: OwnerProfile = {
   name: '',
   phone: '',
   whatsappNumber: '',
-  email: ''
+  email: '',
+  deviceToken: ''
 };

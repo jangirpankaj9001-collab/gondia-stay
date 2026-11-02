@@ -32,7 +32,11 @@ import {
   saveOwnerProfileToFirestore,
   subscribeToOwnerProfile,
   SavePropertyResult,
-  getCachedProperties
+  getCachedProperties,
+  generateDeviceToken,
+  generateUniqueOwnerId,
+  verifyDeviceToken,
+  registerDeviceTokenInFirestore
 } from '../firebase/propertiesService';
 import {
   subscribeToFirestoreServices,
@@ -299,22 +303,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [currentOwner, setCurrentOwner] = useState<OwnerProfile>(() => {
     try {
+      // 1. Ensure persistent device token exists on this device
+      let deviceToken = localStorage.getItem('gondia_stay_owner_device_token');
+      if (!deviceToken) {
+        deviceToken = generateDeviceToken();
+        localStorage.setItem('gondia_stay_owner_device_token', deviceToken);
+      }
+
+      // 2. Ensure persistent unique Owner ID exists on this device
+      let deviceOwnerId = localStorage.getItem('gondia_stay_device_owner_id');
+      if (!deviceOwnerId || deviceOwnerId === 'owner_gondia_primary') {
+        deviceOwnerId = generateUniqueOwnerId();
+        localStorage.setItem('gondia_stay_device_owner_id', deviceOwnerId);
+      }
+
       const saved = localStorage.getItem('gondia_stay_current_owner');
       if (saved) {
         const parsed = JSON.parse(saved) as OwnerProfile;
         if (
-          !parsed.id ||
-          parsed.id === 'owner_gondia_primary' ||
           parsed.email?.toLowerCase().includes('jangirpankaj') ||
           parsed.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com' ||
           parsed.name === 'Rajesh Sharma'
         ) {
           localStorage.removeItem('gondia_stay_current_owner');
-          return DEFAULT_OWNER_PROFILE;
+          return {
+            ...DEFAULT_OWNER_PROFILE,
+            id: deviceOwnerId,
+            deviceToken
+          };
         }
-        return parsed;
+        return {
+          ...parsed,
+          id: parsed.id || deviceOwnerId,
+          deviceToken: parsed.deviceToken || deviceToken
+        };
       }
-      return DEFAULT_OWNER_PROFILE;
+      return {
+        ...DEFAULT_OWNER_PROFILE,
+        id: deviceOwnerId,
+        deviceToken
+      };
     } catch {
       return DEFAULT_OWNER_PROFILE;
     }
@@ -543,6 +571,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    */
   const isServiceOwner = useCallback((service: ServiceItem): boolean => {
     if (isAdminAuthenticated) return true;
+    if (currentOwner.id && service.ownerId && service.ownerId === currentOwner.id) return true;
     if (myServiceTokens[service.id]) return true;
     if (myServiceIds.includes(service.id)) return true;
     if (authUser && !isAdminAuthenticated) {
@@ -554,11 +583,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return false;
-  }, [isAdminAuthenticated, myServiceTokens, myServiceIds, authUser]);
+  }, [isAdminAuthenticated, currentOwner.id, myServiceTokens, myServiceIds, authUser]);
 
   /**
    * Secure property ownership check:
    * - Admin always has full access
+   * - Verified custom owner profile matching property.ownerId
    * - Valid private edit token possessed by this device in myListingTokens
    * - Verified property ID registered by this device in myPropertyIds
    * - Logged-in Firebase account matching property.ownerId or property.ownerEmail
@@ -566,6 +596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    */
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
     if (isAdminAuthenticated) return true;
+    if (currentOwner.id && property.ownerId && property.ownerId === currentOwner.id) return true;
     if (myListingTokens[property.id]) return true;
     if (myPropertyIds.includes(property.id)) return true;
     if (authUser && !isAdminAuthenticated) {
@@ -573,7 +604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (property.ownerEmail && authUser.email && property.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) return true;
     }
     return false;
-  }, [isAdminAuthenticated, myListingTokens, myPropertyIds, authUser]);
+  }, [isAdminAuthenticated, currentOwner.id, myListingTokens, myPropertyIds, authUser]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
@@ -642,9 +673,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
       } else {
-        // Logged out / guest
-        setCurrentOwner(DEFAULT_OWNER_PROFILE);
-        localStorage.removeItem('gondia_stay_current_owner');
+        // Guest / zero-login owner: preserve persistent device owner profile across reloads
+        try {
+          const saved = localStorage.getItem('gondia_stay_current_owner');
+          if (saved) {
+            const parsed = JSON.parse(saved) as OwnerProfile;
+            if (parsed && (parsed.name || parsed.phone || parsed.id)) {
+              setCurrentOwner(prev => ({
+                ...prev,
+                ...parsed
+              }));
+            }
+          }
+        } catch {}
       }
     });
 
@@ -839,28 +880,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast("Please enter a valid 10-digit Indian WhatsApp number starting with 6, 7, 8, or 9.");
       return;
     }
+    let deviceToken = currentOwner.deviceToken || localStorage.getItem('gondia_stay_owner_device_token');
+    if (!deviceToken) {
+      deviceToken = generateDeviceToken();
+      localStorage.setItem('gondia_stay_owner_device_token', deviceToken);
+    }
+
+    let ownerId = currentOwner.id || localStorage.getItem('gondia_stay_device_owner_id');
+    if (!ownerId || ownerId === 'owner_gondia_primary' || ownerId === 'owner_unauthenticated') {
+      ownerId = (authUser && !isAdminAuthenticated) ? authUser.uid : generateUniqueOwnerId();
+      localStorage.setItem('gondia_stay_device_owner_id', ownerId);
+    }
+
     const updated: OwnerProfile = {
       ...currentOwner,
-      ...updates
+      ...updates,
+      id: (authUser && !isAdminAuthenticated) ? authUser.uid : ownerId,
+      deviceToken
     };
-    if (!updated.id && authUser?.uid) {
-      updated.id = authUser.uid;
-    }
-    if (!updated.id) {
-      const existingDeviceId = localStorage.getItem('gondia_stay_device_owner_id');
-      const deviceId = existingDeviceId || `owner_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      if (!existingDeviceId) {
-        localStorage.setItem('gondia_stay_device_owner_id', deviceId);
-      }
-      updated.id = deviceId;
-    }
+
     if (updates.phone && !updates.whatsappNumber && !currentOwner.whatsappNumber) {
       updated.whatsappNumber = updates.phone;
     }
+
     setCurrentOwner(updated);
     localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updated));
+    localStorage.setItem('gondia_stay_owner_device_token', deviceToken);
+    localStorage.setItem('gondia_stay_device_owner_id', updated.id);
     if (updated.id) {
       localStorage.setItem(`gondia_stay_owner_${updated.id}`, JSON.stringify(updated));
+    }
+
+    // Secure server-side device token validation & registration
+    try {
+      await registerDeviceTokenInFirestore(updated.id, deviceToken, updated);
+    } catch (err) {
+      console.warn('Server-side token registration notice:', err);
     }
 
     if (isFirebaseConfigured() && updated.id) {
@@ -881,7 +936,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    showToast("Owner profile updated & synchronized with Firebase!");
+    showToast("Owner profile & device token saved successfully!");
   };
 
   /**
@@ -936,7 +991,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const tokenToUse = editToken || myListingTokens[property.id];
-      const result = await savePropertyToFirestore(property, isEdit, tokenToUse);
+      const propertyWithLinkedOwner: PropertyListing = {
+        ...property,
+        ownerId: (property.ownerId && property.ownerId !== 'owner_unauthenticated')
+          ? property.ownerId
+          : (currentOwner.id || property.ownerId)
+      };
+      const result = await savePropertyToFirestore(propertyWithLinkedOwner, isEdit, tokenToUse);
       if (result.editToken) {
         saveListingToken(result.propertyId, result.editToken);
       }
@@ -1223,7 +1284,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const saveService = async (
     service: Partial<ServiceItem>
   ): Promise<{ success: boolean; serviceId: string; ownerId?: string; editToken?: string; error?: string }> => {
-    const result = await saveServiceToFirestore(service, isAdminAuthenticated);
+    const serviceWithLinkedOwner: Partial<ServiceItem> = {
+      ...service,
+      ownerId: service.ownerId || currentOwner.id
+    };
+    const result = await saveServiceToFirestore(serviceWithLinkedOwner, isAdminAuthenticated);
     if (result.success) {
       saveServiceId(result.serviceId);
       if (result.editToken) {

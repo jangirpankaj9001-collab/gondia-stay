@@ -148,8 +148,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
   const { isOwnerAuthenticated, isAdminAuthenticated, authUser, updateOwnerProfile, saveListingToken } = useApp();
-  const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
-  const isOwnerWithProfile = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
+  const isOwnerWithProfile = Boolean(!isAdminAuthenticated && (currentOwner?.name || currentOwner?.phone));
 
   // Landlord Contact
   const [ownerName, setOwnerName] = useState(
@@ -267,7 +266,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       setPickerLocation(defaultCoords);
       setHasCustomPin(false);
 
-      const shouldAutoFill = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
+      const shouldAutoFill = Boolean(!isAdminAuthenticated && (currentOwner?.name || currentOwner?.phone));
       setOwnerName(shouldAutoFill ? (currentOwner?.name || '') : '');
       setOwnerPhone(shouldAutoFill ? (currentOwner?.phone || '') : '');
       setOwnerWhatsappNumber(shouldAutoFill ? (currentOwner?.whatsappNumber || currentOwner?.phone || '') : '');
@@ -655,14 +654,15 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           }
         }
       } else {
-        // Create new property listing linked to actual logged in owner
+        // Create new property listing linked to persistent Owner ID
+        const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
         const actualOwnerId = (isRealOwnerLoggedIn && authUser?.uid)
           ? authUser.uid
-          : (isRealOwnerLoggedIn && currentOwner?.id ? currentOwner.id : 'owner_unauthenticated');
+          : (currentOwner?.id ? currentOwner.id : 'owner_unauthenticated');
 
         const actualOwnerEmail = (isRealOwnerLoggedIn && authUser?.email)
           ? authUser.email
-          : (isRealOwnerLoggedIn && currentOwner?.email ? currentOwner.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''));
+          : (currentOwner?.email ? currentOwner.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''));
 
         const newProp: PropertyListing = {
           id: `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

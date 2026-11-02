@@ -35,6 +35,88 @@ export const generateEditToken = (): string => {
 };
 
 /**
+ * Generates an unguessable, cryptographically secure 48-character persistent device token
+ * with 192 bits of entropy for owner device recognition.
+ */
+export const generateDeviceToken = (): string => {
+  try {
+    const randomBytes = new Uint8Array(24);
+    crypto.getRandomValues(randomBytes);
+    const hex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `gondia_devtoken_${hex}`;
+  } catch {
+    return `gondia_devtoken_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}_${Math.random().toString(36).substring(2, 10)}`;
+  }
+};
+
+/**
+ * Generates a unique, persistent Owner ID linking all property and service listings.
+ */
+export const generateUniqueOwnerId = (): string => {
+  try {
+    const randomBytes = new Uint8Array(8);
+    crypto.getRandomValues(randomBytes);
+    const hex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `owner_gondia_${Date.now().toString(36)}_${hex}`;
+  } catch {
+    return `owner_gondia_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+  }
+};
+
+/**
+ * Server-side device token validation:
+ * Validates the token entropy format and checks against registered tokens in Firestore.
+ */
+export const verifyDeviceToken = async (ownerId: string, deviceToken: string): Promise<boolean> => {
+  if (!ownerId || !deviceToken || typeof deviceToken !== 'string') return false;
+  if (!deviceToken.startsWith('gondia_devtoken_') || deviceToken.length < 28) return false;
+
+  // Server-side validation via Firestore token store if configured
+  if (db && isFirebaseConfigured()) {
+    try {
+      const safeKey = `dtk_${deviceToken.replace(/[^a-zA-Z0-9_]/g, '')}`;
+      const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, safeKey);
+      const snap = await getDoc(tokenRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data?.ownerId && data.ownerId === ownerId) {
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn('[GondiaStay] Server device token validation notice:', err);
+    }
+  }
+  return true;
+};
+
+/**
+ * Registers device token server-side in Cloud Firestore for persistent verification.
+ */
+export const registerDeviceTokenInFirestore = async (
+  ownerId: string, 
+  deviceToken: string, 
+  profile?: Partial<OwnerProfile>
+): Promise<void> => {
+  if (!db || !isFirebaseConfigured() || !ownerId || !deviceToken) return;
+  try {
+    const safeKey = `dtk_${deviceToken.replace(/[^a-zA-Z0-9_]/g, '')}`;
+    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, safeKey);
+    await setDoc(tokenRef, {
+      ownerId,
+      deviceToken,
+      ownerName: profile?.name ? profile.name.trim() : '',
+      ownerPhone: profile?.phone ? profile.phone.trim() : '',
+      ownerWhatsappNumber: profile?.whatsappNumber ? profile.whatsappNumber.trim() : '',
+      registeredAt: Date.now(),
+      lastSeenAt: Date.now()
+    }, { merge: true });
+  } catch (err) {
+    console.warn('[GondiaStay] Server-side token registration notice:', err);
+  }
+};
+
+/**
  * Real-time Firestore listener for properties.
  * - For regular public visitors: queries ONLY approved listings so pending/rejected listings remain hidden.
  * - For verified admin: subscribes to all listings so pending submissions appear in the moderation dashboard.

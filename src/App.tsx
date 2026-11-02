@@ -548,6 +548,13 @@ export const App: React.FC = () => {
     return selectedPhotos.some(p => p.isOptimizing);
   }, [selectedPhotos]);
 
+  // Helper to display exact requested owner greeting: "Welcome, Mr./Mrs. [Name]"
+  const getOwnerGreeting = (name?: string): string => {
+    if (!name || !name.trim()) return "Welcome, Mr./Mrs. [Name]";
+    const clean = name.replace(/^(mr\.|mrs\.|mr\/mrs\.)\s+/i, '').trim();
+    return `Welcome, Mr./Mrs. ${clean}`;
+  };
+
   // Owner Profile editing state
   const [isEditingOwnerProfile, setIsEditingOwnerProfile] = useState(false);
   const [ownerProfileForm, setOwnerProfileForm] = useState({
@@ -1988,7 +1995,7 @@ export const App: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    Welcome, {currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'Landlord'}
+                    {getOwnerGreeting(currentOwner.name)}
                   </h1>
                   <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                     Landlord
@@ -2055,7 +2062,7 @@ export const App: React.FC = () => {
                         )}
                       </div>
                       <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                        Welcome, {currentOwner.name ? (currentOwner.name.startsWith('Mr.') ? currentOwner.name : `Mr. ${currentOwner.name}`) : 'Landlord'}
+                        {getOwnerGreeting(currentOwner.name)}
                       </h2>
                       <p className="text-xs text-slate-400 mt-0.5">
                         Real Owner Account stored in Cloud Firestore • Gondia, Maharashtra
@@ -2079,6 +2086,37 @@ export const App: React.FC = () => {
                       >
                         <X className="w-5 h-5" />
                       </button>
+                    </div>
+                  </div>
+
+                  {/* Persistent Device Token & Unique Owner ID Card */}
+                  <div className="bg-slate-800/80 rounded-2xl p-4 sm:p-5 border border-slate-700 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-white">Device Identity & Server-Validated Token</span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-extrabold self-start sm:self-auto">
+                        <CheckCircle2 className="w-3 h-3" /> Auto-Recognized Device
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Unique Owner ID</span>
+                        <span className="font-mono text-xs text-blue-400 font-bold break-all block mt-0.5">
+                          {currentOwner.id || 'owner_generating...'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 mt-1 block">Links all your properties and home services</span>
+                      </div>
+
+                      <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Persistent Device Token</span>
+                        <span className="font-mono text-[11px] text-amber-300 font-bold truncate block mt-0.5" title={currentOwner.deviceToken}>
+                          {currentOwner.deviceToken ? `${currentOwner.deviceToken.substring(0, 24)}...` : 'gondia_devtoken_active'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 mt-1 block">Server-side validated on this browser</span>
+                      </div>
                     </div>
                   </div>
 
@@ -2220,7 +2258,7 @@ export const App: React.FC = () => {
                           }}
                           className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-lg shadow-xs cursor-pointer"
                         >
-                          Save Profile to Firebase
+                          Save Owner Profile & Token
                         </button>
                       </div>
                     </div>

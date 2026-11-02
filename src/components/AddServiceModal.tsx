@@ -158,7 +158,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         setIsReapprovalSubmitted(false);
         setShowReapprovalPopup(false);
       } else {
-        const shouldAutoFill = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
+        const shouldAutoFill = Boolean(!isAdminAuthenticated && (currentOwner?.name || currentOwner?.phone));
         setCategory('MESS_TIFFIN');
         setTitle('');
         setProviderName(shouldAutoFill ? (currentOwner?.name || '') : '');
@@ -424,7 +424,8 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         timing: timing.trim(),
         experienceYears,
         status: isAdmin ? adminStatus : 'pending',
-        specialties: specs
+        specialties: specs,
+        ownerId: (authUser && !isAdmin) ? authUser.uid : (currentOwner?.id || undefined)
       };
 
       const result = await saveService(newService);
