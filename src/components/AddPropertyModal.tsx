@@ -148,6 +148,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
   const { isOwnerAuthenticated, isAdminAuthenticated, authUser, updateOwnerProfile, saveListingToken } = useApp();
+  const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
   const isOwnerWithProfile = Boolean(!isAdminAuthenticated && (currentOwner?.name || currentOwner?.phone));
 
   // Landlord Contact

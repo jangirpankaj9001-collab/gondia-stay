@@ -59,10 +59,13 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
     saveServiceToken,
     currentOwner,
     isAdminAuthenticated,
-    updateOwnerProfile
+    updateOwnerProfile,
+    authUser,
+    isOwnerAuthenticated
   } = useApp();
 
-  const isOwnerWithProfile = Boolean(!isAdminAuthenticated && currentOwner?.name && currentOwner?.phone);
+  const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
+  const isOwnerWithProfile = Boolean(!isAdminAuthenticated && (currentOwner?.name || currentOwner?.phone));
 
   const [category, setCategory] = useState<ServiceCategory>('MESS_TIFFIN');
   const [title, setTitle] = useState('');
