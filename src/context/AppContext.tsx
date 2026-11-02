@@ -317,15 +317,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('gondia_stay_device_owner_id', deviceOwnerId);
       }
 
-      const saved = localStorage.getItem('gondia_stay_current_owner');
+      const saved = localStorage.getItem('gondia_stay_current_owner') || localStorage.getItem('gondia_stay_persistent_owner');
       if (saved) {
         const parsed = JSON.parse(saved) as OwnerProfile;
         if (
-          parsed.email?.toLowerCase().includes('jangirpankaj') ||
           parsed.email?.toLowerCase() === 'rajesh.sharma@gondiastay.com' ||
           parsed.name === 'Rajesh Sharma'
         ) {
           localStorage.removeItem('gondia_stay_current_owner');
+          localStorage.removeItem('gondia_stay_persistent_owner');
           return {
             ...DEFAULT_OWNER_PROFILE,
             id: deviceOwnerId,
@@ -333,6 +333,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
         return {
+          ...DEFAULT_OWNER_PROFILE,
           ...parsed,
           id: parsed.id || deviceOwnerId,
           deviceToken: parsed.deviceToken || deviceToken
@@ -643,9 +644,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (user) {
         if (isAuthorizedEmail) {
-          // Admin account: clear any owner profile so admin info never auto-fills into owner fields
-          setCurrentOwner(DEFAULT_OWNER_PROFILE);
-          localStorage.removeItem('gondia_stay_current_owner');
+          // Admin account: preserve owner profile completely independent of admin session
+          setAdminUser(user);
+          setIsAdminAuthenticated(true);
         } else {
           // Logged-in Landlord / Owner:
           // Check for saved profile for this specific owner UID
@@ -659,23 +660,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (loadedProfile && loadedProfile.id === user.uid) {
             setCurrentOwner(loadedProfile);
             localStorage.setItem('gondia_stay_current_owner', JSON.stringify(loadedProfile));
+            localStorage.setItem('gondia_stay_persistent_owner', JSON.stringify(loadedProfile));
           } else {
-            // New owner with no saved details yet -> blank fields
+            // Check if there is an existing persistent device profile to associate with this UID
+            const existingSaved = localStorage.getItem('gondia_stay_current_owner') || localStorage.getItem('gondia_stay_persistent_owner');
+            let existingParsed: OwnerProfile | null = null;
+            if (existingSaved) {
+              try { existingParsed = JSON.parse(existingSaved); } catch {}
+            }
             const newOwner: OwnerProfile = {
               id: user.uid,
               email: user.email || '',
-              name: user.displayName || '',
-              phone: '',
-              whatsappNumber: ''
+              name: existingParsed?.name || user.displayName || '',
+              phone: existingParsed?.phone || '',
+              whatsappNumber: existingParsed?.whatsappNumber || ''
             };
             setCurrentOwner(newOwner);
             localStorage.setItem('gondia_stay_current_owner', JSON.stringify(newOwner));
+            localStorage.setItem('gondia_stay_persistent_owner', JSON.stringify(newOwner));
           }
         }
       } else {
         // Guest / zero-login owner: preserve persistent device owner profile across reloads
         try {
-          const saved = localStorage.getItem('gondia_stay_current_owner');
+          const saved = localStorage.getItem('gondia_stay_current_owner') || localStorage.getItem('gondia_stay_persistent_owner');
           if (saved) {
             const parsed = JSON.parse(saved) as OwnerProfile;
             if (parsed && (parsed.name || parsed.phone || parsed.id)) {
@@ -683,6 +691,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ...prev,
                 ...parsed
               }));
+              localStorage.setItem('gondia_stay_current_owner', JSON.stringify(parsed));
             }
           }
         } catch {}
@@ -842,7 +851,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [favorites]);
 
   useEffect(() => {
-    localStorage.setItem('gondia_stay_current_owner', JSON.stringify(currentOwner));
+    if (currentOwner.name || currentOwner.phone || currentOwner.whatsappNumber) {
+      localStorage.setItem('gondia_stay_current_owner', JSON.stringify(currentOwner));
+      localStorage.setItem('gondia_stay_persistent_owner', JSON.stringify(currentOwner));
+    }
   }, [currentOwner]);
 
   const toggleFavorite = (propertyId: string) => {
@@ -905,6 +917,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCurrentOwner(updated);
     localStorage.setItem('gondia_stay_current_owner', JSON.stringify(updated));
+    localStorage.setItem('gondia_stay_persistent_owner', JSON.stringify(updated));
     localStorage.setItem('gondia_stay_owner_device_token', deviceToken);
     localStorage.setItem('gondia_stay_device_owner_id', updated.id);
     if (updated.id) {
@@ -1683,8 +1696,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAdminAuthenticated(false);
     setAuthUser(null);
     setIsOwnerAuthenticated(false);
-    setCurrentOwner(DEFAULT_OWNER_PROFILE);
-    localStorage.removeItem('gondia_stay_current_owner');
+
+    // Restore persistent owner profile so saved details and greeting remain intact after admin sign-out
+    try {
+      const saved = localStorage.getItem('gondia_stay_current_owner') || localStorage.getItem('gondia_stay_persistent_owner');
+      if (saved) {
+        const parsed = JSON.parse(saved) as OwnerProfile;
+        if (parsed && (parsed.name || parsed.phone || parsed.id)) {
+          setCurrentOwner(prev => ({
+            ...prev,
+            ...parsed
+          }));
+          localStorage.setItem('gondia_stay_current_owner', JSON.stringify(parsed));
+          localStorage.setItem('gondia_stay_persistent_owner', JSON.stringify(parsed));
+        }
+      }
+    } catch {}
     showToast("Logged out of Admin Portal.");
   };
 

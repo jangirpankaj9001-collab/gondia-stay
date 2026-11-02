@@ -70,13 +70,23 @@ test('Owner Section -> My Dashboard: Persistent Profile, Device Token & Auto-Fil
       appContextContent.includes('gondia_stay_current_owner'),
       'Owner profile is stored in localStorage key gondia_stay_current_owner'
     );
-    // Crucial: Ensure onAuthStateChanged guest branch does NOT remove gondia_stay_current_owner
+    // Crucial: Ensure onAuthStateChanged guest branch and logoutAdmin do NOT remove gondia_stay_current_owner
     const authStateChangedMatch = appContextContent.match(/onAuthStateChanged\(auth,[\s\S]*?\}\s*else\s*\{([\s\S]*?)\}\s*\}\);/);
     assert.ok(authStateChangedMatch, 'Found onAuthStateChanged handler');
     const guestBranch = authStateChangedMatch[1];
     assert.ok(
       !guestBranch.includes('localStorage.removeItem(\'gondia_stay_current_owner\')'),
       'Unauthenticated guest branch must NOT delete gondia_stay_current_owner on refresh'
+    );
+    assert.ok(
+      appContextContent.includes('gondia_stay_persistent_owner'),
+      'Owner profile is backed up to persistent key gondia_stay_persistent_owner'
+    );
+    const logoutAdminMatch = appContextContent.match(/logoutAdmin\s*=\s*async\s*\(\)[\s\S]*?showToast/);
+    assert.ok(logoutAdminMatch, 'Found logoutAdmin handler');
+    assert.ok(
+      !logoutAdminMatch[0].includes('localStorage.removeItem(\'gondia_stay_current_owner\')'),
+      'logoutAdmin must NOT delete gondia_stay_current_owner on sign-out'
     );
   });
 
