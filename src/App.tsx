@@ -777,11 +777,10 @@ export const App: React.FC = () => {
     });
   }, [properties, activeTab, favorites, selectedLocality, selectedType, filterCriteria, searchQuery, sortOption]);
 
-  // Owner properties (can see their own listings regardless of status)
+  // Owner properties (strictly displays only listings belonging to this device/owner)
   const myProperties = useMemo(() => {
-    if (isAdminAuthenticated) return properties;
     return properties.filter(p => isPropertyOwner(p));
-  }, [properties, isAdminAuthenticated, isPropertyOwner]);
+  }, [properties, isPropertyOwner]);
 
   // Properties grouped for Admin Moderation Workflow
   const pendingProperties = useMemo(() => {

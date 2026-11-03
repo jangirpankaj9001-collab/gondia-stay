@@ -563,19 +563,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /**
    * Secure service ownership check:
-   * - Admin always has full access
    * - Verified service ID stored on this device
    * - Valid private edit token possessed by this device
    * - Logged-in Firebase account matching service.ownerId or service.ownerEmail
-   * - Verified custom owner profile matching service.ownerId (excluding public demo profile)
-   * Strictly prevents other owners from modifying or deleting someone else's service.
+   * - Verified custom owner profile matching service.ownerId
+   * Strictly prevents mixing listings between owners or devices.
    */
   const isServiceOwner = useCallback((service: ServiceItem): boolean => {
-    if (isAdminAuthenticated) return true;
     if (currentOwner.id && service.ownerId && service.ownerId === currentOwner.id) return true;
     if (myServiceTokens[service.id]) return true;
     if (myServiceIds.includes(service.id)) return true;
-    if (authUser && !isAdminAuthenticated) {
+    if (authUser) {
       if (service.ownerId && service.ownerId === authUser.uid) {
         return true;
       }
@@ -584,28 +582,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return false;
-  }, [isAdminAuthenticated, currentOwner.id, myServiceTokens, myServiceIds, authUser]);
+  }, [currentOwner.id, myServiceTokens, myServiceIds, authUser]);
 
   /**
    * Secure property ownership check:
-   * - Admin always has full access
    * - Verified custom owner profile matching property.ownerId
    * - Valid private edit token possessed by this device in myListingTokens
    * - Verified property ID registered by this device in myPropertyIds
    * - Logged-in Firebase account matching property.ownerId or property.ownerEmail
-   * Strictly prevents other owners from modifying or deleting someone else's property.
+   * Strictly prevents mixing listings between owners or devices.
    */
   const isPropertyOwner = useCallback((property: PropertyListing): boolean => {
-    if (isAdminAuthenticated) return true;
     if (currentOwner.id && property.ownerId && property.ownerId === currentOwner.id) return true;
     if (myListingTokens[property.id]) return true;
     if (myPropertyIds.includes(property.id)) return true;
-    if (authUser && !isAdminAuthenticated) {
+    if (authUser) {
       if (property.ownerId && property.ownerId === authUser.uid) return true;
       if (property.ownerEmail && authUser.email && property.ownerEmail.toLowerCase() === authUser.email.toLowerCase()) return true;
     }
     return false;
-  }, [isAdminAuthenticated, currentOwner.id, myListingTokens, myPropertyIds, authUser]);
+  }, [currentOwner.id, myListingTokens, myPropertyIds, authUser]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocality, setSelectedLocality] = useState('All');
