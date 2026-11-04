@@ -95,4 +95,29 @@ test('Submission Feedback & Duplicate Prevention for Properties & Services', asy
       'Popup displays relevant service summary details including title and provider contact'
     );
   });
+
+  await t.test('7. Confirmation popups use React createPortal for 100% viewport alignment on all devices', () => {
+    assert.ok(
+      addPropContent.includes('createPortal') &&
+      addPropContent.includes('createPortal(popupContent, document.body)'),
+      'AddPropertyModal renders popup using createPortal to document.body for cross-device alignment'
+    );
+    assert.ok(
+      addServiceContent.includes('createPortal') &&
+      addServiceContent.includes('createPortal(popupContent, document.body)'),
+      'AddServiceModal renders popup using createPortal to document.body for cross-device alignment'
+    );
+  });
+
+  await t.test('8. Clear confirmation popups distinguish new submissions vs edits', () => {
+    assert.ok(
+      addPropContent.includes('propertyToEdit ? \'Changes Submitted for Reapproval\' : \'Property Submitted Successfully!\''),
+      'AddPropertyModal popup title cleanly distinguishes new property submission from reapproval'
+    );
+    assert.ok(
+      addServiceContent.includes('serviceToEdit ? \'Changes Submitted for Reapproval\' : \'Service Submitted Successfully!\''),
+      'AddServiceModal popup title cleanly distinguishes new service submission from reapproval'
+    );
+  });
 });
+

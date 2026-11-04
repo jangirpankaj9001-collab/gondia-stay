@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Upload, 
@@ -525,7 +526,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           {submissionSuccess ? (
             /* Success confirmation view */
             (() => {
-              const isReapproval = isReapprovalSubmitted || Boolean(serviceToEdit && !isAdmin && isApproved(serviceToEdit.status));
+              const isReapproval = Boolean(serviceToEdit && !isAdmin && isApproved(serviceToEdit.status));
               return (
                 <div className="text-center py-6 sm:py-8 space-y-4">
                   <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
@@ -535,7 +536,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                   </div>
 
                   <div className="space-y-2 max-w-md mx-auto">
-                    {isReapproval && (
+                    {!isAdmin && (
                       <div className="flex justify-center">
                         <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
                           <Clock className="w-4 h-4 text-slate-950" />
@@ -562,13 +563,26 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                         </p>
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-600 leading-relaxed">
-                        {isAdmin ? (
-                          'Your service has been approved and is now live publicly for all visitors in Gondia.'
-                        ) : (
-                          'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          {isAdmin ? (
+                            'Your service has been approved and is now live publicly for all visitors in Gondia.'
+                          ) : (
+                            'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'
+                          )}
+                        </p>
+                        {!isAdmin && (
+                          <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
+                            <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                              <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                              <span>Changes will become public only after admin approval</span>
+                            </p>
+                            <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                              All newly submitted services are received with status Pending. They remain hidden from public users until an administrator reviews and approves them.
+                            </p>
+                          </div>
                         )}
-                      </p>
+                      </div>
                     )}
                   </div>
 
@@ -579,7 +593,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                         <p className="text-slate-600">{currentCategoryMeta.label} • {providerName}</p>
                         <p className="text-blue-600 font-semibold">{phone}</p>
                       </div>
-                      {isReapproval && (
+                      {!isAdmin && (
                         <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
                           <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
                         </span>
@@ -1156,94 +1170,101 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         </div>
       </div>
 
-      {/* Dedicated Reapproval & Admin Approval Confirmation Popup Modal */}
-      {showReapprovalPopup && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
-            <button
-              type="button"
-              onClick={() => {
-                setShowReapprovalPopup(false);
-                onClose();
-              }}
-              className="absolute top-3.5 right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs ring-4 ring-amber-50">
-              <Clock className="w-7 h-7" />
-            </div>
+      {/* Dedicated Confirmation Popup Modal for Admin Approval & Reapproval (Rendered via Portal for 100% viewport alignment on all devices) */}
+      {(() => {
+        if (!showReapprovalPopup) return null;
+        const popupContent = (
+          <div 
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReapprovalPopup(false);
+                  onClose();
+                }}
+                className="absolute top-3.5 right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
+                serviceToEdit ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
+              }`}>
+                {serviceToEdit ? <Clock className="w-8 h-8" /> : <CheckCircle2 className="w-8 h-8" />}
+              </div>
 
-            <div className="flex justify-center">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
-                <Clock className="w-4 h-4 text-slate-950" />
-                <span>Pending Approval</span>
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-black text-slate-900">
-                {serviceToEdit ? 'Changes Submitted for Reapproval' : 'Service Submitted Successfully!'}
-              </h3>
-              <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                {serviceToEdit
-                  ? 'Your service has been submitted for reapproval. Updated details will appear publicly once approved by the admin.'
-                  : 'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'}
-              </p>
-            </div>
-
-            <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
-              <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
-                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Changes will become public only after admin approval</span>
-              </p>
-              <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                {serviceToEdit
-                  ? 'Your live service listing remains active and visible to customers across Gondia. All proposed edits are kept strictly private and hidden from public users until an administrator reviews and approves them.'
-                  : 'All newly submitted services are received with status Pending. They remain hidden from public users until an administrator reviews and approves them.'}
-              </p>
-            </div>
-
-            {/* Relevant service summary information card */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="font-bold text-slate-900 text-sm">{title}</p>
-                  <p className="text-slate-600">{currentCategoryMeta.label} • {providerName}</p>
-                  <p className="text-blue-600 font-extrabold text-xs">{charges} • Tel: {phone}</p>
-                  <p className="text-slate-500 text-[11px] mt-0.5">Locality: {locality}, Gondia</p>
-                </div>
-                <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
-                  <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+              <div className="flex justify-center">
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
+                  <Clock className="w-4 h-4 text-slate-950" />
+                  <span>Pending Approval</span>
                 </span>
               </div>
 
-              <div className="pt-2 border-t border-slate-200">
-                <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/60">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.</span>
+              <div className="space-y-1.5">
+                <h3 className="text-xl font-black text-slate-900">
+                  {serviceToEdit ? 'Changes Submitted for Reapproval' : 'Service Submitted Successfully!'}
+                </h3>
+                <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                  {serviceToEdit
+                    ? 'Your service has been submitted for reapproval. Updated details will appear publicly once approved by the admin.'
+                    : 'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'}
                 </p>
               </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setShowReapprovalPopup(false);
-                onClose();
-              }}
-              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
-            >
-              Close & View Services
-            </button>
+              <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
+                <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>Changes will become public only after admin approval</span>
+                </p>
+                <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                  {serviceToEdit
+                    ? 'Your live service listing remains active and visible to customers across Gondia. All proposed edits are kept strictly private and hidden from public users until an administrator reviews and approves them.'
+                    : 'All newly submitted services are received with status Pending. They remain hidden from public users until an administrator reviews and approves them.'}
+                </p>
+              </div>
+
+              {/* Relevant service summary information card */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">{title}</p>
+                    <p className="text-slate-600">{currentCategoryMeta.label} • {providerName}</p>
+                    <p className="text-blue-600 font-extrabold text-xs">{charges} • Tel: {phone}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">Locality: {locality}, Gondia</p>
+                  </div>
+                  <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                    <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/60">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.</span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReapprovalPopup(false);
+                  onClose();
+                }}
+                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm min-h-[48px] flex items-center justify-center active:scale-95"
+              >
+                Close & View Services
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+
+        return typeof document !== 'undefined' ? createPortal(popupContent, document.body) : popupContent;
+      })()}
 
       {/* Enlarged Photo Preview Lightbox */}
       {previewModalPhoto && (
