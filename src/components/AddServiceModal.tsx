@@ -266,6 +266,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isReapprovalSubmitted) {
+      return;
+    }
     setFormError(null);
 
     // Validations
@@ -302,7 +305,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       return;
     }
 
-    if (serviceToEdit && !isAdmin) {
+    if (!isAdmin) {
       setIsReapprovalSubmitted(true);
     }
     setIsSubmitting(true);
@@ -443,7 +446,12 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ownerId: result.ownerId,
           editToken: result.editToken
         });
-        setSubmissionSuccess(true);
+        if (!isAdmin) {
+          setIsReapprovalSubmitted(true);
+          setShowReapprovalPopup(true);
+        } else {
+          setSubmissionSuccess(true);
+        }
         if (onServiceAdded) {
           onServiceAdded({
             ...newService,
@@ -468,7 +476,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
     } catch (err: any) {
       console.error('[GondiaStay] Service submission error:', err);
       setFormError(err?.message || 'An unexpected error occurred during submission.');
-      if (serviceToEdit && !isAdmin) {
+      if (!isAdmin) {
         setIsReapprovalSubmitted(false);
       }
     } finally {
@@ -1124,32 +1132,23 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
                   type="submit"
                   disabled={isSubmitting || isUploadingPhoto || isReapprovalSubmitted}
                   className={`px-6 py-2.5 text-xs font-extrabold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-1.5 cursor-pointer ${
-                    serviceToEdit && !isAdmin
-                      ? isReapprovalSubmitted
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
+                    isReapprovalSubmitted
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
                 >
-                  {serviceToEdit && !isAdmin ? (
-                    isReapprovalSubmitted ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
-                        <span>Submitted</span>
-                      </>
-                    ) : isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-current" />
-                        <span>Saving Service...</span>
-                      </>
-                    ) : (
-                      <span>Submit for Reapproval</span>
-                    )
+                  {isReapprovalSubmitted ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                      <span>Submitted</span>
+                    </>
                   ) : isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-current" />
                       <span>Saving Service...</span>
                     </>
+                  ) : serviceToEdit && !isAdmin ? (
+                    <span>Submit for Reapproval</span>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-white" />
@@ -1168,14 +1167,14 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         </div>
       </div>
 
-      {/* Dedicated Reapproval Confirmation Popup Modal */}
+      {/* Dedicated Reapproval & Admin Approval Confirmation Popup Modal */}
       {showReapprovalPopup && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
           role="dialog"
           aria-modal="true"
         >
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 text-center space-y-4 animate-in zoom-in-95">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => {
@@ -1187,15 +1186,62 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
             >
               <X className="w-4 h-4" />
             </button>
-            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-              <Clock className="w-6 h-6" />
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs ring-4 ring-amber-50">
+              <Clock className="w-7 h-7" />
             </div>
-            <h3 className="text-base font-extrabold text-slate-900">
-              Changes Submitted for Reapproval
-            </h3>
-            <p className="text-xs text-slate-700 leading-relaxed font-medium">
-              Your service has been submitted for reapproval. Updated details will appear publicly once approved by the admin.
-            </p>
+
+            <div className="flex justify-center">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
+                <Clock className="w-4 h-4 text-slate-950" />
+                <span>Pending Approval</span>
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-black text-slate-900">
+                {serviceToEdit ? 'Changes Submitted for Reapproval' : 'Service Submitted Successfully!'}
+              </h3>
+              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                {serviceToEdit
+                  ? 'Your service has been submitted for reapproval. Updated details will appear publicly once approved by the admin.'
+                  : 'Your service listing has been received with status Pending. It will appear publicly on GondiaStay as soon as verified by our administrator.'}
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
+              <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Changes will become public only after admin approval</span>
+              </p>
+              <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                {serviceToEdit
+                  ? 'Your live service listing remains active and visible to customers across Gondia. All proposed edits are kept strictly private and hidden from public users until an administrator reviews and approves them.'
+                  : 'All newly submitted services are received with status Pending. They remain hidden from public users until an administrator reviews and approves them.'}
+              </p>
+            </div>
+
+            {/* Relevant service summary information card */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-bold text-slate-900 text-sm">{title}</p>
+                  <p className="text-slate-600">{currentCategoryMeta.label} • {providerName}</p>
+                  <p className="text-blue-600 font-extrabold text-xs">{charges} • Tel: {phone}</p>
+                  <p className="text-slate-500 text-[11px] mt-0.5">Locality: {locality}, Gondia</p>
+                </div>
+                <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                  <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200">
+                <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/60">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.</span>
+                </p>
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={() => {
@@ -1204,7 +1250,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
               }}
               className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
             >
-              Got it, Close
+              Close & View Services
             </button>
           </div>
         </div>
