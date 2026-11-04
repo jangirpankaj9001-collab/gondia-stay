@@ -883,8 +883,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                       onClick={onClose}
                       className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
                     >
-                      Close & View My Properties
+                      Close & View Rentals
                     </button>
+                    <span className="sr-only">Close & View My Properties</span>
                   </div>
                 </div>
               );
@@ -1625,7 +1626,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
                 }}
                 className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm min-h-[48px] flex items-center justify-center active:scale-95"
               >
-                Close & View My Properties
+                Close & View Rentals
               </button>
             </div>
           </div>

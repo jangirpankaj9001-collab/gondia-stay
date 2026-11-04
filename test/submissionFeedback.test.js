@@ -119,5 +119,18 @@ test('Submission Feedback & Duplicate Prevention for Properties & Services', asy
       'AddServiceModal popup title cleanly distinguishes new service submission from reapproval'
     );
   });
+
+  await t.test('9. Property Modal has "Close & View Rentals" button with matching popup design', () => {
+    assert.ok(
+      addPropContent.includes('Close & View Rentals'),
+      'AddPropertyModal includes "Close & View Rentals" button'
+    );
+    assert.ok(
+      addPropContent.includes('Property Submitted Successfully!') &&
+      addPropContent.includes('Pending Approval') &&
+      addPropContent.includes('Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.'),
+      'AddPropertyModal matches Service Submitted Successfully layout with owner account linking and Edit/Delete controls'
+    );
+  });
 });
 
