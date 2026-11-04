@@ -490,9 +490,6 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       return;
     }
 
-    if (!isAdmin) {
-      setIsReapprovalSubmitted(true);
-    }
     setIsSubmitting(true);
 
     try {
@@ -647,15 +644,11 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
             console.warn('Failed to update owner profile:', e);
           }
         }
-        if (propertyToEdit && !isAdmin) {
-          setIsReapprovalSubmitted(true);
-          setShowReapprovalPopup(true);
-          return;
-        } else {
-          setIsSuccess(true);
-          if (onSuccessToast) {
-            onSuccessToast('Listing updated successfully!');
-          }
+        setIsReapprovalSubmitted(true);
+        setShowReapprovalPopup(true);
+        setIsSuccess(true);
+        if (onSuccessToast) {
+          onSuccessToast(propertyToEdit && !isAdmin ? 'Listing updated & submitted for reapproval!' : 'Listing updated successfully!');
         }
       } else {
         // Create new property listing linked to persistent Owner ID
@@ -720,12 +713,9 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerName: newProp.ownerName || '',
           ownerPhone: newProp.ownerPhone || ''
         });
-        if (!isAdmin) {
-          setIsReapprovalSubmitted(true);
-          setShowReapprovalPopup(true);
-        } else {
-          setIsSuccess(true);
-        }
+        setIsReapprovalSubmitted(true);
+        setShowReapprovalPopup(true);
+        setIsSuccess(true);
         if (onSuccessToast) onSuccessToast('Property listing submitted for admin approval!');
         if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
           try {
@@ -742,9 +732,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     } catch (err: any) {
       console.error('Failed to save property listing:', err);
       setFormError(err.message || 'Failed to save property. Please check your internet connection.');
-      if (!isAdmin) {
-        setIsReapprovalSubmitted(false);
-      }
+      setIsReapprovalSubmitted(false);
+      setShowReapprovalPopup(false);
     } finally {
       setIsSubmitting(false);
       setIsUploadingPhotos(false);
@@ -1534,11 +1523,11 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
       {/* Dedicated Confirmation Popup Modal for Admin Approval & Reapproval */}
       {showReapprovalPopup && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
           role="dialog"
           aria-modal="true"
         >
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
             <button
               type="button"
               onClick={() => {

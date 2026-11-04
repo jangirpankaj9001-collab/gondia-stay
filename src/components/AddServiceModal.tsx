@@ -305,9 +305,6 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       return;
     }
 
-    if (!isAdmin) {
-      setIsReapprovalSubmitted(true);
-    }
     setIsSubmitting(true);
 
     try {
@@ -393,14 +390,10 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
               console.warn('Failed to update owner profile:', e);
             }
           }
-          if (serviceToEdit && !isAdmin) {
-            setIsReapprovalSubmitted(true);
-            setShowReapprovalPopup(true);
-            return;
-          } else {
-            onClose();
-            return;
-          }
+          setIsReapprovalSubmitted(true);
+          setShowReapprovalPopup(true);
+          setSubmissionSuccess(true);
+          return;
         } else {
           setFormError(result.error || 'Failed to update service in Firestore.');
           return;
@@ -446,12 +439,9 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
           ownerId: result.ownerId,
           editToken: result.editToken
         });
-        if (!isAdmin) {
-          setIsReapprovalSubmitted(true);
-          setShowReapprovalPopup(true);
-        } else {
-          setSubmissionSuccess(true);
-        }
+        setIsReapprovalSubmitted(true);
+        setShowReapprovalPopup(true);
+        setSubmissionSuccess(true);
         if (onServiceAdded) {
           onServiceAdded({
             ...newService,
@@ -476,9 +466,8 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
     } catch (err: any) {
       console.error('[GondiaStay] Service submission error:', err);
       setFormError(err?.message || 'An unexpected error occurred during submission.');
-      if (!isAdmin) {
-        setIsReapprovalSubmitted(false);
-      }
+      setIsReapprovalSubmitted(false);
+      setShowReapprovalPopup(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -1170,11 +1159,11 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
       {/* Dedicated Reapproval & Admin Approval Confirmation Popup Modal */}
       {showReapprovalPopup && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
           role="dialog"
           aria-modal="true"
         >
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
             <button
               type="button"
               onClick={() => {
