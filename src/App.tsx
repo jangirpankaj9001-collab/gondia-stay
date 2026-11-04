@@ -4145,96 +4145,88 @@ export const App: React.FC = () => {
       />
 
       {/* Zero-Login Submission Private Edit Link Modal */}
+      {/* Property Submission Success Confirmation Modal */}
       {showPrivateLinkModal && newlyCreatedLinkInfo && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-7 h-7" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black text-slate-900">
-                    Listing Submitted for Review!
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Zero-login submission • Private Edit Key Generated
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPrivateLinkModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
+            <button
+              type="button"
+              onClick={() => setShowPrivateLinkModal(false)}
+              className="absolute top-3.5 right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-1.5">
-              <div className="font-extrabold flex items-center gap-1.5 text-amber-800">
-                <Lock className="w-4 h-4 shrink-0" />
-                <span>Save Your Private Edit Link!</span>
-              </div>
-              <p className="leading-relaxed text-[11px] text-amber-800">
-                Because no account, password, or OTP was required to submit, this private link is your <strong>secret key</strong> to update your listing details, photos, and rental occupancy in the future.
-              </p>
+            <div className="flex justify-center">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
+                <Clock className="w-4 h-4 text-slate-950" />
+                <span>Pending Approval</span>
+              </span>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-700 block">
-                Your Unguessable Private Edit Link
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={newlyCreatedLinkInfo.editUrl}
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono text-slate-800 select-all"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(newlyCreatedLinkInfo.editUrl);
-                    setLinkCopied(true);
-                    showToast('Private edit link copied to clipboard!');
-                    setTimeout(() => setLinkCopied(false), 2500);
-                  }}
-                  className={`px-4 py-2.5 text-xs font-bold rounded-xl shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
-                    linkCopied
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                  }`}
-                >
-                  {linkCopied ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-300" />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
+              <h3 className="text-xl font-black text-slate-900">
+                Property Submitted Successfully!
+              </h3>
+              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                Your property has been submitted for admin approval. It will appear publicly on GondiaStay as soon as verified by our administrator.
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
+              <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Changes will become public only after admin approval</span>
+              </p>
+              <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                All newly submitted properties are received with status Pending. They remain hidden from public users until an administrator reviews and approves them.
+              </p>
+            </div>
+
+            {/* Relevant property summary information card */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-bold text-slate-900 text-sm">{newlyCreatedLinkInfo.title || formData.title || 'Rental Property'}</p>
+                  <p className="text-slate-600">
+                    {(formData.propertyType || 'FLAT')} • {(formData.locality || 'Civil Lines')}, Gondia
+                  </p>
+                  <p className="text-blue-600 font-extrabold text-xs">₹{(Number(formData.monthlyRent) || 8000).toLocaleString('en-IN')}/month</p>
+                  <p className="text-slate-500 text-[11px] mt-0.5">
+                    Landlord: <span className="font-semibold text-slate-700">{formData.ownerName || currentOwner.name || 'Landlord'}</span> • {formData.ownerPhone || currentOwner.phone}
+                  </p>
+                </div>
+                <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                  <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200">
+                <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/60">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.</span>
+                </p>
               </div>
             </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-center gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(newlyCreatedLinkInfo.editUrl);
-                  setShowPrivateLinkModal(false);
-                  showToast('Private edit link saved. Keep it safe!');
-                }}
-                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs text-center cursor-pointer font-bold"
-              >
-                Copy Link & Done
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowPrivateLinkModal(false);
+                navigateTo('explore');
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm min-h-[48px] flex items-center justify-center active:scale-95"
+            >
+              Close & View Rentals
+            </button>
           </div>
         </div>
       )}

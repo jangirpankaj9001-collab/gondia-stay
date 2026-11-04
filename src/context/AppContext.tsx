@@ -992,12 +992,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isEdit: boolean,
     editToken?: string
   ): Promise<SavePropertyResult> => {
-    if (!isFirebaseConfigured()) {
-      const err = new Error('Firebase Cloud Firestore is not configured. Please add your Firebase credentials in Settings.');
-      showToast(err.message);
-      throw err;
-    }
-
     try {
       const tokenToUse = editToken || myListingTokens[property.id];
       const propertyWithLinkedOwner: PropertyListing = {

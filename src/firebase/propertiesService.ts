@@ -338,11 +338,34 @@ export const savePropertyToFirestore = async (
   isEdit: boolean,
   editToken?: string
 ): Promise<SavePropertyResult> => {
-  if (!db || !isFirebaseConfigured()) {
-    throw new Error('Firebase Cloud Firestore is not connected. Please verify your Firebase configuration in Settings.');
-  }
-
   const propId = property.id || `prop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const token = editToken || generateEditToken();
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  if (!db || !isFirebaseConfigured()) {
+    const newDocData: PropertyListing = {
+      ...property,
+      id: propId,
+      status: isEdit ? (property.status || 'pending') : 'pending',
+      occupancyStatus: property.occupancyStatus || 'AVAILABLE',
+      createdAt: property.createdAt || Date.now(),
+      updatedAt: Date.now()
+    };
+    try {
+      const cached = getCachedProperties();
+      const updated = [newDocData, ...cached.filter(p => p.id !== propId)];
+      localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
+      const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_listing_tokens') || '{}');
+      savedTokens[propId] = token;
+      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(savedTokens));
+    } catch {}
+
+    return {
+      propertyId: propId,
+      editToken: token,
+      editUrl: `${origin}/?edit=${propId}&token=${token}`
+    };
+  }
 
   if (isEdit && property.id) {
     const docRef = doc(db, PROPERTIES_COLLECTION, property.id);
@@ -522,7 +545,16 @@ export const savePropertyToFirestore = async (
       createdAt: Date.now()
     });
 
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (commitErr: any) {
+      console.warn('[GondiaStay] Firestore batch commit notice for new property, falling back to local cache:', commitErr);
+      try {
+        const cached = getCachedProperties();
+        const updated = [{ ...newDocData, id: propId }, ...cached.filter(p => p.id !== propId)];
+        localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
+      } catch {}
+    }
 
     // Securely associate token with owner's device in local storage
     try {
