@@ -404,6 +404,8 @@ export const saveServiceToFirestore = async (
     batch.set(tokenRef, {
       serviceId,
       ownerId,
+      status: 'pending',
+      serviceData: clientCachedData,
       createdAt: Date.now()
     });
 
@@ -590,6 +592,7 @@ export const updateServiceInFirestore = async (
       batch.set(tokenRef, {
         serviceId,
         serviceData: finalPayload,
+        status: isCurrentlyApproved ? 'approved' : 'pending',
         lastActionAt: Date.now(),
         updatedAt: Date.now()
       }, { merge: true });
@@ -734,6 +737,44 @@ export const moderateServiceInFirestore = async (
       moderatedBy: adminEmail || 'admin',
       updatedAt: Date.now()
     }, { merge: true });
+
+    // Sync status to service_edit_tokens so the owner's device immediately receives the update
+    try {
+      let tokenFound = false;
+      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+      const secretSnap = await getDoc(secretRef);
+      if (secretSnap.exists()) {
+        const token = secretSnap.data()?.editToken;
+        if (token) {
+          tokenFound = true;
+          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, token);
+          await setDoc(tokenRef, {
+            status: newStatus,
+            'serviceData.status': newStatus,
+            moderatedAt: Date.now(),
+            moderatedBy: adminEmail || 'admin',
+            updatedAt: Date.now()
+          }, { merge: true });
+        }
+      }
+
+      if (!tokenFound) {
+        const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
+        const qSnap = await getDocs(q);
+        for (const tDoc of qSnap.docs) {
+          await setDoc(tDoc.ref, {
+            status: newStatus,
+            'serviceData.status': newStatus,
+            moderatedAt: Date.now(),
+            moderatedBy: adminEmail || 'admin',
+            updatedAt: Date.now()
+          }, { merge: true });
+        }
+      }
+    } catch (tokenErr) {
+      console.warn('[GondiaStay] Error syncing moderation status to service token:', tokenErr);
+    }
+
     return true;
   } catch (err) {
     console.error('[GondiaStay] Error moderating service in Firestore:', err);
@@ -805,7 +846,94 @@ export const deleteServiceInFirestore = async (
   ownerId?: string,
   isAdminCaller: boolean = false
 ): Promise<boolean> => {
-  // Update local cache and deleted tracking
+  const isRealAdmin = Boolean(
+    isAdminCaller || 
+    (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
+  );
+
+  // If caller is admin: mark status as 'deleted_by_admin' in Firestore and token document so it syncs to owner device
+  if (isRealAdmin) {
+    const adminEmail = auth?.currentUser?.email || 'admin';
+    try {
+      const cached = getCachedServices();
+      const updated = cached.map(s => s.id === serviceId ? {
+        ...s,
+        status: 'deleted_by_admin' as any,
+        deletedAt: Date.now(),
+        deletedBy: adminEmail,
+        updatedAt: Date.now()
+      } : s);
+      localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
+    } catch {}
+
+    if (!db || !isFirebaseConfigured()) {
+      return true;
+    }
+
+    try {
+      const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
+      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+
+      await setDoc(srvRef, {
+        status: 'deleted_by_admin',
+        deletedAt: Date.now(),
+        deletedBy: adminEmail,
+        moderatedAt: Date.now(),
+        moderatedBy: adminEmail,
+        updatedAt: Date.now()
+      }, { merge: true });
+
+      let tokenToUpdate = token?.trim();
+      if (!tokenToUpdate) {
+        try {
+          const secretSnap = await getDoc(secretRef);
+          if (secretSnap.exists()) {
+            tokenToUpdate = secretSnap.data()?.editToken;
+          }
+        } catch {}
+      }
+
+      if (tokenToUpdate) {
+        try {
+          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tokenToUpdate);
+          await setDoc(tokenRef, {
+            status: 'deleted_by_admin',
+            'serviceData.status': 'deleted_by_admin',
+            deletedAt: Date.now(),
+            deletedBy: adminEmail,
+            moderatedAt: Date.now(),
+            moderatedBy: adminEmail,
+            updatedAt: Date.now()
+          }, { merge: true });
+        } catch (err) {
+          console.warn('[GondiaStay] Error syncing deleted_by_admin status to service token:', err);
+        }
+      } else {
+        try {
+          const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
+          const qSnap = await getDocs(q);
+          for (const tDoc of qSnap.docs) {
+            await setDoc(tDoc.ref, {
+              status: 'deleted_by_admin',
+              'serviceData.status': 'deleted_by_admin',
+              deletedAt: Date.now(),
+              deletedBy: adminEmail,
+              moderatedAt: Date.now(),
+              moderatedBy: adminEmail,
+              updatedAt: Date.now()
+            }, { merge: true });
+          }
+        } catch {}
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[GondiaStay] Error setting deleted_by_admin for service in Firestore:', err);
+      return false;
+    }
+  }
+
+  // Owner deletion: update local cache and deleted tracking
   try {
     const rawDeleted = localStorage.getItem(DELETED_SERVICES_KEY);
     const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
@@ -855,36 +983,6 @@ export const deleteServiceInFirestore = async (
   try {
     const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
     const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
-
-    const isRealAdmin = Boolean(
-      isAdminCaller || 
-      (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
-    );
-
-    // If caller is admin: look up secret token first so the edit token document is also wiped permanently
-    if (isRealAdmin) {
-      let tokenToDelete = token?.trim();
-      if (!tokenToDelete) {
-        try {
-          const secretSnap = await getDoc(secretRef);
-          if (secretSnap.exists()) {
-            tokenToDelete = secretSnap.data()?.editToken;
-          }
-        } catch {}
-      }
-
-      await deleteDoc(srvRef);
-      try {
-        await deleteDoc(secretRef);
-      } catch {}
-      if (tokenToDelete) {
-        try {
-          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tokenToDelete);
-          await deleteDoc(tokenRef);
-        } catch {}
-      }
-      return true;
-    }
 
     // Owner deletion using private Edit Token:
     // Uses an atomic writeBatch to delete the public service, delete the token doc, and delete the secret doc
@@ -961,24 +1059,103 @@ export const fetchServiceByEditToken = async (
       return { service: null, serviceId: null };
     }
 
-    // Always fetch the service document to verify it still exists!
-    const srvRef = doc(db, SERVICES_COLLECTION, resolvedServiceId);
-    const srvSnap = await getDoc(srvRef);
-    if (!srvSnap.exists()) {
-      // Main service doc does not exist: the service was permanently deleted!
-      try {
-        await deleteDoc(tokenRef);
-      } catch {}
-      return { service: null, serviceId: null };
+    // Verify the service document in services collection
+    let srvData: any = null;
+    try {
+      const srvRef = doc(db, SERVICES_COLLECTION, resolvedServiceId);
+      const srvSnap = await getDoc(srvRef);
+      if (!srvSnap.exists()) {
+        // Main service doc does not exist: the service was permanently deleted!
+        try {
+          await deleteDoc(tokenRef);
+        } catch {}
+        return { service: null, serviceId: null };
+      }
+      srvData = srvSnap.data();
+    } catch (permErr) {
+      // If permission error (e.g. zero-login owner loading their rejected/pending service),
+      // fallback to token document data which the token holder has permission to read
+      if (tokenSnap.exists()) {
+        const tData = tokenSnap.data();
+        srvData = {
+          ...(tData.serviceData || {}),
+          status: tData.status || tData.serviceData?.status || 'pending'
+        };
+      } else {
+        return { service: null, serviceId: null };
+      }
     }
 
     return {
-      service: { id: srvSnap.id, ...srvSnap.data() } as ServiceItem,
+      service: { id: resolvedServiceId, ...srvData } as ServiceItem,
       serviceId: resolvedServiceId
     };
   } catch (err) {
     console.warn('[GondiaStay] Error fetching service by edit token:', err);
     return { service: null, serviceId: null };
   }
+};
+
+/**
+ * Real-time listener for owner's services moderation status (approved, pending, or rejected).
+ * Syncs rejection and approval immediately to the owner's device via unguessable edit tokens
+ * and authenticated owner service documents.
+ */
+export const subscribeToOwnerServicesStatus = (
+  tokenMap: Record<string, string>,
+  onStatusUpdate: (serviceId: string, status: 'approved' | 'pending' | 'rejected' | 'deleted_by_admin' | 'deleted') => void,
+  serviceIds?: string[]
+): Unsubscribe => {
+  if (!db || !isFirebaseConfigured()) return () => {};
+  const unsubs: Unsubscribe[] = [];
+
+  // 1. Subscribe to status on private edit tokens (works on any device, unauthenticated or authenticated)
+  Object.entries(tokenMap).forEach(([serviceId, token]) => {
+    if (!token || typeof token !== 'string') return;
+    try {
+      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, token.trim());
+      const unsub = onSnapshot(tokenRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const rawStatus = (data?.status || data?.serviceData?.status || '').toLowerCase();
+          if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
+            onStatusUpdate(serviceId, rawStatus as any);
+          }
+        }
+      }, (err) => {
+        console.warn(`[GondiaStay] Service token status sync notice (${serviceId}):`, err);
+      });
+      unsubs.push(unsub);
+    } catch (e) {
+      console.warn(`[GondiaStay] Failed to subscribe to service token (${serviceId}):`, e);
+    }
+  });
+
+  // 2. If authenticated, also subscribe directly to service documents where owner has read access
+  if (auth?.currentUser && Array.isArray(serviceIds)) {
+    serviceIds.forEach((srvId) => {
+      if (!srvId || tokenMap[srvId]) return;
+      try {
+        const srvRef = doc(db, SERVICES_COLLECTION, srvId);
+        const unsub = onSnapshot(srvRef, (snap) => {
+          if (snap.exists()) {
+            const rawStatus = (snap.data()?.status || '').toLowerCase();
+            if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
+              onStatusUpdate(srvId, rawStatus as any);
+            }
+          }
+        }, () => {
+          // Gracefully handle rule checks
+        });
+        unsubs.push(unsub);
+      } catch {}
+    });
+  }
+
+  return () => {
+    unsubs.forEach(u => {
+      try { u(); } catch {}
+    });
+  };
 };
 

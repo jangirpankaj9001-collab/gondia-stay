@@ -24,6 +24,7 @@ import {
 } from '../firebase/config';
 import { 
   subscribeToFirestoreProperties, 
+  subscribeToOwnerPropertiesStatus,
   savePropertyToFirestore, 
   moderatePropertyInFirestore, 
   moderatePropertyEditInFirestore,
@@ -40,6 +41,7 @@ import {
 } from '../firebase/propertiesService';
 import {
   subscribeToFirestoreServices,
+  subscribeToOwnerServicesStatus,
   saveServiceToFirestore,
   updateServiceInFirestore,
   moderateServiceInFirestore,
@@ -179,10 +181,10 @@ export const saveSubmittedProperty = (property: PropertyListing) => {
   }
 };
 
-export const updateSubmittedPropertyStatus = (propertyId: string, newStatus: 'approved' | 'pending' | 'rejected') => {
+export const updateSubmittedPropertyStatus = (propertyId: string, newStatus: 'approved' | 'pending' | 'rejected' | 'deleted_by_admin' | 'deleted') => {
   try {
     const existing = getSubmittedProperties();
-    const updated = existing.map(p => p.id === propertyId ? { ...p, status: newStatus } : p);
+    const updated = existing.map(p => p.id === propertyId ? { ...p, status: newStatus as any } : p);
     localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updated));
   } catch {
     // Ignore
@@ -219,10 +221,10 @@ export const saveSubmittedService = (service: ServiceItem) => {
   }
 };
 
-export const updateSubmittedServiceStatus = (serviceId: string, newStatus: 'approved' | 'pending' | 'rejected') => {
+export const updateSubmittedServiceStatus = (serviceId: string, newStatus: 'approved' | 'pending' | 'rejected' | 'deleted_by_admin' | 'deleted') => {
   try {
     const existing = getSubmittedServices();
-    const updated = existing.map(s => s.id === serviceId ? { ...s, status: newStatus } : s);
+    const updated = existing.map(s => s.id === serviceId ? { ...s, status: newStatus as any } : s);
     localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updated));
   } catch {
     // Ignore
@@ -838,6 +840,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [isAdminAuthenticated]);
 
+  // Real-time synchronization of owner's properties moderation status (approved, pending, or rejected)
+  // Ensures rejected properties immediately sync in real-time to the owner's device
+  useEffect(() => {
+    if (!isFirebaseConfigured() || isAdminAuthenticated) return;
+
+    const unsubscribe = subscribeToOwnerPropertiesStatus(
+      myListingTokens,
+      (propertyId, newStatus) => {
+        updateSubmittedPropertyStatus(propertyId, newStatus);
+        setProperties(prev => prev.map(p => {
+          if (p.id === propertyId) {
+            return { ...p, status: newStatus };
+          }
+          return p;
+        }));
+      },
+      myPropertyIds
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [myListingTokens, myPropertyIds, isAdminAuthenticated]);
+
+  // Real-time synchronization of owner's services moderation status (approved, pending, or rejected)
+  // Ensures rejected services immediately sync in real-time to the owner's device
+  useEffect(() => {
+    if (!isFirebaseConfigured() || isAdminAuthenticated) return;
+
+    const unsubscribe = subscribeToOwnerServicesStatus(
+      myServiceTokens,
+      (serviceId, newStatus) => {
+        updateSubmittedServiceStatus(serviceId, newStatus);
+        setServices(prev => prev.map(s => {
+          if (s.id === serviceId) {
+            return { ...s, status: newStatus };
+          }
+          return s;
+        }));
+      },
+      myServiceIds
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [myServiceTokens, myServiceIds, isAdminAuthenticated]);
+
   useEffect(() => {
     localStorage.setItem('gondia_stay_tiffins', JSON.stringify(tiffinServices));
   }, [tiffinServices]);
@@ -1097,18 +1147,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const token = myListingTokens[propertyId];
     const propertyCopy: PropertyListing = { ...targetProp };
 
-    // Permanently remove from Firestore and local cache before updating UI
+    // If caller is Admin: permanently mark as Deleted by Admin in Firestore and sync to all devices
+    if (isAdminAuthenticated) {
+      if (isFirebaseConfigured()) {
+        try {
+          await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, true);
+        } catch (err: any) {
+          console.error('Failed to permanently delete property from Firestore:', err);
+          showToast('Failed to delete property: ' + (err.message || 'Please check connection'));
+          return;
+        }
+      } else {
+        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, true);
+      }
+
+      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, status: 'deleted_by_admin' as any } : p));
+      updateSubmittedPropertyStatus(propertyId, 'deleted_by_admin');
+      if (selectedProperty?.id === propertyId) {
+        setSelectedProperty(null);
+        setActiveTab('explore');
+      }
+      showToast("Listing permanently marked as Deleted by Admin and removed from public listings.");
+      return;
+    }
+
+    // Owner deletion: remove from Firestore and start 7-second undo window
     if (isFirebaseConfigured()) {
       try {
-        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, isAdminAuthenticated);
+        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, false);
       } catch (err: any) {
-        console.error('Failed to permanently delete property from Firestore:', err);
+        console.error('Failed to delete property from Firestore:', err);
         showToast('Failed to delete property: ' + (err.message || 'Please check connection'));
         return;
       }
     } else {
       try {
-        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, isAdminAuthenticated);
+        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, false);
       } catch {}
     }
 
@@ -1485,22 +1559,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const ownerId = targetService.ownerId;
     const serviceCopy: ServiceItem = { ...targetService };
 
-    // Permanently remove from Firestore and local cache before updating UI
+    // If caller is Admin: permanently mark as Deleted by Admin in Firestore and sync to all devices
+    if (isAdminAuthenticated) {
+      if (isFirebaseConfigured()) {
+        try {
+          const deleted = await deleteServiceInFirestore(serviceId, token, ownerId, true);
+          if (!deleted) {
+            showToast("Failed to delete service. Please check your connection or permissions.");
+            return false;
+          }
+        } catch (err: any) {
+          console.error('Failed to permanently delete service from Firestore:', err);
+          showToast('Failed to delete service: ' + (err.message || 'Please check connection'));
+          return false;
+        }
+      } else {
+        await deleteServiceInFirestore(serviceId, token, ownerId, true);
+      }
+
+      setServices(prev => prev.map(s => s.id === serviceId ? { ...s, status: 'deleted_by_admin' as any } : s));
+      updateSubmittedServiceStatus(serviceId, 'deleted_by_admin');
+      showToast("Service permanently marked as Deleted by Admin and removed from public listings.");
+      return true;
+    }
+
+    // Owner deletion: remove from Firestore and start 7-second undo window
     if (isFirebaseConfigured()) {
       try {
-        const deleted = await deleteServiceInFirestore(serviceId, token, ownerId, isAdminAuthenticated);
+        const deleted = await deleteServiceInFirestore(serviceId, token, ownerId, false);
         if (!deleted) {
           showToast("Failed to delete service. Please check your connection or permissions.");
           return false;
         }
       } catch (err: any) {
-        console.error('Failed to permanently delete service from Firestore:', err);
+        console.error('Failed to delete service from Firestore:', err);
         showToast('Failed to delete service: ' + (err.message || 'Please check connection'));
         return false;
       }
     } else {
       try {
-        await deleteServiceInFirestore(serviceId, token, ownerId, isAdminAuthenticated);
+        await deleteServiceInFirestore(serviceId, token, ownerId, false);
       } catch {}
     }
 

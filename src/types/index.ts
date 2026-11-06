@@ -24,9 +24,13 @@ export type ListingStatus =
   | 'APPROVED'
   | 'PENDING'
   | 'REJECTED'
+  | 'DELETED_BY_ADMIN'
+  | 'DELETED'
   | 'approved'
   | 'pending'
-  | 'rejected';
+  | 'rejected'
+  | 'deleted_by_admin'
+  | 'deleted';
 
 export type OccupancyStatus = 'AVAILABLE' | 'OCCUPIED';
 
@@ -37,6 +41,10 @@ export type SuitableTenantType = 'STUDENTS' | 'WORKING_PROFESSIONALS' | 'FAMILIE
 export const isApproved = (status?: string): boolean => (status || '').toLowerCase() === 'approved';
 export const isPending = (status?: string): boolean => (status || '').toLowerCase() === 'pending';
 export const isRejected = (status?: string): boolean => (status || '').toLowerCase() === 'rejected';
+export const isDeletedByAdmin = (status?: string): boolean => {
+  const s = (status || '').toLowerCase();
+  return s === 'deleted_by_admin' || s === 'deleted';
+};
 
 export const isOccupied = (status?: string): boolean => (status || '').toUpperCase() === 'OCCUPIED';
 export const isAvailable = (status?: string): boolean => !status || (status || '').toUpperCase() === 'AVAILABLE';

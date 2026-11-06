@@ -8,27 +8,10 @@ const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@fir
 const rules = fs.readFileSync('firestore.rules', 'utf8');
 
 test('Firebase Emulator - Service Lifecycle Verification (No Rating Impact)', async (t) => {
-  const net = await import('node:net');
-  const isEmulatorAvailable = await new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(300);
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.connect(8080, '127.0.0.1');
-  });
+  const isEmulatorAvailable = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 
   if (!isEmulatorAvailable) {
-    console.log('Firebase emulator not running on port 8080, skipping emulator tests');
+    console.log('Firebase emulator not configured via FIRESTORE_EMULATOR_HOST, skipping emulator tests');
     return;
   }
 

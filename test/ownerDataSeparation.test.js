@@ -57,7 +57,7 @@ test('Strict Owner-Wise Data Separation (User Request 10)', async (t) => {
     // Admin panel moderation lists
     assert.ok(app.includes('properties.filter(p => isPending(p.status))'), 'Admin panel accesses all pending properties');
     assert.ok(app.includes('properties.filter(p => isApproved(p.status))'), 'Admin panel accesses all approved properties');
-    assert.ok(app.includes('properties.filter(p => (p.status || \'\').toLowerCase() === \'rejected\')'), 'Admin panel accesses all rejected properties');
+    assert.ok(app.includes('properties.filter(p => isRejected(p.status) || isDeletedByAdmin(p.status))') || app.includes('properties.filter(p => (p.status || \'\').toLowerCase() === \'rejected\')'), 'Admin panel accesses all rejected properties');
     assert.ok(app.includes('services.filter(s => isPending(s.status))'), 'Admin panel accesses all pending services');
     assert.ok(app.includes('services.filter(s => isApproved(s.status))'), 'Admin panel accesses all approved services');
     

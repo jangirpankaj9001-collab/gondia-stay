@@ -99,6 +99,7 @@ import {
   isApproved,
   isPending,
   isRejected,
+  isDeletedByAdmin,
   isOccupied,
   isAvailable,
   ServiceItem,
@@ -803,7 +804,7 @@ export const App: React.FC = () => {
   }, [properties]);
 
   const rejectedProperties = useMemo(() => {
-    return properties.filter(p => (p.status || '').toLowerCase() === 'rejected');
+    return properties.filter(p => isRejected(p.status) || isDeletedByAdmin(p.status));
   }, [properties]);
 
   // Gondia Services grouped for Admin Moderation & Public display
@@ -820,7 +821,7 @@ export const App: React.FC = () => {
   }, [services]);
 
   const rejectedServices = useMemo(() => {
-    return services.filter(s => (s.status || '').toLowerCase() === 'rejected');
+    return services.filter(s => isRejected(s.status) || isDeletedByAdmin(s.status));
   }, [services]);
 
   // Filtered services for the Services Tab
@@ -2395,9 +2396,17 @@ export const App: React.FC = () => {
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : isPending(property.status)
                                     ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-rose-100 text-rose-800'
+                                    : isDeletedByAdmin(property.status)
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold'
+                                      : 'bg-rose-100 text-rose-800'
                               }`}>
-                                {isApproved(property.status) ? 'Approved · Live' : isPending(property.status) ? 'Pending Approval' : 'Rejected'}
+                                {isApproved(property.status)
+                                  ? 'Approved · Live'
+                                  : isPending(property.status)
+                                    ? 'Pending Approval'
+                                    : isDeletedByAdmin(property.status)
+                                      ? 'Deleted by Admin'
+                                      : 'Rejected'}
                               </span>
 
                               {/* Requirement 5: Occupancy badge */}
@@ -2600,9 +2609,17 @@ export const App: React.FC = () => {
                                       ? 'bg-emerald-100 text-emerald-800'
                                       : isPending(srv.status)
                                         ? 'bg-amber-100 text-amber-800'
-                                        : 'bg-rose-100 text-rose-800'
+                                        : isDeletedByAdmin(srv.status)
+                                          ? 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold'
+                                          : 'bg-rose-100 text-rose-800'
                                   }`}>
-                                    {isApproved(srv.status) ? 'Approved · Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
+                                    {isApproved(srv.status)
+                                      ? 'Approved · Live'
+                                      : isPending(srv.status)
+                                        ? 'Pending Approval'
+                                        : isDeletedByAdmin(srv.status)
+                                          ? 'Deleted by Admin'
+                                          : 'Rejected'}
                                   </span>
                                   {srv.hasPendingEdit && (
                                     <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
@@ -3092,7 +3109,7 @@ export const App: React.FC = () => {
                                               ? 'bg-amber-100 text-amber-800'
                                               : 'bg-rose-100 text-rose-800'
                                         }`}>
-                                          {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : 'Rejected'}
+                                          {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : isDeletedByAdmin(prop.status) ? 'Deleted by Admin' : 'Rejected'}
                                         </span>
                                         {prop.hasPendingEdit && (
                                           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 flex items-center gap-1">
@@ -3483,7 +3500,7 @@ export const App: React.FC = () => {
                                               ? 'bg-amber-100 text-amber-800'
                                               : 'bg-rose-100 text-rose-800'
                                         }`}>
-                                          {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : 'Rejected'}
+                                          {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : isDeletedByAdmin(srv.status) ? 'Deleted by Admin' : 'Rejected'}
                                         </span>
                                         {srv.hasPendingEdit && (
                                           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 flex items-center gap-1">

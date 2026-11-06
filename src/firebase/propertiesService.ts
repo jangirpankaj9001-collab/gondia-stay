@@ -2,6 +2,7 @@ import {
   collection, 
   doc, 
   getDoc,
+  getDocs,
   setDoc,
   updateDoc, 
   deleteDoc, 
@@ -479,6 +480,7 @@ export const savePropertyToFirestore = async (
       batch.set(tokenRef, {
         propertyId: property.id,
         propertyData: isCurrentlyApproved ? { ...(existingSnap.data() || {}), pendingEdit: updatePayload } : updatePayload,
+        status: isCurrentlyApproved ? 'approved' : 'pending',
         lastActionAt: Date.now(),
         updatedAt: Date.now()
       }, { merge: true });
@@ -560,6 +562,7 @@ export const savePropertyToFirestore = async (
     batch.set(tokenRef, {
       propertyId: propId,
       propertyData: newDocData,
+      status: 'pending',
       createdAt: Date.now()
     });
 
@@ -689,24 +692,39 @@ export const fetchPropertyByEditToken = async (
       return { property: null, propertyId: null };
     }
 
-    // Always verify the property document still exists in the properties collection!
-    const propRef = doc(db, PROPERTIES_COLLECTION, resolvedPropId);
-    const propSnap = await getDoc(propRef);
-    if (!propSnap.exists()) {
-      // Main property document does not exist (deleted): invalidate token document so it cannot be reused
-      try {
-        await deleteDoc(tokenRef);
-      } catch {}
-      return { property: null, propertyId: null };
+    // Verify the property document in properties collection
+    let propData: any = null;
+    try {
+      const propRef = doc(db, PROPERTIES_COLLECTION, resolvedPropId);
+      const propSnap = await getDoc(propRef);
+      if (!propSnap.exists()) {
+        // Main property document does not exist (deleted): invalidate token document so it cannot be reused
+        try {
+          await deleteDoc(tokenRef);
+        } catch {}
+        return { property: null, propertyId: null };
+      }
+      propData = propSnap.data();
+    } catch (permErr) {
+      // If permission error (e.g. zero-login owner loading their rejected/pending listing),
+      // fallback to token document data which the token holder has permission to read
+      if (tokenSnap.exists()) {
+        const tData = tokenSnap.data();
+        propData = {
+          ...(tData.propertyData || {}),
+          status: tData.status || tData.propertyData?.status || 'pending'
+        };
+      } else {
+        return { property: null, propertyId: null };
+      }
     }
 
-    const data = propSnap.data();
     return {
       property: {
-        ...(data as PropertyListing),
-        id: propSnap.id,
-        status: (data.status || 'pending').toLowerCase() as any,
-        occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any
+        ...(propData as PropertyListing),
+        id: resolvedPropId,
+        status: (propData.status || 'pending').toLowerCase() as any,
+        occupancyStatus: (propData.occupancyStatus || 'AVAILABLE').toUpperCase() as any
       },
       propertyId: resolvedPropId
     };
@@ -817,6 +835,43 @@ export const moderatePropertyInFirestore = async (
     moderatedBy: moderatorId,
     updatedAt: Date.now()
   });
+
+  // Also sync status to property token in Firestore so the owner's device immediately receives the update
+  try {
+    let tokenFound = false;
+    const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
+    const secretSnap = await getDoc(secretRef);
+    if (secretSnap.exists()) {
+      const token = secretSnap.data()?.editToken;
+      if (token) {
+        tokenFound = true;
+        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token);
+        await setDoc(tokenRef, {
+          status: newStatus,
+          'propertyData.status': newStatus,
+          moderatedAt: Date.now(),
+          moderatedBy: moderatorId,
+          updatedAt: Date.now()
+        }, { merge: true });
+      }
+    }
+
+    if (!tokenFound) {
+      const q = query(collection(db, PROPERTY_EDIT_TOKENS_COLLECTION), where('propertyId', '==', propertyId));
+      const qSnap = await getDocs(q);
+      for (const tDoc of qSnap.docs) {
+        await setDoc(tDoc.ref, {
+          status: newStatus,
+          'propertyData.status': newStatus,
+          moderatedAt: Date.now(),
+          moderatedBy: moderatorId,
+          updatedAt: Date.now()
+        }, { merge: true });
+      }
+    }
+  } catch (tokenErr) {
+    console.warn('[GondiaStay] Error syncing moderation status to property token:', tokenErr);
+  }
 };
 
 /**
@@ -883,7 +938,94 @@ export const deletePropertyFromFirestore = async (
   ownerId?: string,
   isAdminCaller: boolean = false
 ): Promise<boolean> => {
-  // Update local cache and deleted tracking immediately
+  const isRealAdmin = Boolean(
+    isAdminCaller ||
+    (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
+  );
+
+  // If caller is admin: mark status as 'deleted_by_admin' in Firestore and token document so it syncs to owner device
+  if (isRealAdmin) {
+    const adminEmail = auth?.currentUser?.email || 'admin';
+    try {
+      const cached = getCachedProperties();
+      const updated = cached.map(p => p.id === propertyId ? {
+        ...p,
+        status: 'deleted_by_admin' as any,
+        deletedAt: Date.now(),
+        deletedBy: adminEmail,
+        updatedAt: Date.now()
+      } : p);
+      localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
+    } catch {}
+
+    if (!db || !isFirebaseConfigured()) {
+      return true;
+    }
+
+    try {
+      const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
+      const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
+
+      await setDoc(docRef, {
+        status: 'deleted_by_admin',
+        deletedAt: Date.now(),
+        deletedBy: adminEmail,
+        moderatedAt: Date.now(),
+        moderatedBy: adminEmail,
+        updatedAt: Date.now()
+      }, { merge: true });
+
+      let tokenToUpdate = token?.trim();
+      if (!tokenToUpdate) {
+        try {
+          const secretSnap = await getDoc(secretRef);
+          if (secretSnap.exists()) {
+            tokenToUpdate = secretSnap.data()?.editToken;
+          }
+        } catch {}
+      }
+
+      if (tokenToUpdate) {
+        try {
+          const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToUpdate);
+          await setDoc(tokenRef, {
+            status: 'deleted_by_admin',
+            'propertyData.status': 'deleted_by_admin',
+            deletedAt: Date.now(),
+            deletedBy: adminEmail,
+            moderatedAt: Date.now(),
+            moderatedBy: adminEmail,
+            updatedAt: Date.now()
+          }, { merge: true });
+        } catch (err) {
+          console.warn('[GondiaStay] Error syncing deleted_by_admin status to token:', err);
+        }
+      } else {
+        try {
+          const q = query(collection(db, PROPERTY_EDIT_TOKENS_COLLECTION), where('propertyId', '==', propertyId));
+          const qSnap = await getDocs(q);
+          for (const tDoc of qSnap.docs) {
+            await setDoc(tDoc.ref, {
+              status: 'deleted_by_admin',
+              'propertyData.status': 'deleted_by_admin',
+              deletedAt: Date.now(),
+              deletedBy: adminEmail,
+              moderatedAt: Date.now(),
+              moderatedBy: adminEmail,
+              updatedAt: Date.now()
+            }, { merge: true });
+          }
+        } catch {}
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[GondiaStay] Error setting deleted_by_admin in Firestore:', err);
+      return false;
+    }
+  }
+
+  // Owner deletion: update local cache and deleted tracking immediately
   try {
     const rawDeleted = localStorage.getItem(DELETED_PROPERTIES_KEY);
     const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
@@ -943,38 +1085,8 @@ export const deletePropertyFromFirestore = async (
     return true;
   }
 
-  const isRealAdmin = Boolean(
-    isAdminCaller ||
-    (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
-  );
-
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
-
-  // If caller is admin: retrieve secret editToken first so the edit token document is also wiped permanently
-  if (isRealAdmin) {
-    let tokenToDelete = token?.trim();
-    if (!tokenToDelete) {
-      try {
-        const secretSnap = await getDoc(secretRef);
-        if (secretSnap.exists()) {
-          tokenToDelete = secretSnap.data()?.editToken;
-        }
-      } catch {}
-    }
-
-    await deleteDoc(docRef);
-    try {
-      await deleteDoc(secretRef);
-    } catch {}
-    if (tokenToDelete) {
-      try {
-        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToDelete);
-        await deleteDoc(tokenRef);
-      } catch {}
-    }
-    return true;
-  }
 
   // Owner deletion using private Edit Token:
   // Uses atomic writeBatch to delete the property, delete the token doc, and delete the secret doc
@@ -1063,4 +1175,67 @@ export const subscribeToOwnerProfile = (
   } catch (err) {
     return null;
   }
+};
+
+/**
+ * Real-time listener for owner's properties moderation status (approved, pending, or rejected).
+ * Syncs rejection and approval immediately to the owner's device via unguessable edit tokens
+ * and authenticated owner property documents.
+ */
+export const subscribeToOwnerPropertiesStatus = (
+  tokenMap: Record<string, string>,
+  onStatusUpdate: (propertyId: string, status: 'approved' | 'pending' | 'rejected' | 'deleted_by_admin' | 'deleted') => void,
+  propertyIds?: string[]
+): Unsubscribe => {
+  if (!db || !isFirebaseConfigured()) return () => {};
+  const unsubs: Unsubscribe[] = [];
+
+  // 1. Subscribe to status on private edit tokens (works on any device, unauthenticated or authenticated)
+  Object.entries(tokenMap).forEach(([propertyId, token]) => {
+    if (!token || typeof token !== 'string') return;
+    try {
+      const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
+      const unsub = onSnapshot(tokenRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const rawStatus = (data?.status || data?.propertyData?.status || '').toLowerCase();
+          if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
+            onStatusUpdate(propertyId, rawStatus as any);
+          }
+        }
+      }, (err) => {
+        console.warn(`[GondiaStay] Property token status sync notice (${propertyId}):`, err);
+      });
+      unsubs.push(unsub);
+    } catch (e) {
+      console.warn(`[GondiaStay] Failed to subscribe to property token (${propertyId}):`, e);
+    }
+  });
+
+  // 2. If authenticated, also subscribe directly to property documents where owner has read access
+  if (auth?.currentUser && Array.isArray(propertyIds)) {
+    propertyIds.forEach((propId) => {
+      if (!propId || tokenMap[propId]) return;
+      try {
+        const propRef = doc(db, PROPERTIES_COLLECTION, propId);
+        const unsub = onSnapshot(propRef, (snap) => {
+          if (snap.exists()) {
+            const rawStatus = (snap.data()?.status || '').toLowerCase();
+            if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
+              onStatusUpdate(propId, rawStatus as any);
+            }
+          }
+        }, () => {
+          // Gracefully handle rule checks
+        });
+        unsubs.push(unsub);
+      } catch {}
+    });
+  }
+
+  return () => {
+    unsubs.forEach(u => {
+      try { u(); } catch {}
+    });
+  };
 };
