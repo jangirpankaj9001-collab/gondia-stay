@@ -9,7 +9,6 @@ import {
   Sparkles,
   PhoneCall,
   Menu,
-  MoreVertical,
   X,
   Database,
   Plus
@@ -194,21 +193,21 @@ export const Header: React.FC = () => {
               </button>
             )}
 
-            {/* 3-dot menu button - accessible on any phone or computer */}
+            {/* Hamburger menu button - accessible on any phone or computer */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-xl text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors flex items-center gap-1.5 cursor-pointer ml-1"
               aria-label="Toggle Menu"
               title="Menu & Admin Panel"
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <MoreVertical className="w-5 h-5" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               <span className="hidden sm:inline text-xs font-bold text-slate-700">Menu</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* 3-Dot Drawer Menu - Accessible on phone or computer */}
+      {/* Hamburger Drawer Menu - Accessible on phone or computer */}
       {mobileMenuOpen && (
         <div className="bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 animate-in slide-in-from-top-2 shadow-lg">
           <button
