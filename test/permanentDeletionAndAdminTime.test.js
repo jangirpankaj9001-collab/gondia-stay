@@ -111,4 +111,67 @@ test('Permanent Property & Service Deletion & Admin Timestamp Display', async (t
       'firestore.rules maintains email_verified security constraint'
     );
   });
+
+  await t.test('6. Permanently deletes items and associated tokens/credentials from Firestore and storage', () => {
+    // Property deletion clears docRef, secretRef, and tokenRef
+    assert.ok(
+      propServiceContent.includes('batch.delete(tokenRef)') &&
+      propServiceContent.includes('batch.delete(secretRef)'),
+      'Property deletion batch deletes token and secret docs'
+    );
+    assert.ok(
+      propServiceContent.includes('gondia_stay_my_property_ids') &&
+      propServiceContent.includes('gondia_stay_favorites'),
+      'Property deletion cleans up all local storage IDs and favorites'
+    );
+
+    // Service deletion clears srvRef, secretRef, and tokenRef
+    assert.ok(
+      servServiceContent.includes('batch.delete(tokenRef)') &&
+      servServiceContent.includes('batch.delete(secretRef)'),
+      'Service deletion batch deletes token and secret docs'
+    );
+    assert.ok(
+      servServiceContent.includes('gondia_stay_my_service_ids'),
+      'Service deletion cleans up local storage service IDs'
+    );
+  });
+
+  await t.test('7. Invalidates all old edit links so deleted items cannot be accessed or restored', () => {
+    // fetchPropertyDirect checks if main document exists and does not return draft data for deleted items
+    assert.ok(
+      propServiceContent.includes('getDeletedPropertyIds().has(propertyId)'),
+      'fetchPropertyDirect checks deleted property IDs'
+    );
+    assert.ok(
+      propServiceContent.includes('Main property was permanently deleted: invalidate old token document'),
+      'fetchPropertyDirect invalidates old token document when property is deleted'
+    );
+
+    // fetchPropertyByEditToken verifies main property document exists
+    assert.ok(
+      propServiceContent.includes('Main property document does not exist (deleted): invalidate token document'),
+      'fetchPropertyByEditToken invalidates token document and returns null if property document does not exist'
+    );
+
+    // fetchServiceByEditToken verifies main service document exists
+    assert.ok(
+      servServiceContent.includes('Main service doc does not exist: the service was permanently deleted!'),
+      'fetchServiceByEditToken invalidates token document and returns null if service document does not exist'
+    );
+
+    // App.tsx clears URL parameters and displays deleted listing notice
+    assert.ok(
+      appContent.includes('Listing not found or has been permanently deleted. Edit link is invalid.'),
+      'App.tsx displays invalidation message for deleted properties'
+    );
+    assert.ok(
+      appContent.includes('Service listing not found or has been permanently deleted. Edit link is invalid.'),
+      'App.tsx displays invalidation message for deleted services'
+    );
+    assert.ok(
+      appContent.includes('window.history.replaceState({}, document.title, window.location.pathname)'),
+      'App.tsx clears invalid query params from browser URL bar'
+    );
+  });
 });

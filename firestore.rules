@@ -471,7 +471,7 @@ service cloud.firestore {
       );
       // Service secrets are strictly immutable once created.
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || !existsAfter(/databases/$(database)/documents/services/$(serviceId));
     }
 
     // Service Edit Tokens: Enables looking up service by private edit token

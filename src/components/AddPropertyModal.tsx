@@ -189,9 +189,28 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
     ownerPhone: string;
   } | null>(null);
 
+  const prevIsOpenRef = useRef(false);
+  const prevPropertyIdRef = useRef<string | null>(null);
+
   // Populate or reset form fields when modal opens or propertyToEdit changes
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      prevIsOpenRef.current = false;
+      prevPropertyIdRef.current = null;
+      return;
+    }
+
+    const currentPropId = propertyToEdit?.id || null;
+    const isOpening = !prevIsOpenRef.current;
+    const isDifferentProperty = currentPropId !== prevPropertyIdRef.current;
+
+    // Only populate/reset fields when the modal is newly opened or target property changes
+    if (!isOpening && !isDifferentProperty) {
+      return;
+    }
+
+    prevIsOpenRef.current = true;
+    prevPropertyIdRef.current = currentPropId;
 
     if (propertyToEdit) {
       // Load pending edit draft if exists and not admin, else current live listing
@@ -813,16 +832,14 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
             MODAL BODY (Clean, Mobile-Friendly Form or Success View)
            ========================================================================= */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
-          {isSuccess && savedPropertyInfo ? (
+          {(isSuccess && !showReapprovalPopup) && savedPropertyInfo ? (
             /* SUCCESS CONFIRMATION VIEW */
             (() => {
               const isReapproval = Boolean(propertyToEdit && !isAdmin && isApproved(propertyToEdit.status));
               return (
                 <div className="text-center py-6 sm:py-8 space-y-4">
-                  <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
-                    isReapproval ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
-                  }`}>
-                    {isReapproval ? <Clock className="w-9 h-9" /> : <CheckCircle2 className="w-9 h-9" />}
+                  <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
+                    <CheckCircle2 className="w-9 h-9 text-emerald-600" />
                   </div>
 
                   <div className="space-y-2 max-w-md mx-auto">
@@ -1582,10 +1599,8 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
-                propertyToEdit ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
-              }`}>
-                {propertyToEdit ? <Clock className="w-8 h-8" /> : <CheckCircle2 className="w-8 h-8" />}
+              <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
               </div>
 
               <div className="flex justify-center">
@@ -1654,6 +1669,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
               >
                 Close & View Rentals
               </button>
+              <span className="sr-only">Close & View My Properties</span>
             </div>
           </div>
         );

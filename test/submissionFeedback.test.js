@@ -132,5 +132,39 @@ test('Submission Feedback & Duplicate Prevention for Properties & Services', asy
       'AddPropertyModal matches Service Submitted Successfully layout with owner account linking and Edit/Delete controls'
     );
   });
+
+  await t.test('10. Popups render green checkmark and maintain form with green "Submitted" button', () => {
+    // Both popups display emerald checkmark CheckCircle2
+    assert.ok(
+      addPropContent.includes('bg-emerald-100 text-emerald-600 ring-emerald-50') &&
+      addPropContent.includes('<CheckCircle2 className="w-8 h-8 text-emerald-600" />'),
+      'AddPropertyModal popup renders prominent emerald checkmark circle'
+    );
+    assert.ok(
+      addServiceContent.includes('bg-emerald-100 text-emerald-600 ring-emerald-50') &&
+      addServiceContent.includes('<CheckCircle2 className="w-8 h-8 text-emerald-600" />'),
+      'AddServiceModal popup renders prominent emerald checkmark circle'
+    );
+
+    // Both modals keep form mounted underneath popup so green Submitted button remains visible
+    assert.ok(
+      addPropContent.includes('(isSuccess && !showReapprovalPopup)'),
+      'AddPropertyModal keeps form mounted while popup is displayed'
+    );
+    assert.ok(
+      addServiceContent.includes('(submissionSuccess && !showReapprovalPopup)'),
+      'AddServiceModal keeps form mounted while popup is displayed'
+    );
+
+    // Both modals guard against spurious useEffect resets during submission
+    assert.ok(
+      addPropContent.includes('prevIsOpenRef') && addPropContent.includes('prevPropertyIdRef'),
+      'AddPropertyModal guards useEffect against background owner profile state resets'
+    );
+    assert.ok(
+      addServiceContent.includes('prevOpenRef') && addServiceContent.includes('activeServiceIdRef'),
+      'AddServiceModal guards useEffect against background owner profile state resets'
+    );
+  });
 });
 

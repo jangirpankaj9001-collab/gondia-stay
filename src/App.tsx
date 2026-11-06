@@ -250,17 +250,23 @@ export const App: React.FC = () => {
       const token = searchParams.get('token') || hashParams.get('token');
 
       if (editPropId && token) {
-        saveListingToken(editPropId, token);
-        setCurrentEditToken(token);
-
         fetchPropertyDirect(editPropId, token).then((prop) => {
           if (prop) {
+            saveListingToken(editPropId, token);
+            setCurrentEditToken(token);
             handleEditClick(prop, token);
             navigateTo('owner');
             setOwnerSubTab('new');
             showToast('Private edit link verified! You can update your listing.');
           } else {
-            showToast('Listing not found or invalid private edit link.');
+            // Invalidate and remove any saved token for this deleted listing
+            try {
+              const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_listing_tokens') || '{}');
+              delete savedTokens[editPropId];
+              localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(savedTokens));
+            } catch {}
+            showToast('Listing not found or has been permanently deleted. Edit link is invalid.');
+            window.history.replaceState({}, document.title, window.location.pathname);
           }
         }).catch(err => {
           console.error('Error fetching property via edit link:', err);
@@ -270,17 +276,16 @@ export const App: React.FC = () => {
       // Check URL parameters for standalone property edit link (?token=gst_...)
       if (token && token.startsWith('gst_') && !token.startsWith('gst_srv_') && !editPropId) {
         fetchPropertyByEditToken(token).then(({ property, propertyId }) => {
-          if (propertyId) {
+          if (property && propertyId) {
             saveListingToken(propertyId, token);
             setCurrentEditToken(token);
-            if (property) {
-              handleEditClick(property, token);
-              navigateTo('owner');
-              setOwnerSubTab('new');
-              showToast('Private edit link verified! You can update your listing.');
-            }
+            handleEditClick(property, token);
+            navigateTo('owner');
+            setOwnerSubTab('new');
+            showToast('Private edit link verified! You can update your listing.');
           } else {
-            showToast('Listing not found or invalid private edit link.');
+            showToast('Listing not found or has been permanently deleted. Edit link is invalid.');
+            window.history.replaceState({}, document.title, window.location.pathname);
           }
         }).catch(err => {
           console.error('Error fetching property via edit link:', err);
@@ -292,24 +297,25 @@ export const App: React.FC = () => {
       const isServiceToken = Boolean(token && (token.startsWith('gst_srv_') || serviceEditId));
 
       if (isServiceToken && token) {
-        if (serviceEditId) {
-          saveServiceId(serviceEditId);
-          saveServiceToken(serviceEditId, token);
-        }
-
         fetchServiceByEditToken(token, serviceEditId || undefined).then(({ service, serviceId }) => {
           const resolvedId = serviceId || serviceEditId;
-          if (resolvedId) {
+          if (service && resolvedId) {
             saveServiceId(resolvedId);
             saveServiceToken(resolvedId, token);
-            if (service) {
-              setServiceToEdit(service);
-              setIsAddServiceModalOpen(true);
-            }
+            setServiceToEdit(service);
+            setIsAddServiceModalOpen(true);
             navigateTo('services');
             showToast('Private service edit link verified! You can update your service listing.');
           } else {
-            showToast('Service listing not found or invalid private edit link.');
+            if (resolvedId) {
+              try {
+                const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
+                delete savedTokens[resolvedId];
+                localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
+              } catch {}
+            }
+            showToast('Service listing not found or has been permanently deleted. Edit link is invalid.');
+            window.history.replaceState({}, document.title, window.location.pathname);
           }
         }).catch(err => {
           console.error('Error fetching service via edit link:', err);

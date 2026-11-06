@@ -523,16 +523,14 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
         {/* Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
           
-          {submissionSuccess ? (
+          {(submissionSuccess && !showReapprovalPopup) ? (
             /* Success confirmation view */
             (() => {
               const isReapproval = Boolean(serviceToEdit && !isAdmin && isApproved(serviceToEdit.status));
               return (
                 <div className="text-center py-6 sm:py-8 space-y-4">
-                  <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
-                    isReapproval ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
-                  }`}>
-                    {isReapproval ? <Clock className="w-9 h-9" /> : <CheckCircle2 className="w-9 h-9" />}
+                  <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
+                    <CheckCircle2 className="w-9 h-9 text-emerald-600" />
                   </div>
 
                   <div className="space-y-2 max-w-md mx-auto">
@@ -1191,10 +1189,8 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ${
-                serviceToEdit ? 'bg-amber-100 text-amber-700 ring-amber-50' : 'bg-emerald-100 text-emerald-600 ring-emerald-50'
-              }`}>
-                {serviceToEdit ? <Clock className="w-8 h-8" /> : <CheckCircle2 className="w-8 h-8" />}
+              <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
               </div>
 
               <div className="flex justify-center">
@@ -1259,6 +1255,7 @@ export const AddServiceModal: React.FC<AddServiceModalProps> = ({
               >
                 Close & View Services
               </button>
+              <span className="sr-only">Close & View Home Services</span>
             </div>
           </div>
         );

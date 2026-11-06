@@ -834,6 +834,18 @@ export const deleteServiceInFirestore = async (
         );
       }
     }
+
+    // Clean up local service IDs
+    const rawMyIds = localStorage.getItem('gondia_stay_my_service_ids');
+    if (rawMyIds) {
+      const ids = JSON.parse(rawMyIds);
+      if (Array.isArray(ids)) {
+        localStorage.setItem(
+          'gondia_stay_my_service_ids',
+          JSON.stringify(ids.filter((id: any) => id !== serviceId))
+        );
+      }
+    }
   } catch {}
 
   if (!db || !isFirebaseConfigured()) {
@@ -849,23 +861,40 @@ export const deleteServiceInFirestore = async (
       (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
     );
 
+    // If caller is admin: look up secret token first so the edit token document is also wiped permanently
     if (isRealAdmin) {
+      let tokenToDelete = token?.trim();
+      if (!tokenToDelete) {
+        try {
+          const secretSnap = await getDoc(secretRef);
+          if (secretSnap.exists()) {
+            tokenToDelete = secretSnap.data()?.editToken;
+          }
+        } catch {}
+      }
+
       await deleteDoc(srvRef);
       try {
         await deleteDoc(secretRef);
       } catch {}
+      if (tokenToDelete) {
+        try {
+          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tokenToDelete);
+          await deleteDoc(tokenRef);
+        } catch {}
+      }
       return true;
     }
 
     // Owner deletion using private Edit Token:
-    // Uses an atomic writeBatch to delete the public service and delete the unguessable token
-    // document from service_edit_tokens. service_secrets remains immutable.
+    // Uses an atomic writeBatch to delete the public service, delete the token doc, and delete the secret doc
     if (token && token.trim()) {
       const cleanToken = token.trim();
       const batch = writeBatch(db);
       batch.delete(srvRef);
       const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
       batch.delete(tokenRef);
+      batch.delete(secretRef);
       await batch.commit();
 
       return true;
@@ -874,6 +903,15 @@ export const deleteServiceInFirestore = async (
     // Authenticated owner deletion via Firebase Auth (UID match)
     if (auth?.currentUser) {
       await deleteDoc(srvRef);
+      try {
+        await deleteDoc(secretRef);
+      } catch {}
+      if (token && token.trim()) {
+        try {
+          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, token.trim());
+          await deleteDoc(tokenRef);
+        } catch {}
+      }
       return true;
     }
 
@@ -887,6 +925,7 @@ export const deleteServiceInFirestore = async (
 /**
  * Resolves a service listing and ID using an unguessable private edit token.
  * Enables automatic verification of private service edit links (?token=gst_srv_... or ?service=<id>&token=...).
+ * If the service was permanently deleted, returns null to invalidate the edit link.
  */
 export const fetchServiceByEditToken = async (
   token: string,
@@ -899,7 +938,10 @@ export const fetchServiceByEditToken = async (
   if (!db || !isFirebaseConfigured()) {
     const cached = getCachedServices();
     const match = cached.find(s => s.editToken === cleanToken || (serviceIdHint && s.id === serviceIdHint));
-    return { service: match || null, serviceId: match?.id || serviceIdHint || null };
+    if (match && !getDeletedServiceIds().has(match.id)) {
+      return { service: match, serviceId: match.id };
+    }
+    return { service: null, serviceId: null };
   }
 
   try {
@@ -915,24 +957,28 @@ export const fetchServiceByEditToken = async (
       }
     }
 
-    if (!resolvedServiceId) {
+    if (!resolvedServiceId || getDeletedServiceIds().has(resolvedServiceId)) {
       return { service: null, serviceId: null };
     }
 
-    // Fetch the service document
+    // Always fetch the service document to verify it still exists!
     const srvRef = doc(db, SERVICES_COLLECTION, resolvedServiceId);
     const srvSnap = await getDoc(srvRef);
-    if (srvSnap.exists()) {
-      return {
-        service: { id: srvSnap.id, ...srvSnap.data() } as ServiceItem,
-        serviceId: resolvedServiceId
-      };
+    if (!srvSnap.exists()) {
+      // Main service doc does not exist: the service was permanently deleted!
+      try {
+        await deleteDoc(tokenRef);
+      } catch {}
+      return { service: null, serviceId: null };
     }
 
-    return { service: null, serviceId: resolvedServiceId };
+    return {
+      service: { id: srvSnap.id, ...srvSnap.data() } as ServiceItem,
+      serviceId: resolvedServiceId
+    };
   } catch (err) {
     console.warn('[GondiaStay] Error fetching service by edit token:', err);
-    return { service: null, serviceId: serviceIdHint || null };
+    return { service: null, serviceId: null };
   }
 };
 

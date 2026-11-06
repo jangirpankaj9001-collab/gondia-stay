@@ -616,36 +616,24 @@ export const verifyPropertyEditToken = async (
  */
 export const fetchPropertyDirect = async (propertyId: string, token?: string): Promise<PropertyListing | null> => {
   if (!db || !isFirebaseConfigured()) return null;
-  try {
-    // 1. If edit token provided, resolve via property_edit_tokens (works even if pending/rejected)
-    if (token && token.trim()) {
-      try {
-        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
-        const tokenSnap = await getDoc(tokenRef);
-        if (tokenSnap.exists()) {
-          const tData = tokenSnap.data();
-          if (tData.propertyId === propertyId && tData.propertyData) {
-            const data = tData.propertyData;
-            return {
-              ...(data as PropertyListing),
-              id: propertyId,
-              status: (data.status || 'pending').toLowerCase() as any,
-              occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any,
-              createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
-              latitude: typeof data.latitude === 'number' ? data.latitude : 21.4556,
-              longitude: typeof data.longitude === 'number' ? data.longitude : 80.1960
-            };
-          }
-        }
-      } catch (tokenErr) {
-        console.warn('[GondiaStay] Token draft fetch fallback:', tokenErr);
-      }
-    }
+  // If permanently deleted, invalidate and return null
+  if (getDeletedPropertyIds().has(propertyId)) return null;
 
-    // 2. Fetch from main properties collection
+  try {
+    // 1. Fetch from main properties collection to verify it actually exists and is not deleted!
     const propRef = doc(db, PROPERTIES_COLLECTION, propertyId);
     const snap = await getDoc(propRef);
-    if (!snap.exists()) return null;
+    if (!snap.exists()) {
+      // Main property was permanently deleted: invalidate old token document if present
+      if (token && token.trim()) {
+        try {
+          const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
+          await deleteDoc(tokenRef);
+        } catch {}
+      }
+      return null;
+    }
+
     const data = snap.data();
     return {
       ...(data as PropertyListing),
@@ -665,6 +653,7 @@ export const fetchPropertyDirect = async (propertyId: string, token?: string): P
 /**
  * Resolves a property listing and property ID directly using an unguessable private edit token.
  * Enables automatic verification of private property edit links (?token=gst_... or ?edit=<id>&token=...).
+ * If the property was permanently deleted, returns null to invalidate the edit link.
  */
 export const fetchPropertyByEditToken = async (
   token: string,
@@ -677,12 +666,14 @@ export const fetchPropertyByEditToken = async (
   if (!db || !isFirebaseConfigured()) {
     const cached = getCachedProperties();
     const match = cached.find(p => propertyIdHint && p.id === propertyIdHint);
-    return { property: match || null, propertyId: match?.id || propertyIdHint || null };
+    if (match && !getDeletedPropertyIds().has(match.id)) {
+      return { property: match, propertyId: match.id };
+    }
+    return { property: null, propertyId: null };
   }
 
   try {
     let resolvedPropId = propertyIdHint;
-    let propData: any = null;
 
     // Direct lookup in property_edit_tokens
     const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, cleanToken);
@@ -691,47 +682,37 @@ export const fetchPropertyByEditToken = async (
       const data = tokenSnap.data();
       if (data?.propertyId) {
         resolvedPropId = data.propertyId;
-        propData = data.propertyData;
       }
     }
 
-    if (!resolvedPropId) {
+    if (!resolvedPropId || getDeletedPropertyIds().has(resolvedPropId)) {
       return { property: null, propertyId: null };
     }
 
-    // If propertyData was cached on token document
-    if (propData) {
-      return {
-        property: {
-          ...(propData as PropertyListing),
-          id: resolvedPropId,
-          status: (propData.status || 'pending').toLowerCase() as any,
-          occupancyStatus: (propData.occupancyStatus || 'AVAILABLE').toUpperCase() as any
-        },
-        propertyId: resolvedPropId
-      };
-    }
-
-    // Fetch the property document
+    // Always verify the property document still exists in the properties collection!
     const propRef = doc(db, PROPERTIES_COLLECTION, resolvedPropId);
     const propSnap = await getDoc(propRef);
-    if (propSnap.exists()) {
-      const data = propSnap.data();
-      return {
-        property: {
-          ...(data as PropertyListing),
-          id: propSnap.id,
-          status: (data.status || 'pending').toLowerCase() as any,
-          occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any
-        },
-        propertyId: resolvedPropId
-      };
+    if (!propSnap.exists()) {
+      // Main property document does not exist (deleted): invalidate token document so it cannot be reused
+      try {
+        await deleteDoc(tokenRef);
+      } catch {}
+      return { property: null, propertyId: null };
     }
 
-    return { property: null, propertyId: resolvedPropId };
+    const data = propSnap.data();
+    return {
+      property: {
+        ...(data as PropertyListing),
+        id: propSnap.id,
+        status: (data.status || 'pending').toLowerCase() as any,
+        occupancyStatus: (data.occupancyStatus || 'AVAILABLE').toUpperCase() as any
+      },
+      propertyId: resolvedPropId
+    };
   } catch (err) {
     console.warn('[GondiaStay] Error fetching property by edit token:', err);
-    return { property: null, propertyId: propertyIdHint || null };
+    return { property: null, propertyId: null };
   }
 };
 
@@ -931,6 +912,29 @@ export const deletePropertyFromFirestore = async (
         );
       }
     }
+    // Clean up local property IDs
+    const rawMyIds = localStorage.getItem('gondia_stay_my_property_ids');
+    if (rawMyIds) {
+      const ids = JSON.parse(rawMyIds);
+      if (Array.isArray(ids)) {
+        localStorage.setItem(
+          'gondia_stay_my_property_ids',
+          JSON.stringify(ids.filter((id: any) => id !== propertyId))
+        );
+      }
+    }
+
+    // Clean up favorites
+    const rawFavs = localStorage.getItem('gondia_stay_favorites');
+    if (rawFavs) {
+      const favs = JSON.parse(rawFavs);
+      if (Array.isArray(favs)) {
+        localStorage.setItem(
+          'gondia_stay_favorites',
+          JSON.stringify(favs.filter((id: any) => id !== propertyId))
+        );
+      }
+    }
   } catch (err) {
     console.warn('[GondiaStay] Error cleaning up local property cache on delete:', err);
   }
@@ -947,7 +951,47 @@ export const deletePropertyFromFirestore = async (
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
 
+  // If caller is admin: retrieve secret editToken first so the edit token document is also wiped permanently
   if (isRealAdmin) {
+    let tokenToDelete = token?.trim();
+    if (!tokenToDelete) {
+      try {
+        const secretSnap = await getDoc(secretRef);
+        if (secretSnap.exists()) {
+          tokenToDelete = secretSnap.data()?.editToken;
+        }
+      } catch {}
+    }
+
+    await deleteDoc(docRef);
+    try {
+      await deleteDoc(secretRef);
+    } catch {}
+    if (tokenToDelete) {
+      try {
+        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToDelete);
+        await deleteDoc(tokenRef);
+      } catch {}
+    }
+    return true;
+  }
+
+  // Owner deletion using private Edit Token:
+  // Uses atomic writeBatch to delete the property, delete the token doc, and delete the secret doc
+  if (token && token.trim()) {
+    const cleanToken = token.trim();
+    const batch = writeBatch(db);
+    batch.delete(docRef);
+    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, cleanToken);
+    batch.delete(tokenRef);
+    batch.delete(secretRef);
+    await batch.commit();
+
+    return true;
+  }
+
+  // Owner deletion using Firebase Auth (authenticated owner)
+  if (ownerId && auth?.currentUser?.uid && auth.currentUser.uid === ownerId) {
     await deleteDoc(docRef);
     try {
       await deleteDoc(secretRef);
@@ -958,31 +1002,6 @@ export const deletePropertyFromFirestore = async (
         await deleteDoc(tokenRef);
       } catch {}
     }
-    return true;
-  }
-
-  // Owner deletion using private Edit Token:
-  // Uses atomic writeBatch to delete the property and delete the token doc
-  if (token && token.trim()) {
-    const cleanToken = token.trim();
-    const batch = writeBatch(db);
-    batch.delete(docRef);
-    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, cleanToken);
-    batch.delete(tokenRef);
-    await batch.commit();
-
-    try {
-      await deleteDoc(secretRef);
-    } catch {}
-    return true;
-  }
-
-  // Owner deletion using Firebase Auth (authenticated owner)
-  if (ownerId && auth?.currentUser?.uid && auth.currentUser.uid === ownerId) {
-    await deleteDoc(docRef);
-    try {
-      await deleteDoc(secretRef);
-    } catch {}
     return true;
   }
 
