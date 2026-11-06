@@ -3,11 +3,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper function to verify admin authorization:
-    // Strictly jangirpankaj9001@gmail.com with email_verified == true is the ONLY authorization path
+    // Strictly verified administrator email (jangirpankaj9001@gmail.com or jangirpankaj901@gmail.com) with email_verified == true
     function isAdmin() {
       return request.auth != null
         && request.auth.token.email != null 
-        && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+        && (request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com' || request.auth.token.email.lower() == 'jangirpankaj901@gmail.com')
         && request.auth.token.email_verified == true;
     }
 
@@ -156,8 +156,16 @@ service cloud.firestore {
         && isValidOwnerUpdate()
       );
 
-      // 4. Delete: ONLY verified admin can delete listings.
-      allow delete: if isAdmin();
+      // Helper function to verify caller has the unguessable private edit token in property_edit_tokens for deleting this property
+      // Never grants permanent authorization: requires caller to delete /property_edit_tokens/{token} in the same write batch
+      function hasValidPropertyDeleteToken() {
+        return exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+          && exists(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken))
+          && !existsAfter(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken));
+      }
+
+      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder
+      allow delete: if isAdmin() || isPropertyOwner() || hasValidPropertyDeleteToken();
     }
 
     // Property Secrets: Stores the unguessable private edit token for each property
@@ -191,8 +199,8 @@ service cloud.firestore {
       // Permanent authorization is impossible because secrets cannot be updated.
       allow update: if false;
 
-      // Only admin can delete
-      allow delete: if isAdmin();
+      // Only admin or atomic cleanup when property is deleted
+      allow delete: if isAdmin() || !existsAfter(/databases/$(database)/documents/properties/$(propertyId));
     }
 
     // Property Edit Tokens: Document ID is the unguessable token itself.
@@ -233,7 +241,11 @@ service cloud.firestore {
         && request.resource.data.lastActionAt is number
       );
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (
+        exists(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId))
+        && get(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId)).data.editToken == token
+        && !existsAfter(/databases/$(database)/documents/properties/$(resource.data.propertyId))
+      );
     }
 
     // Owners collection for profile data

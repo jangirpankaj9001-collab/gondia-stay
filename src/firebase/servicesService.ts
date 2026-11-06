@@ -822,6 +822,18 @@ export const deleteServiceInFirestore = async (
     const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
     delete savedTokens[serviceId];
     localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
+
+    // Clean up submitted service storage
+    const rawSubmitted = localStorage.getItem('gondia_stay_submitted_services');
+    if (rawSubmitted) {
+      const submitted = JSON.parse(rawSubmitted);
+      if (Array.isArray(submitted)) {
+        localStorage.setItem(
+          'gondia_stay_submitted_services',
+          JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
+        );
+      }
+    }
   } catch {}
 
   if (!db || !isFirebaseConfigured()) {

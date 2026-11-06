@@ -55,7 +55,8 @@ import {
   Droplets,
   Shirt,
   Pencil,
-  RotateCcw
+  RotateCcw,
+  Calendar
 } from 'lucide-react';
 import { 
   uploadMultiplePropertyPhotos, 
@@ -104,7 +105,7 @@ import {
   ServiceCategory,
   SERVICE_CATEGORIES
 } from './types';
-import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps, isValidIndianMobileNumber } from './utils/contact';
+import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps, isValidIndianMobileNumber, formatExactDateTime } from './utils/contact';
 
 export const App: React.FC = () => {
   const {
@@ -3117,6 +3118,10 @@ export const App: React.FC = () => {
                                       <div className="text-xs text-slate-600 font-medium pt-0.5">
                                         Owner: <span className="font-bold">{prop.ownerName}</span> ({formatDisplayPhone(prop.ownerPhone)}) • Rent: <span className="font-extrabold text-blue-700">₹{prop.monthlyRent}/mo</span>
                                       </div>
+                                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold pt-0.5" data-testid="property-creation-datetime">
+                                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        <span>Submitted: <strong className="text-slate-800 font-bold">{formatExactDateTime(prop.createdAt)}</strong></span>
+                                      </div>
                                     </div>
                                   </div>
 
@@ -3489,6 +3494,10 @@ export const App: React.FC = () => {
                                       <p className="text-xs text-slate-500 line-clamp-1">{srv.description}</p>
                                       <div className="text-xs text-slate-600 font-medium pt-0.5">
                                         Provider: <span className="font-bold text-slate-800">{srv.providerName}</span> ({formatDisplayPhone(srv.phone)}) • Charges: <span className="font-extrabold text-blue-700">{srv.charges}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold pt-0.5" data-testid="service-creation-datetime">
+                                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        <span>Registered: <strong className="text-slate-800 font-bold">{formatExactDateTime(srv.createdAt)}</strong></span>
                                       </div>
                                     </div>
                                   </div>

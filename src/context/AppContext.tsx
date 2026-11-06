@@ -156,7 +156,7 @@ const defaultFilterCriteria: FilterCriteria = {
 export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const lower = email.trim().toLowerCase();
-  return lower === 'jangirpankaj9001@gmail.com';
+  return lower === 'jangirpankaj9001@gmail.com' || lower === 'jangirpankaj901@gmail.com';
 };
 
 // Local persistence for owner submitted properties so they appear immediately in Owner -> My Properties even before admin approval
@@ -1097,7 +1097,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const token = myListingTokens[propertyId];
     const propertyCopy: PropertyListing = { ...targetProp };
 
-    // Remove from UI immediately so user sees deletion take effect
+    // Permanently remove from Firestore and local cache before updating UI
+    if (isFirebaseConfigured()) {
+      try {
+        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, isAdminAuthenticated);
+      } catch (err: any) {
+        console.error('Failed to permanently delete property from Firestore:', err);
+        showToast('Failed to delete property: ' + (err.message || 'Please check connection'));
+        return;
+      }
+    } else {
+      try {
+        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, isAdminAuthenticated);
+      } catch {}
+    }
+
+    // Update UI only after successful deletion
     setProperties(prev => prev.filter(p => p.id !== propertyId));
     if (selectedProperty?.id === propertyId) {
       setSelectedProperty(null);
@@ -1143,7 +1158,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Restores the deleted property with all its original details, photos, ownership credentials, and status.
    */
-  const undoPropertyDeletion = useCallback(() => {
+  const undoPropertyDeletion = useCallback(async () => {
     if (deletionTimerRef.current) {
       clearTimeout(deletionTimerRef.current);
       deletionTimerRef.current = null;
@@ -1158,6 +1173,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     pendingDeletionRef.current = null;
     setPendingPropertyDeletion(null);
+
+    // If deleted from Firestore, restore it back
+    if (isFirebaseConfigured()) {
+      try {
+        await savePropertyToFirestore(item.property, false, item.token);
+      } catch (err) {
+        console.warn('Error re-saving restored property to Firestore:', err);
+      }
+    }
 
     // Restore property with all original details, photos, occupancy, and approval status
     setProperties(prev => {
@@ -1461,7 +1485,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const ownerId = targetService.ownerId;
     const serviceCopy: ServiceItem = { ...targetService };
 
-    // Remove from UI immediately so user sees deletion take effect
+    // Permanently remove from Firestore and local cache before updating UI
+    if (isFirebaseConfigured()) {
+      try {
+        const deleted = await deleteServiceInFirestore(serviceId, token, ownerId, isAdminAuthenticated);
+        if (!deleted) {
+          showToast("Failed to delete service. Please check your connection or permissions.");
+          return false;
+        }
+      } catch (err: any) {
+        console.error('Failed to permanently delete service from Firestore:', err);
+        showToast('Failed to delete service: ' + (err.message || 'Please check connection'));
+        return false;
+      }
+    } else {
+      try {
+        await deleteServiceInFirestore(serviceId, token, ownerId, isAdminAuthenticated);
+      } catch {}
+    }
+
+    // Update UI only after successful deletion
     setServices(prev => prev.filter(s => s.id !== serviceId));
 
     // 7-second temporary undo option
@@ -1506,7 +1549,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /**
    * Restores the deleted service with all its original details, photos, ownership credentials, and status.
    */
-  const undoServiceDeletion = useCallback(() => {
+  const undoServiceDeletion = useCallback(async () => {
     if (serviceDeletionTimerRef.current) {
       clearTimeout(serviceDeletionTimerRef.current);
       serviceDeletionTimerRef.current = null;
@@ -1521,6 +1564,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     pendingServiceDeletionRef.current = null;
     setPendingServiceDeletion(null);
+
+    // If deleted from Firestore, restore it back
+    if (isFirebaseConfigured()) {
+      try {
+        await saveServiceToFirestore(item.service, isAdminAuthenticated);
+      } catch (err) {
+        console.warn('Error restoring service in Firestore:', err);
+      }
+    }
 
     // Restore service with all original details and approval status
     setServices(prev => {
@@ -1657,10 +1709,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const refreshedUser = auth.currentUser;
       const isVerified = Boolean(
         refreshedUser &&
-        refreshedUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' &&
+        isAuthorizedAdminEmail(refreshedUser.email) &&
         refreshedUser.emailVerified
       );
-      setAdminUser(refreshedUser.email?.toLowerCase() === 'jangirpankaj9001@gmail.com' ? refreshedUser : null);
+      setAdminUser(isAuthorizedAdminEmail(refreshedUser?.email) ? refreshedUser : null);
       setIsAdminAuthenticated(isVerified);
       if (isVerified) {
         showToast('Email ownership verified! Admin console unlocked.');

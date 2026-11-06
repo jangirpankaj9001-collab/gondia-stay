@@ -100,3 +100,28 @@ export function openGoogleMaps(latitude: number, longitude: number, title?: stri
   const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+
+/**
+ * Formats a creation timestamp into exact, human-readable date and time for the Admin Panel.
+ * e.g., "05 Nov 2026, 09:30:15 PM"
+ */
+export function formatExactDateTime(timestamp?: number | null): string {
+  if (!timestamp || typeof timestamp !== 'number' || isNaN(timestamp) || timestamp <= 0) {
+    return 'Date/time not recorded';
+  }
+  try {
+    const d = new Date(timestamp);
+    return d.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return new Date(timestamp).toLocaleString();
+  }
+}
+
