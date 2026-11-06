@@ -1107,13 +1107,14 @@ export const subscribeToOwnerServicesStatus = (
   serviceIds?: string[]
 ): Unsubscribe => {
   if (!db || !isFirebaseConfigured()) return () => {};
+  const firestore = db;
   const unsubs: Unsubscribe[] = [];
 
   // 1. Subscribe to status on private edit tokens (works on any device, unauthenticated or authenticated)
   Object.entries(tokenMap).forEach(([serviceId, token]) => {
     if (!token || typeof token !== 'string') return;
     try {
-      const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, token.trim());
+      const tokenRef = doc(firestore, SERVICE_EDIT_TOKENS_COLLECTION, token.trim());
       const unsub = onSnapshot(tokenRef, (snap) => {
         if (snap.exists()) {
           const data = snap.data();
@@ -1136,7 +1137,7 @@ export const subscribeToOwnerServicesStatus = (
     serviceIds.forEach((srvId) => {
       if (!srvId || tokenMap[srvId]) return;
       try {
-        const srvRef = doc(db, SERVICES_COLLECTION, srvId);
+        const srvRef = doc(firestore, SERVICES_COLLECTION, srvId);
         const unsub = onSnapshot(srvRef, (snap) => {
           if (snap.exists()) {
             const rawStatus = (snap.data()?.status || '').toLowerCase();
