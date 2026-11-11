@@ -20,6 +20,11 @@ test('Owner Section -> My Dashboard: Persistent Profile, Device Token & Auto-Fil
       'App uses helper to format "Welcome, Mr./Mrs. [Name]"'
     );
     assert.ok(
+      appContent.includes('<div>Welcome</div>') &&
+      appContent.includes('{getOwnerSalutation(currentOwner.name)}'),
+      'Owner section heading displays Welcome on first line and Mr./Mrs. [Owner Name] below it'
+    );
+    assert.ok(
       appContent.includes('ownerProfileForm.name') &&
       appContent.includes('ownerProfileForm.phone') &&
       appContent.includes('ownerProfileForm.whatsappNumber'),

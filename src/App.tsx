@@ -586,6 +586,28 @@ export const App: React.FC = () => {
     return selectedPhotos.some(p => p.isOptimizing);
   }, [selectedPhotos]);
 
+  // Helper to format owner salutation with actual saved name: "Mr./Mrs. [Owner Name]"
+  const getOwnerSalutation = (name?: string): string => {
+    let raw = (name && name.trim()) ? name.trim() : (currentOwner?.name && currentOwner.name.trim()) ? currentOwner.name.trim() : '';
+    if (!raw) {
+      try {
+        const saved = localStorage.getItem('gondia_stay_current_owner') || localStorage.getItem('gondia_stay_persistent_owner');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.name && typeof parsed.name === 'string' && parsed.name.trim()) {
+            raw = parsed.name.trim();
+          }
+        }
+      } catch {}
+    }
+    if (!raw && authUser?.displayName) {
+      raw = authUser.displayName.trim();
+    }
+    if (!raw) return "Mr./Mrs. [Owner Name]";
+    const clean = raw.replace(/^(mr\.|mrs\.|mr\/mrs\.)\s+/i, '').trim();
+    return `Mr./Mrs. ${clean || '[Owner Name]'}`;
+  };
+
   // Helper to display exact requested owner greeting: "Welcome, Mr./Mrs. [Name]"
   const getOwnerGreeting = (name?: string): string => {
     if (!name || !name.trim()) return "Welcome, Mr./Mrs. [Name]";
@@ -2047,10 +2069,7 @@ export const App: React.FC = () => {
             {/* Compact Header - keeps listings and navigation immediately visible without scrolling */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
               <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    {getOwnerGreeting(currentOwner.name)}
-                  </h1>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                     Landlord
                   </span>
@@ -2060,6 +2079,10 @@ export const App: React.FC = () => {
                     </span>
                   )}
                 </div>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-snug">
+                  <div>Welcome</div>
+                  <div className="mt-0.5">{getOwnerSalutation(currentOwner.name)}</div>
+                </h1>
                 <p className="text-xs text-slate-500">
                   {myProperties.length} total properties ({myProperties.filter(p => isApproved(p.status)).length} live) • Gondia, Maharashtra
                 </p>
@@ -2134,8 +2157,9 @@ export const App: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                        {getOwnerGreeting(currentOwner.name)}
+                      <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight leading-snug">
+                        <div>Welcome</div>
+                        <div className="mt-0.5">{getOwnerSalutation(currentOwner.name)}</div>
                       </h2>
                     </div>
 
