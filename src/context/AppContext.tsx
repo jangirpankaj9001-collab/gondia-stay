@@ -2043,6 +2043,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const currentDepth = (window.history.state?.depth ?? 0);
+    const nextDepth = currentDepth + 1;
     const targetUrl = targetTab === 'detail' && property?.id
       ? `${window.location.pathname}?property=${encodeURIComponent(property.id)}`
       : targetTab === 'explore'
