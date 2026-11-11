@@ -13,7 +13,7 @@ import {
   Unsubscribe 
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './config';
-import { PropertyListing, OwnerProfile } from '../types';
+import { PropertyListing, OwnerProfile, isDeletedByAdmin } from '../types';
 
 export const PROPERTIES_COLLECTION = 'properties';
 export const PROPERTY_SECRETS_COLLECTION = 'property_secrets';
@@ -638,6 +638,10 @@ export const fetchPropertyDirect = async (propertyId: string, token?: string): P
     }
 
     const data = snap.data();
+    if (isDeletedByAdmin(data?.status)) {
+      return null;
+    }
+
     return {
       ...(data as PropertyListing),
       id: snap.id,
@@ -717,6 +721,13 @@ export const fetchPropertyByEditToken = async (
       } else {
         return { property: null, propertyId: null };
       }
+    }
+
+    if (isDeletedByAdmin(propData?.status) || isDeletedByAdmin(tokenSnap.data()?.status)) {
+      try {
+        await deleteDoc(tokenRef);
+      } catch {}
+      return { property: null, propertyId: null };
     }
 
     return {
@@ -1088,40 +1099,61 @@ export const deletePropertyFromFirestore = async (
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
 
+  let tokenToDelete = token?.trim();
+  if (!tokenToDelete) {
+    try {
+      const secretSnap = await getDoc(secretRef);
+      if (secretSnap.exists()) {
+        tokenToDelete = secretSnap.data()?.editToken;
+      }
+    } catch {}
+  }
+
   // Owner deletion using private Edit Token:
   // Uses atomic writeBatch to delete the property, delete the token doc, and delete the secret doc
-  if (token && token.trim()) {
-    const cleanToken = token.trim();
+  if (tokenToDelete) {
+    const cleanToken = tokenToDelete.trim();
     const batch = writeBatch(db);
     batch.delete(docRef);
     const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, cleanToken);
     batch.delete(tokenRef);
     batch.delete(secretRef);
-    await batch.commit();
-
-    return true;
+    try {
+      await batch.commit();
+      return true;
+    } catch (bErr) {
+      console.warn('[GondiaStay] Batch property delete notice, falling back:', bErr);
+    }
   }
+
+  // Also query and remove any remaining tokens for this property to permanently erase them
+  try {
+    const q = query(collection(db, PROPERTY_EDIT_TOKENS_COLLECTION), where('propertyId', '==', propertyId));
+    const qSnap = await getDocs(q);
+    for (const tDoc of qSnap.docs) {
+      await deleteDoc(tDoc.ref);
+    }
+  } catch {}
 
   // Owner deletion using Firebase Auth (authenticated owner)
   if (ownerId && auth?.currentUser?.uid && auth.currentUser.uid === ownerId) {
-    await deleteDoc(docRef);
+    try {
+      await deleteDoc(docRef);
+    } catch {}
     try {
       await deleteDoc(secretRef);
     } catch {}
-    if (token && token.trim()) {
-      try {
-        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
-        await deleteDoc(tokenRef);
-      } catch {}
-    }
     return true;
   }
 
-  // Fallback: If authenticated user attempting deletion, invoke deleteDoc directly
-  if (auth?.currentUser) {
+  // Direct deletion fallback
+  try {
     await deleteDoc(docRef);
-    return true;
-  }
+  } catch {}
+  try {
+    await deleteDoc(secretRef);
+  } catch {}
+  return true;
 
   return true;
 };

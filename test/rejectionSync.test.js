@@ -69,22 +69,22 @@ test('Admin Rejection & Deletion Functional Sync & Public Exclusion', async (t) 
   await t.test('6. Owner Section renders "Rejected" or "Deleted by Admin" badge for owner listings', () => {
     // Check App.tsx for property badges
     assert.ok(
-      /isDeletedByAdmin\(property\.status\)\s*\?\s*['"]Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode), 
+      /isDeletedByAdmin\(property\.status\)\s*\?\s*['"](Property )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode), 
       'App.tsx displays Deleted by Admin or Rejected for non-approved non-pending properties'
     );
     assert.ok(appCode.includes("'bg-rose-100 text-rose-800'"), 'App.tsx uses rose styling for rejected/deleted status');
 
     // Check App.tsx for service badges
     assert.ok(
-      /isDeletedByAdmin\(srv\.status\)\s*\?\s*['"]Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode), 
+      /isDeletedByAdmin\(srv\.status\)\s*\?\s*['"](Service )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode), 
       'App.tsx displays Deleted by Admin or Rejected for non-approved non-pending services'
     );
   });
 
   await t.test('7. Admin moderation cards display "Deleted by Admin" when status is deleted by admin', () => {
-    assert.ok(appCode.includes("isDeletedByAdmin(prop.status) ? 'Deleted by Admin' : 'Rejected'"),
+    assert.ok(/isDeletedByAdmin\(prop\.status\)\s*\?\s*['"](Property )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode),
       'Admin property card displays Deleted by Admin');
-    assert.ok(appCode.includes("isDeletedByAdmin(srv.status) ? 'Deleted by Admin' : 'Rejected'"),
+    assert.ok(/isDeletedByAdmin\(srv\.status\)\s*\?\s*['"](Service )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode),
       'Admin service card displays Deleted by Admin');
   });
 

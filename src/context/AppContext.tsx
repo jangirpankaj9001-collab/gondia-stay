@@ -423,7 +423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isFirebaseConfigured()) {
       try {
-        await deletePropertyFromFirestore(item.property.id);
+        await deletePropertyFromFirestore(item.property.id, item.token, item.property.ownerId, false);
       } catch (err: any) {
         console.warn('Firestore permanent delete notice:', err);
       }
@@ -446,7 +446,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const item = pendingDeletionRef.current;
         pendingDeletionRef.current = null;
         if (isFirebaseConfigured()) {
-          deletePropertyFromFirestore(item.property.id).catch(() => {});
+          deletePropertyFromFirestore(item.property.id, item.token, item.property.ownerId, false).catch(() => {});
         }
         removeSubmittedProperty(item.property.id);
         removePropertyId(item.property.id);
@@ -1272,6 +1272,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    // Clear from deleted properties set so it restores cleanly without being filtered
+    try {
+      const raw = localStorage.getItem('gondia_stay_deleted_properties');
+      if (raw) {
+        const deletedArr = JSON.parse(raw);
+        if (Array.isArray(deletedArr)) {
+          localStorage.setItem(
+            'gondia_stay_deleted_properties',
+            JSON.stringify(deletedArr.filter((id: string) => id !== item.property.id))
+          );
+        }
+      }
+    } catch {}
+
     saveSubmittedProperty(item.property);
     savePropertyId(item.property.id);
 
@@ -1687,6 +1701,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    // Clear from deleted services set so it restores cleanly without being filtered
+    try {
+      const raw = localStorage.getItem('gondia_stay_deleted_services');
+      if (raw) {
+        const deletedArr = JSON.parse(raw);
+        if (Array.isArray(deletedArr)) {
+          localStorage.setItem(
+            'gondia_stay_deleted_services',
+            JSON.stringify(deletedArr.filter((id: string) => id !== item.service.id))
+          );
+        }
+      }
+    } catch {}
+
     saveSubmittedService(item.service);
     saveServiceId(item.service.id);
 
@@ -2015,7 +2043,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const currentDepth = (window.history.state?.depth ?? 0);
-    const nextDepth = currentDepth + 1;
+    const targetUrl = targetTab === 'detail' && property?.id
+      ? `${window.location.pathname}?property=${encodeURIComponent(property.id)}`
+      : targetTab === 'explore'
+        ? window.location.pathname
+        : undefined;
 
     window.history.pushState(
       {
@@ -2026,7 +2058,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fromTab: activeTabRef.current,
         depth: nextDepth
       },
-      ''
+      '',
+      targetUrl ?? ''
     );
 
     setActiveTab(targetTab);

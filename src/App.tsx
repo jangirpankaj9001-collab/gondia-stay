@@ -220,6 +220,8 @@ export const App: React.FC = () => {
   useBackHandler(showPrivateLinkModal, () => setShowPrivateLinkModal(false), 'private-link-modal');
   useBackHandler(ownerSubTab === 'moderation', () => setOwnerSubTab('listings'), 'admin-moderation');
   useBackHandler(isFirebaseModalOpen, () => setIsFirebaseModalOpen(false), 'firebase-modal');
+  useBackHandler(deleteConfirmState.isOpen, () => setDeleteConfirmState(prev => ({ ...prev, isOpen: false })), 'delete-confirm-dialog');
+  useBackHandler(activeTab === 'detail', () => goBack(), 'detail-view');
 
   // Sync external post listing triggers to open AddPropertyModal
   useEffect(() => {
@@ -323,6 +325,18 @@ export const App: React.FC = () => {
         });
       }
 
+      // Direct property view link from shared URL (?property=<id> or ?stay=<id> or #property=<id>)
+      const directPropId = searchParams.get('property') || searchParams.get('stay') || hashParams.get('property') || hashParams.get('stay');
+      if (directPropId && !editPropId) {
+        fetchPropertyDirect(directPropId).then((prop) => {
+          if (prop) {
+            navigateTo('detail', prop);
+          }
+        }).catch(err => {
+          console.warn('Direct property link fetch notice:', err);
+        });
+      }
+
       // Secure direct URL routing to Admin Moderation Panel
       const isAdminRoute = 
         searchParams.get('admin') === 'true' || 
@@ -359,6 +373,21 @@ export const App: React.FC = () => {
       console.warn('URL parameter parse notice:', e);
     }
   }, []);
+
+  // Resolve shared direct property link from current loaded properties if URL contains property param
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash);
+      const directPropId = searchParams.get('property') || searchParams.get('stay') || hashParams.get('property') || hashParams.get('stay');
+      if (directPropId && properties.length > 0 && !selectedProperty && activeTab !== 'detail') {
+        const found = properties.find(p => p.id === directPropId);
+        if (found) {
+          navigateTo('detail', found);
+        }
+      }
+    } catch {}
+  }, [properties, selectedProperty, activeTab, navigateTo]);
 
   // Selected photos for property listing (supports multiple photos, gallery picker, reordering, duplicate prevention, and compression)
   const [selectedPhotos, setSelectedPhotos] = useState<Array<{
@@ -2405,7 +2434,7 @@ export const App: React.FC = () => {
                                   : isPending(property.status)
                                     ? 'Pending Approval'
                                     : isDeletedByAdmin(property.status)
-                                      ? 'Deleted by Admin'
+                                      ? 'Property Deleted by Admin'
                                       : 'Rejected'}
                               </span>
 
@@ -2618,7 +2647,7 @@ export const App: React.FC = () => {
                                       : isPending(srv.status)
                                         ? 'Pending Approval'
                                         : isDeletedByAdmin(srv.status)
-                                          ? 'Deleted by Admin'
+                                          ? 'Service Deleted by Admin'
                                           : 'Rejected'}
                                   </span>
                                   {srv.hasPendingEdit && (
@@ -3109,7 +3138,7 @@ export const App: React.FC = () => {
                                               ? 'bg-amber-100 text-amber-800'
                                               : 'bg-rose-100 text-rose-800'
                                         }`}>
-                                          {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : isDeletedByAdmin(prop.status) ? 'Deleted by Admin' : 'Rejected'}
+                                          {isApproved(prop.status) ? 'Approved • Publicly Live' : isPending(prop.status) ? 'Pending Approval' : isDeletedByAdmin(prop.status) ? 'Property Deleted by Admin' : 'Rejected'}
                                         </span>
                                         {prop.hasPendingEdit && (
                                           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 flex items-center gap-1">
@@ -3500,7 +3529,7 @@ export const App: React.FC = () => {
                                               ? 'bg-amber-100 text-amber-800'
                                               : 'bg-rose-100 text-rose-800'
                                         }`}>
-                                          {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : isDeletedByAdmin(srv.status) ? 'Deleted by Admin' : 'Rejected'}
+                                          {isApproved(srv.status) ? 'Approved • Publicly Live' : isPending(srv.status) ? 'Pending Approval' : isDeletedByAdmin(srv.status) ? 'Service Deleted by Admin' : 'Rejected'}
                                         </span>
                                         {srv.hasPendingEdit && (
                                           <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 flex items-center gap-1">
@@ -3803,9 +3832,45 @@ export const App: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(window.location.href);
-                    showToast('Listing link copied to clipboard!');
+                  type="button"
+                  onClick={async () => {
+                    const shareUrl = `${window.location.origin}${window.location.pathname}?property=${encodeURIComponent(selectedProperty.id)}`;
+                    const shareData = {
+                      title: `${selectedProperty.title} - GondiaStay`,
+                      text: `Check out ${selectedProperty.title} (${selectedProperty.propertyType}) for rent in ${selectedProperty.locality}, Gondia on GondiaStay (0% Brokerage):`,
+                      url: shareUrl
+                    };
+
+                    if (typeof navigator !== 'undefined' && navigator.share) {
+                      try {
+                        await navigator.share(shareData);
+                        return;
+                      } catch (err: any) {
+                        if (err.name === 'AbortError') return;
+                      }
+                    }
+
+                    try {
+                      if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(shareUrl);
+                        showToast('Listing link copied to clipboard!');
+                        return;
+                      }
+                    } catch {}
+
+                    try {
+                      const tempInput = document.createElement('textarea');
+                      tempInput.value = shareUrl;
+                      tempInput.style.position = 'fixed';
+                      tempInput.style.left = '-9999px';
+                      document.body.appendChild(tempInput);
+                      tempInput.select();
+                      document.execCommand('copy');
+                      document.body.removeChild(tempInput);
+                      showToast('Listing link copied to clipboard!');
+                    } catch {
+                      showToast('Listing link: ' + shareUrl);
+                    }
                   }}
                   className="absolute top-4 right-4 p-2.5 rounded-full bg-white/90 text-slate-800 hover:bg-white shadow-md transition-colors cursor-pointer"
                   title="Share"

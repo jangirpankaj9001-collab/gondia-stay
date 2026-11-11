@@ -79,8 +79,7 @@ test('Property Deletion UNDO Capability (5–10s Temporary Window)', async (t) =
       'Finalize function handles permanent deletion'
     );
     assert.ok(
-      appContextContent.includes('deletePropertyFromFirestore(item.property.id)') ||
-      appContextContent.includes('deletePropertyFromFirestore(pendingItem.property.id)'),
+      /deletePropertyFromFirestore\((item|pendingItem)\.property\.id/.test(appContextContent),
       'Calls deletePropertyFromFirestore on timer expiry'
     );
   });

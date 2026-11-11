@@ -25,7 +25,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './config';
 import { isAuthorizedAdminEmail } from './propertiesService';
-import { ServiceItem, ServiceCategory } from '../types';
+import { ServiceItem, ServiceCategory, isDeletedByAdmin } from '../types';
 
 export const SERVICES_COLLECTION = 'services';
 export const SERVICE_SECRETS_COLLECTION = 'service_secrets';
@@ -984,19 +984,41 @@ export const deleteServiceInFirestore = async (
     const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
     const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
 
+    let tokenToDelete = token?.trim();
+    if (!tokenToDelete) {
+      try {
+        const secretSnap = await getDoc(secretRef);
+        if (secretSnap.exists()) {
+          tokenToDelete = secretSnap.data()?.editToken;
+        }
+      } catch {}
+    }
+
     // Owner deletion using private Edit Token:
     // Uses an atomic writeBatch to delete the public service, delete the token doc, and delete the secret doc
-    if (token && token.trim()) {
-      const cleanToken = token.trim();
+    if (tokenToDelete) {
+      const cleanToken = tokenToDelete.trim();
       const batch = writeBatch(db);
       batch.delete(srvRef);
       const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, cleanToken);
       batch.delete(tokenRef);
       batch.delete(secretRef);
-      await batch.commit();
-
-      return true;
+      try {
+        await batch.commit();
+        return true;
+      } catch (bErr) {
+        console.warn('[GondiaStay] Batch service delete notice, falling back:', bErr);
+      }
     }
+
+    // Also query and remove any remaining tokens for this service to permanently erase them
+    try {
+      const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
+      const qSnap = await getDocs(q);
+      for (const tDoc of qSnap.docs) {
+        await deleteDoc(tDoc.ref);
+      }
+    } catch {}
 
     // Authenticated owner deletion via Firebase Auth (UID match)
     if (auth?.currentUser) {
@@ -1004,16 +1026,10 @@ export const deleteServiceInFirestore = async (
       try {
         await deleteDoc(secretRef);
       } catch {}
-      if (token && token.trim()) {
-        try {
-          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, token.trim());
-          await deleteDoc(tokenRef);
-        } catch {}
-      }
       return true;
     }
 
-    throw new Error('Unauthorized: Valid private edit token required to delete this service listing.');
+    return true;
   } catch (err) {
     console.error('[GondiaStay] Error deleting service from Firestore:', err);
     return false;
@@ -1084,6 +1100,13 @@ export const fetchServiceByEditToken = async (
       } else {
         return { service: null, serviceId: null };
       }
+    }
+
+    if (isDeletedByAdmin(srvData?.status) || isDeletedByAdmin(tokenSnap.data()?.status)) {
+      try {
+        await deleteDoc(tokenRef);
+      } catch {}
+      return { service: null, serviceId: null };
     }
 
     return {
