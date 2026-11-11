@@ -7,7 +7,8 @@ import {
   SortOption, 
   FilterCriteria, 
   DEFAULT_OWNER_PROFILE,
-  OwnerProfile
+  OwnerProfile,
+  isDeletedByAdmin
 } from '../types';
 import { 
   signInWithEmailAndPassword, 
@@ -47,7 +48,8 @@ import {
   moderateServiceInFirestore,
   moderateServiceEditInFirestore,
   deleteServiceInFirestore,
-  getCachedServices
+  getCachedServices,
+  getDeletedServiceIds
 } from '../firebase/servicesService';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
@@ -274,10 +276,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [services, setServices] = useState<ServiceItem[]>(() => {
     const cached = getCachedServices();
     const submitted = getSubmittedServices();
+    const deletedIds = getDeletedServiceIds();
     const map = new Map(cached.map(s => [s.id, s]));
     const merged = [...cached];
     submitted.forEach(s => {
-      if (!map.has(s.id)) {
+      if (!map.has(s.id) && !deletedIds.has(s.id) && !isDeletedByAdmin(s.status)) {
         merged.push(s);
       }
     });
@@ -815,9 +818,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
+          const deletedIds = getDeletedServiceIds();
           locallyTracked.forEach(localSrv => {
             if (!remoteMap.has(localSrv.id)) {
-              merged.push(localSrv);
+              if (!deletedIds.has(localSrv.id) && !isDeletedByAdmin(localSrv.status)) {
+                merged.push(localSrv);
+              } else {
+                removeSubmittedService(localSrv.id);
+              }
             }
           });
 
@@ -872,13 +880,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubscribe = subscribeToOwnerServicesStatus(
       myServiceTokens,
       (serviceId, newStatus) => {
-        updateSubmittedServiceStatus(serviceId, newStatus);
-        setServices(prev => prev.map(s => {
-          if (s.id === serviceId) {
-            return { ...s, status: newStatus };
-          }
-          return s;
-        }));
+        if (newStatus === 'deleted') {
+          removeSubmittedService(serviceId);
+          setServices(prev => prev.filter(s => s.id !== serviceId));
+        } else {
+          updateSubmittedServiceStatus(serviceId, newStatus);
+          setServices(prev => prev.map(s => {
+            if (s.id === serviceId) {
+              return { ...s, status: newStatus };
+            }
+            return s;
+          }));
+        }
       },
       myServiceIds
     );
@@ -1616,7 +1629,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
     }
 
-    // Update UI only after successful deletion
+    // Update UI and immediately clean up submitted service storage so refresh does not resurrect it
+    removeSubmittedService(serviceId);
     setServices(prev => prev.filter(s => s.id !== serviceId));
 
     // 7-second temporary undo option

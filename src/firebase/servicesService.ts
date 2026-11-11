@@ -45,7 +45,7 @@ export const DUMMY_SERVICE_IDS = new Set([
   "srv_sec_01", "srv_sec_02"
 ]);
 
-const getDeletedServiceIds = (): Set<string> => {
+export const getDeletedServiceIds = (): Set<string> => {
   try {
     const raw = localStorage.getItem(DELETED_SERVICES_KEY);
     if (raw) {
@@ -952,16 +952,31 @@ export const deleteServiceInFirestore = async (
     delete savedTokens[serviceId];
     localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
 
-    // Clean up submitted service storage
+    // Clean up submitted service storage (both my_submitted and submitted)
+    const rawMySubmitted = localStorage.getItem('gondia_stay_my_submitted_services');
+    if (rawMySubmitted) {
+      try {
+        const submitted = JSON.parse(rawMySubmitted);
+        if (Array.isArray(submitted)) {
+          localStorage.setItem(
+            'gondia_stay_my_submitted_services',
+            JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
+          );
+        }
+      } catch {}
+    }
+
     const rawSubmitted = localStorage.getItem('gondia_stay_submitted_services');
     if (rawSubmitted) {
-      const submitted = JSON.parse(rawSubmitted);
-      if (Array.isArray(submitted)) {
-        localStorage.setItem(
-          'gondia_stay_submitted_services',
-          JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
-        );
-      }
+      try {
+        const submitted = JSON.parse(rawSubmitted);
+        if (Array.isArray(submitted)) {
+          localStorage.setItem(
+            'gondia_stay_submitted_services',
+            JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
+          );
+        }
+      } catch {}
     }
 
     // Clean up local service IDs
@@ -1146,6 +1161,9 @@ export const subscribeToOwnerServicesStatus = (
           if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
             onStatusUpdate(serviceId, rawStatus as any);
           }
+        } else {
+          // Token document was removed (e.g., owner permanently deleted the service)
+          onStatusUpdate(serviceId, 'deleted');
         }
       }, (err) => {
         console.warn(`[GondiaStay] Service token status sync notice (${serviceId}):`, err);
@@ -1168,6 +1186,9 @@ export const subscribeToOwnerServicesStatus = (
             if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
               onStatusUpdate(srvId, rawStatus as any);
             }
+          } else {
+            // Service document was removed from Firestore
+            onStatusUpdate(srvId, 'deleted');
           }
         }, () => {
           // Gracefully handle rule checks

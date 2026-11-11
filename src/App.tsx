@@ -107,6 +107,7 @@ import {
   SERVICE_CATEGORIES
 } from './types';
 import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps, isValidIndianMobileNumber, formatExactDateTime } from './utils/contact';
+import { getDeletedServiceIds } from './firebase/servicesService';
 
 export const App: React.FC = () => {
   const {
@@ -865,6 +866,9 @@ export const App: React.FC = () => {
       if (isDeletedByAdmin(s.status)) {
         return false;
       }
+      if (getDeletedServiceIds().has(s.id)) {
+        return false;
+      }
 
       // Ordinary public visitors only see approved listings
       if (!isAdminAuthenticated && !isApproved(s.status)) {
@@ -919,6 +923,7 @@ export const App: React.FC = () => {
     return services.filter(s => {
       // Permanently hide deleted items on every device, including admin's mobile while logged in
       if (isDeletedByAdmin(s.status)) return false;
+      if (getDeletedServiceIds().has(s.id)) return false;
 
       if (!isAdminAuthenticated && !isApproved(s.status)) return false;
 
