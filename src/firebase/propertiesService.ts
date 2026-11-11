@@ -149,7 +149,7 @@ export const getCachedProperties = (): PropertyListing[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.filter(p => p && p.id && !deletedIds.has(p.id));
+        return parsed.filter(p => p && p.id && !deletedIds.has(p.id) && !isDeletedByAdmin(p.status));
       }
     }
   } catch (e) {
@@ -1027,6 +1027,34 @@ export const deletePropertyFromFirestore = async (
             }, { merge: true });
           }
         } catch {}
+      }
+
+      // Clean up local cache and track as deleted on admin's device so it never reappears on reload
+      try {
+        const rawDeleted = localStorage.getItem(DELETED_PROPERTIES_KEY);
+        const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
+        if (!deletedArr.includes(propertyId)) {
+          deletedArr.push(propertyId);
+          localStorage.setItem(DELETED_PROPERTIES_KEY, JSON.stringify(deletedArr));
+        }
+
+        const cached = getCachedProperties();
+        const updated = cached.filter(p => p.id !== propertyId);
+        localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
+
+        // Clean up favorites
+        const rawFavs = localStorage.getItem('gondia_stay_favorites');
+        if (rawFavs) {
+          const favs = JSON.parse(rawFavs);
+          if (Array.isArray(favs)) {
+            localStorage.setItem(
+              'gondia_stay_favorites',
+              JSON.stringify(favs.filter((id: any) => id !== propertyId))
+            );
+          }
+        }
+      } catch (e) {
+        console.warn('[GondiaStay] Error updating admin local deleted properties cache:', e);
       }
 
       return true;

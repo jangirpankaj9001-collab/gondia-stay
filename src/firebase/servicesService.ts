@@ -68,7 +68,7 @@ export const getCachedServices = (): ServiceItem[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Filter out deleted IDs and any legacy dummy service IDs
         const validCached = parsed
-          .filter((s: any) => s && s.id && !deletedIds.has(s.id) && !DUMMY_SERVICE_IDS.has(s.id));
+          .filter((s: any) => s && s.id && !deletedIds.has(s.id) && !isDeletedByAdmin(s.status) && !DUMMY_SERVICE_IDS.has(s.id));
         return validCached;
       }
     }
@@ -855,14 +855,15 @@ export const deleteServiceInFirestore = async (
   if (isRealAdmin) {
     const adminEmail = auth?.currentUser?.email || 'admin';
     try {
+      const rawDeleted = localStorage.getItem(DELETED_SERVICES_KEY);
+      const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
+      if (!deletedArr.includes(serviceId)) {
+        deletedArr.push(serviceId);
+        localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify(deletedArr));
+      }
+
       const cached = getCachedServices();
-      const updated = cached.map(s => s.id === serviceId ? {
-        ...s,
-        status: 'deleted_by_admin' as any,
-        deletedAt: Date.now(),
-        deletedBy: adminEmail,
-        updatedAt: Date.now()
-      } : s);
+      const updated = cached.filter(s => s.id !== serviceId);
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
     } catch {}
 

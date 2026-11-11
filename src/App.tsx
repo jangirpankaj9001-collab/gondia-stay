@@ -382,7 +382,7 @@ export const App: React.FC = () => {
       const directPropId = searchParams.get('property') || searchParams.get('stay') || hashParams.get('property') || hashParams.get('stay');
       if (directPropId && properties.length > 0 && !selectedProperty && activeTab !== 'detail') {
         const found = properties.find(p => p.id === directPropId);
-        if (found) {
+        if (found && !isDeletedByAdmin(found.status)) {
           navigateTo('detail', found);
         }
       }
@@ -644,6 +644,11 @@ export const App: React.FC = () => {
   // Requirement 6: Comprehensive search by title, locality, address, accommodation type, rent, amenities
   const filteredProperties = useMemo(() => {
     return properties.filter(p => {
+      // Permanently hide deleted items from Rentals (Explore, Map, Saved) on every device, including admin's mobile while logged in
+      if (isDeletedByAdmin(p.status)) {
+        return false;
+      }
+
       // Ordinary user tabs strictly require approved status
       if (activeTab === 'explore' || activeTab === 'map' || activeTab === 'saved') {
         if (!isApproved(p.status)) return false;
@@ -856,6 +861,11 @@ export const App: React.FC = () => {
   // Filtered services for the Services Tab
   const filteredServices = useMemo(() => {
     return services.filter(s => {
+      // Permanently hide deleted items from Home Services and all subcategories on every device, including admin's mobile while logged in
+      if (isDeletedByAdmin(s.status)) {
+        return false;
+      }
+
       // Ordinary public visitors only see approved listings
       if (!isAdminAuthenticated && !isApproved(s.status)) {
         return false;
@@ -907,6 +917,9 @@ export const App: React.FC = () => {
   // Services available for the Category Grid (filtered by locality & query, preserving all categories)
   const servicesForCategoryGrid = useMemo(() => {
     return services.filter(s => {
+      // Permanently hide deleted items on every device, including admin's mobile while logged in
+      if (isDeletedByAdmin(s.status)) return false;
+
       if (!isAdminAuthenticated && !isApproved(s.status)) return false;
 
       // Locality filter
@@ -1764,7 +1777,7 @@ export const App: React.FC = () => {
               {/* Interactive OpenStreetMap of Gondia (Requirement 2) */}
               <div className="w-full">
                 <GondiaMap
-                  properties={properties.filter(p => isApproved(p.status))}
+                  properties={properties.filter(p => isApproved(p.status) && !isDeletedByAdmin(p.status))}
                   selectedPropertyId={selectedProperty?.id}
                   onSelectProperty={(property) => {
                     navigateTo('detail', property);
@@ -3728,7 +3741,7 @@ export const App: React.FC = () => {
         )}
 
         {/* ===================== DETAIL VIEW TAB ===================== */}
-        {activeTab === 'detail' && selectedProperty && (
+        {activeTab === 'detail' && selectedProperty && !isDeletedByAdmin(selectedProperty.status) && (
           <div className="max-w-4xl mx-auto space-y-6">
             
             {/* Header row with Back and Owner/Admin Edit & Delete buttons */}
