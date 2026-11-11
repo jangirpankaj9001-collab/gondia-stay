@@ -50,7 +50,9 @@ import {
   deleteServiceInFirestore,
   getCachedServices,
   getDeletedServiceIds,
-  purgeAllDeletedServicesFromFirestore
+  purgeAllDeletedServicesFromFirestore,
+  clearAllServicesFromFirestore,
+  ensureServicesStorageWiped
 } from '../firebase/servicesService';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
@@ -206,6 +208,7 @@ export const removeSubmittedProperty = (propertyId: string) => {
 
 // Local persistence for owner submitted services so they appear immediately in Owner -> My Home Services even before admin approval
 export const getSubmittedServices = (): ServiceItem[] => {
+  ensureServicesStorageWiped();
   try {
     const raw = localStorage.getItem('gondia_stay_my_submitted_services');
     if (!raw) return [];
@@ -799,6 +802,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Permanently purge any previously admin-deleted services from Firestore
     purgeAllDeletedServicesFromFirestore().catch(() => {});
+    clearAllServicesFromFirestore().catch(() => {});
 
     const unsubscribe = subscribeToFirestoreServices(
       (remoteServices) => {

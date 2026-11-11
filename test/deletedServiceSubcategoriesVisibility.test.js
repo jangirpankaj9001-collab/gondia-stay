@@ -103,9 +103,29 @@ test('Deleted Service Visibility in Home Services Subcategories', async (t) => {
       servServiceCode.includes('await deleteDoc(srvRef)'),
       'deleteServiceInFirestore executes permanent deleteDoc on Firestore for admin deletion'
     );
+  });
+
+  await t.test('7. Complete wipe of all old and new services across all devices with category names intact', () => {
     assert.ok(
-      appContextCode.includes('purgeAllDeletedServicesFromFirestore'),
-      'AppContext runs purgeAllDeletedServicesFromFirestore on startup'
+      servServiceCode.includes('clearAllServicesFromFirestore'),
+      'servicesService exports clearAllServicesFromFirestore'
     );
+    assert.ok(
+      servServiceCode.includes('ensureServicesStorageWiped'),
+      'servicesService exports ensureServicesStorageWiped to clear device caches'
+    );
+    assert.ok(
+      servServiceCode.includes('SERVICES_WIPE_CUTOFF'),
+      'servicesService defines SERVICES_WIPE_CUTOFF'
+    );
+    // Keep category names intact
+    assert.ok(gridCode.includes("name: 'Mess/Tiffin'"), 'Mess/Tiffin category name is intact');
+    assert.ok(gridCode.includes("name: 'Laundry'"), 'Laundry category name is intact');
+    assert.ok(gridCode.includes("name: 'Electrician'"), 'Electrician category name is intact');
+    assert.ok(gridCode.includes("name: 'Plumber'"), 'Plumber category name is intact');
+    assert.ok(gridCode.includes("name: 'Water Cans'"), 'Water Cans category name is intact');
+    assert.ok(gridCode.includes("name: 'Security (CCTV/Guard)'"), 'Security category name is intact');
+    assert.ok(gridCode.includes("name: 'Cook'"), 'Cook category name is intact');
+    assert.ok(gridCode.includes("name: 'Housekeeping'"), 'Housekeeping category name is intact');
   });
 });

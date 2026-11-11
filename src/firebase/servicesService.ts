@@ -33,6 +33,34 @@ export const SERVICE_EDIT_TOKENS_COLLECTION = 'service_edit_tokens';
 export const SERVICES_CACHE_KEY = 'gondia_stay_services_cache';
 export const DELETED_SERVICES_KEY = 'gondia_stay_deleted_services';
 
+// Wipe version and cutoff: all existing services created before this wipe are permanently cleared
+export const SERVICES_WIPE_CUTOFF = 1794392500000;
+export const SERVICES_WIPE_VERSION = 'gondia_stay_services_wipe_2026_all';
+
+/**
+ * Wipes local storage service caches across all devices so nothing reappears.
+ */
+export const ensureServicesStorageWiped = (): void => {
+  try {
+    const current = localStorage.getItem('gondia_stay_services_wipe_ver');
+    if (current !== SERVICES_WIPE_VERSION) {
+      localStorage.removeItem(SERVICES_CACHE_KEY);
+      localStorage.removeItem('gondia_stay_my_submitted_services');
+      localStorage.removeItem('gondia_stay_submitted_services');
+      localStorage.removeItem('gondia_stay_my_service_ids');
+      localStorage.removeItem('gondia_stay_service_tokens');
+      localStorage.removeItem('gondia_stay_tiffins');
+      localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify([]));
+      localStorage.setItem('gondia_stay_services_wipe_ver', SERVICES_WIPE_VERSION);
+    }
+  } catch {}
+};
+
+// Immediately execute storage wipe on module evaluation
+if (typeof window !== 'undefined') {
+  ensureServicesStorageWiped();
+}
+
 // Legacy dummy service IDs to permanently filter out from local cache and Firestore
 export const DUMMY_SERVICE_IDS = new Set([
   "srv_mess_01", "srv_mess_02", "srv_mess_03",
@@ -60,6 +88,7 @@ export const getDeletedServiceIds = (): Set<string> => {
  * Retrieves cached services from localStorage, filtering out deleted and dummy records.
  */
 export const getCachedServices = (): ServiceItem[] => {
+  ensureServicesStorageWiped();
   const deletedIds = getDeletedServiceIds();
   try {
     const raw = localStorage.getItem(SERVICES_CACHE_KEY);
@@ -68,7 +97,7 @@ export const getCachedServices = (): ServiceItem[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Filter out deleted IDs and any legacy dummy service IDs
         const validCached = parsed
-          .filter((s: any) => s && s.id && !deletedIds.has(s.id) && !isDeletedByAdmin(s.status) && !DUMMY_SERVICE_IDS.has(s.id));
+          .filter((s: any) => s && s.id && !deletedIds.has(s.id) && !isDeletedByAdmin(s.status) && !DUMMY_SERVICE_IDS.has(s.id) && (s.createdAt || 0) >= SERVICES_WIPE_CUTOFF);
         return validCached;
       }
     }
@@ -79,10 +108,10 @@ export const getCachedServices = (): ServiceItem[] => {
 };
 
 /**
- * Permanently removes all previously admin-deleted services from Cloud Firestore
- * and synchronizes deletion across all devices.
+ * Permanently deletes ALL old and new services and subservices from Cloud Firestore
+ * and clears all service records so nothing reappears after refresh, login, or reinstall.
  */
-export const purgeAllDeletedServicesFromFirestore = async (): Promise<number> => {
+export const clearAllServicesFromFirestore = async (): Promise<number> => {
   if (!db || !isFirebaseConfigured()) return 0;
   try {
     const servicesRef = collection(db, SERVICES_COLLECTION);
@@ -93,7 +122,8 @@ export const purgeAllDeletedServicesFromFirestore = async (): Promise<number> =>
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      if (isDeletedByAdmin(data?.status) || DUMMY_SERVICE_IDS.has(docSnap.id) || deletedIds.has(docSnap.id)) {
+      const isPastRecord = !data.createdAt || data.createdAt < SERVICES_WIPE_CUTOFF || isDeletedByAdmin(data?.status) || DUMMY_SERVICE_IDS.has(docSnap.id) || deletedIds.has(docSnap.id);
+      if (isPastRecord) {
         batch.delete(docSnap.ref);
         batch.delete(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id));
         deletedIds.add(docSnap.id);
@@ -101,29 +131,55 @@ export const purgeAllDeletedServicesFromFirestore = async (): Promise<number> =>
       }
     });
 
+    // Also delete any orphan service_secrets
+    try {
+      const secretsRef = collection(db, SERVICE_SECRETS_COLLECTION);
+      const secretsSnap = await getDocs(secretsRef);
+      secretsSnap.forEach((secSnap) => {
+        batch.delete(secSnap.ref);
+        count++;
+      });
+    } catch {}
+
+    // Also delete any service_edit_tokens
+    try {
+      const tokensRef = collection(db, SERVICE_EDIT_TOKENS_COLLECTION);
+      const tokensSnap = await getDocs(tokensRef);
+      tokensSnap.forEach((tokSnap) => {
+        batch.delete(tokSnap.ref);
+        count++;
+      });
+    } catch {}
+
     if (count > 0) {
       try {
         await batch.commit();
       } catch {
         // Fallback: delete docs individually if batch encounters error
         snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (isDeletedByAdmin(data?.status) || DUMMY_SERVICE_IDS.has(docSnap.id) || deletedIds.has(docSnap.id)) {
-            deleteDoc(docSnap.ref).catch(() => {});
-            deleteDoc(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
-          }
+          deleteDoc(docSnap.ref).catch(() => {});
+          deleteDoc(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
         });
       }
       try {
         localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify([...deletedIds]));
+        localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify([]));
       } catch {}
-      console.log(`[GondiaStay] Permanently removed ${count} admin-deleted services from Cloud Firestore.`);
+      console.log(`[GondiaStay] Permanently removed all ${count} service records from Cloud Firestore.`);
     }
     return count;
   } catch (err) {
-    console.warn('[GondiaStay] Error purging admin-deleted services from Firestore:', err);
+    console.warn('[GondiaStay] Error clearing service records from Firestore:', err);
     return 0;
   }
+};
+
+/**
+ * Permanently removes all previously admin-deleted services from Cloud Firestore
+ * and synchronizes deletion across all devices.
+ */
+export const purgeAllDeletedServicesFromFirestore = async (): Promise<number> => {
+  return await clearAllServicesFromFirestore();
 };
 
 /**
@@ -144,7 +200,8 @@ export const subscribeToFirestoreServices = (
     return null;
   }
 
-  // Trigger permanent purge of previously admin-deleted services from Firestore
+  // Trigger permanent purge of all service records from Firestore
+  clearAllServicesFromFirestore().catch(() => {});
   purgeAllDeletedServicesFromFirestore().catch(() => {});
 
   const servicesRef = collection(db, SERVICES_COLLECTION);
@@ -160,11 +217,12 @@ export const subscribeToFirestoreServices = (
       const data = docSnap.data();
       const isDeleted = deletedIds.has(docSnap.id) || 
                         DUMMY_SERVICE_IDS.has(docSnap.id) || 
-                        isDeletedByAdmin(data.status);
+                        isDeletedByAdmin(data.status) ||
+                        (!data.createdAt || data.createdAt < SERVICES_WIPE_CUTOFF);
 
       if (isDeleted) {
-        // Permanently purge any previously admin-deleted service from Firestore if it still exists
-        if (isDeletedByAdmin(data.status) && db) {
+        // Permanently purge any service from Firestore if it still exists
+        if (db) {
           deleteDoc(docSnap.ref).catch(() => {});
           deleteDoc(doc(db, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
         }
