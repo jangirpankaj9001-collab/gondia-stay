@@ -79,6 +79,54 @@ export const getCachedServices = (): ServiceItem[] => {
 };
 
 /**
+ * Permanently removes all previously admin-deleted services from Cloud Firestore
+ * and synchronizes deletion across all devices.
+ */
+export const purgeAllDeletedServicesFromFirestore = async (): Promise<number> => {
+  if (!db || !isFirebaseConfigured()) return 0;
+  try {
+    const servicesRef = collection(db, SERVICES_COLLECTION);
+    const snapshot = await getDocs(servicesRef);
+    const batch = writeBatch(db);
+    let count = 0;
+    const deletedIds = getDeletedServiceIds();
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (isDeletedByAdmin(data?.status) || DUMMY_SERVICE_IDS.has(docSnap.id) || deletedIds.has(docSnap.id)) {
+        batch.delete(docSnap.ref);
+        batch.delete(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id));
+        deletedIds.add(docSnap.id);
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      try {
+        await batch.commit();
+      } catch {
+        // Fallback: delete docs individually if batch encounters error
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (isDeletedByAdmin(data?.status) || DUMMY_SERVICE_IDS.has(docSnap.id) || deletedIds.has(docSnap.id)) {
+            deleteDoc(docSnap.ref).catch(() => {});
+            deleteDoc(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
+          }
+        });
+      }
+      try {
+        localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify([...deletedIds]));
+      } catch {}
+      console.log(`[GondiaStay] Permanently removed ${count} admin-deleted services from Cloud Firestore.`);
+    }
+    return count;
+  } catch (err) {
+    console.warn('[GondiaStay] Error purging admin-deleted services from Firestore:', err);
+    return 0;
+  }
+};
+
+/**
  * Real-time Firestore listener for GondiaStay services.
  * - For regular public visitors: queries approved listings smoothly.
  * - For verified admin: subscribes to all listings so pending submissions appear in moderation console.
@@ -96,6 +144,9 @@ export const subscribeToFirestoreServices = (
     return null;
   }
 
+  // Trigger permanent purge of previously admin-deleted services from Firestore
+  purgeAllDeletedServicesFromFirestore().catch(() => {});
+
   const servicesRef = collection(db, SERVICES_COLLECTION);
   let activeUnsubscribe: Unsubscribe | null = null;
   let hasReceivedData = false;
@@ -106,8 +157,30 @@ export const subscribeToFirestoreServices = (
     const items: ServiceItem[] = [];
 
     snapshot.forEach((docSnap: any) => {
-      if (deletedIds.has(docSnap.id) || DUMMY_SERVICE_IDS.has(docSnap.id)) return;
       const data = docSnap.data();
+      const isDeleted = deletedIds.has(docSnap.id) || 
+                        DUMMY_SERVICE_IDS.has(docSnap.id) || 
+                        isDeletedByAdmin(data.status);
+
+      if (isDeleted) {
+        // Permanently purge any previously admin-deleted service from Firestore if it still exists
+        if (isDeletedByAdmin(data.status) && db) {
+          deleteDoc(docSnap.ref).catch(() => {});
+          deleteDoc(doc(db, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
+        }
+        if (!deletedIds.has(docSnap.id)) {
+          deletedIds.add(docSnap.id);
+          try {
+            const raw = localStorage.getItem(DELETED_SERVICES_KEY);
+            const arr = raw ? JSON.parse(raw) : [];
+            if (!arr.includes(docSnap.id)) {
+              arr.push(docSnap.id);
+              localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify(arr));
+            }
+          } catch {}
+        }
+        return;
+      }
       const pName = (data.providerName || data.ownerName || '').trim();
       const pPhone = (data.phone || data.ownerPhone || '').trim();
       const pWhatsapp = (data.whatsappNumber || data.ownerWhatsappNumber || pPhone).trim();
@@ -875,15 +948,6 @@ export const deleteServiceInFirestore = async (
       const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
       const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
 
-      await setDoc(srvRef, {
-        status: 'deleted_by_admin',
-        deletedAt: Date.now(),
-        deletedBy: adminEmail,
-        moderatedAt: Date.now(),
-        moderatedBy: adminEmail,
-        updatedAt: Date.now()
-      }, { merge: true });
-
       let tokenToUpdate = token?.trim();
       if (!tokenToUpdate) {
         try {
@@ -926,6 +990,12 @@ export const deleteServiceInFirestore = async (
           }
         } catch {}
       }
+
+      // Permanently remove service document and secret document from Cloud Firestore so it never reappears on any device
+      await deleteDoc(srvRef);
+      try {
+        await deleteDoc(secretRef);
+      } catch {}
 
       return true;
     } catch (err) {

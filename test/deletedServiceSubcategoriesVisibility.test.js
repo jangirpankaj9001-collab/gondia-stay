@@ -81,4 +81,31 @@ test('Deleted Service Visibility in Home Services Subcategories', async (t) => {
       'deleteServiceInFirestore cleans up gondia_stay_submitted_services'
     );
   });
+
+  await t.test('6. Laundry, Water Can, and Cook subcategories normalize category strings and Firestore permanently purges admin-deleted services', () => {
+    assert.ok(
+      gridCode.includes("normTarget === 'COOK' || normTarget === 'MAID'"),
+      'matchesSubcategory normalizes COOK and MAID categories'
+    );
+    assert.ok(
+      gridCode.includes("normTarget === 'WATER_CANS' || normTarget === 'WATER_CAN'"),
+      'matchesSubcategory normalizes WATER_CANS and WATER_CAN categories'
+    );
+    assert.ok(
+      gridCode.includes("normTarget === 'LAUNDRY'"),
+      'matchesSubcategory normalizes LAUNDRY category'
+    );
+    assert.ok(
+      servServiceCode.includes('purgeAllDeletedServicesFromFirestore'),
+      'servicesService exports purgeAllDeletedServicesFromFirestore'
+    );
+    assert.ok(
+      servServiceCode.includes('await deleteDoc(srvRef)'),
+      'deleteServiceInFirestore executes permanent deleteDoc on Firestore for admin deletion'
+    );
+    assert.ok(
+      appContextCode.includes('purgeAllDeletedServicesFromFirestore'),
+      'AppContext runs purgeAllDeletedServicesFromFirestore on startup'
+    );
+  });
 });

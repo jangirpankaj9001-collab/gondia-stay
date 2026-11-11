@@ -187,12 +187,20 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   const [selectedGalleryProvider, setSelectedGalleryProvider] = useState<ServiceItem | null>(null);
   const [galleryInitialIndex, setGalleryInitialIndex] = useState(0);
 
-  // Helper to check if a service item belongs to a category (with COOK / MAID alias)
+  // Helper to check if a service item belongs to a category (with COOK / MAID alias & WATER_CANS / WATER_CAN normalization)
   const matchesSubcategory = (itemCategory: string, targetId: ServiceCategory): boolean => {
-    if (targetId === 'COOK') {
-      return itemCategory === 'COOK' || itemCategory === 'MAID';
+    const normItem = (itemCategory || '').toUpperCase().trim();
+    const normTarget = (targetId || '').toUpperCase().trim();
+    if (normTarget === 'COOK' || normTarget === 'MAID') {
+      return normItem === 'COOK' || normItem === 'MAID' || normItem.includes('COOK') || normItem.includes('MAID') || normItem.includes('CHEF');
     }
-    return itemCategory === targetId;
+    if (normTarget === 'WATER_CANS' || normTarget === 'WATER_CAN') {
+      return normItem === 'WATER_CANS' || normItem === 'WATER_CAN' || normItem.includes('WATER');
+    }
+    if (normTarget === 'LAUNDRY') {
+      return normItem === 'LAUNDRY' || normItem.includes('LAUNDRY') || normItem.includes('IRONING');
+    }
+    return normItem === normTarget;
   };
 
   // When clicking an icon in the 8-category grid

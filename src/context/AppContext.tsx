@@ -49,7 +49,8 @@ import {
   moderateServiceEditInFirestore,
   deleteServiceInFirestore,
   getCachedServices,
-  getDeletedServiceIds
+  getDeletedServiceIds,
+  purgeAllDeletedServicesFromFirestore
 } from '../firebase/servicesService';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
@@ -207,7 +208,11 @@ export const removeSubmittedProperty = (propertyId: string) => {
 export const getSubmittedServices = (): ServiceItem[] => {
   try {
     const raw = localStorage.getItem('gondia_stay_my_submitted_services');
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const deletedIds = getDeletedServiceIds();
+    return parsed.filter(s => s && s.id && !deletedIds.has(s.id) && !isDeletedByAdmin(s.status));
   } catch {
     return [];
   }
@@ -791,6 +796,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const configured = isFirebaseConfigured();
     if (!configured) return;
+
+    // Permanently purge any previously admin-deleted services from Firestore
+    purgeAllDeletedServicesFromFirestore().catch(() => {});
 
     const unsubscribe = subscribeToFirestoreServices(
       (remoteServices) => {

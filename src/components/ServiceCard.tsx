@@ -20,7 +20,8 @@ import {
   Award,
   Pencil,
   Camera,
-  Trash2
+  Trash2,
+  ChefHat
 } from 'lucide-react';
 import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isPending } from '../types';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
@@ -84,6 +85,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
     switch (category) {
       case 'MESS_TIFFIN':
         return <Utensils className="w-3.5 h-3.5" />;
+      case 'COOK':
+        return <ChefHat className="w-3.5 h-3.5" />;
       case 'MAID':
         return <Sparkles className="w-3.5 h-3.5" />;
       case 'HOUSEKEEPING':
