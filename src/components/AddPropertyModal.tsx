@@ -1583,89 +1583,96 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         if (!showReapprovalPopup) return null;
         const popupContent = (
           <div 
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in overflow-y-auto"
             role="dialog"
             aria-modal="true"
           >
-            <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center space-y-4 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
+            <div className="relative w-full max-w-sm sm:max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 p-5 sm:p-6 text-center space-y-3.5 animate-in zoom-in-95 max-h-[92vh] overflow-y-auto my-auto">
               <button
                 type="button"
                 onClick={() => {
                   setShowReapprovalPopup(false);
                   onClose();
                 }}
-                className="absolute top-3.5 right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="absolute top-3.5 right-3.5 p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+
+              {/* Green Success Icon + Title */}
+              <div className="space-y-2">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 bg-emerald-100 text-emerald-600 ring-emerald-50">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                  {propertyToEdit ? 'Changes Submitted for Reapproval' : 'Property Submitted Successfully!'}
+                </h3>
               </div>
 
-              <div className="flex justify-center">
-                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black shadow-xs">
+              {/* Yellow "Pending Approval" Badge + Short Approval Message */}
+              <div className="p-3 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex flex-col items-center gap-1.5 text-center">
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-400 text-slate-950 text-xs font-black shadow-xs">
                   <Clock className="w-4 h-4 text-slate-950" />
                   <span>Pending Approval</span>
                 </span>
-              </div>
-
-              <div className="space-y-1.5">
-                <h3 className="text-xl font-black text-slate-900">
-                  {propertyToEdit ? 'Changes Submitted for Reapproval' : 'Property Submitted Successfully!'}
-                </h3>
-                <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                <p className="text-xs text-amber-950 font-semibold leading-relaxed">
                   {propertyToEdit
                     ? 'Your property has been submitted for reapproval. Updated details will appear publicly once approved by the admin.'
-                    : 'Your property has been submitted for admin approval. It will appear publicly on GondiaStay as soon as verified by our administrator.'}
+                    : 'Changes will become public only after admin approval. Listing remains hidden from public users until an administrator reviews and approves them.'}
                 </p>
               </div>
 
-              <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-950 text-left leading-relaxed space-y-1.5">
-                <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
-                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span>Changes will become public only after admin approval</span>
-                </p>
-                <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                  {propertyToEdit
-                    ? 'Your live listing remains active and visible to tenants across Gondia. All proposed edits are kept strictly private and hidden from public users until an administrator reviews and approves them.'
-                    : 'All newly submitted properties are received with status Pending. They remain hidden from public users until an administrator reviews and approves them.'}
-                </p>
-              </div>
-
-              {/* Relevant property summary information card */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-bold text-slate-900 text-sm">{savedPropertyInfo?.title || title}</p>
-                    <p className="text-slate-600">
-                      {(savedPropertyInfo?.propertyType || propertyType)} • {(savedPropertyInfo?.locality || locality)}, Gondia
-                    </p>
-                    <p className="text-blue-600 font-extrabold text-xs">₹{(savedPropertyInfo?.rent || Number(monthlyRent) || 0).toLocaleString('en-IN')}/month</p>
-                    <p className="text-slate-500 text-[11px] mt-0.5">
-                      Landlord: <span className="font-semibold text-slate-700">{savedPropertyInfo?.ownerName || ownerName}</span> • {savedPropertyInfo?.ownerPhone || ownerPhone}
-                    </p>
+              {/* Property Details: Type, location, rent + Landlord name and phone */}
+              <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200/90 rounded-2xl text-left space-y-2 text-xs">
+                <div>
+                  <p className="font-extrabold text-slate-900 text-sm leading-snug">
+                    {savedPropertyInfo?.title || title}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5 text-slate-600 mt-1 text-xs">
+                    <span className="font-bold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                      {(savedPropertyInfo?.propertyType || propertyType)}
+                    </span>
+                    <span>•</span>
+                    <span>{(savedPropertyInfo?.locality || locality)}, Gondia</span>
+                    <span>•</span>
+                    <span className="text-blue-700 font-black">
+                      ₹{(savedPropertyInfo?.rent || Number(monthlyRent) || 0).toLocaleString('en-IN')}/month
+                    </span>
                   </div>
-                  <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
-                    <Clock className="w-3 h-3 text-amber-700" /> Pending Approval
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-600">
+                  <span>
+                    Landlord: <strong className="font-bold text-slate-800">{savedPropertyInfo?.ownerName || ownerName}</strong>
+                  </span>
+                  <span className="font-semibold text-slate-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                    {savedPropertyInfo?.ownerPhone || ownerPhone}
                   </span>
                 </div>
+              </div>
 
-                <div className="pt-2 border-t border-slate-200">
-                  <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/60">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.</span>
-                  </p>
+              {/* Owner Account Linked + Edit/Delete Information */}
+              <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl text-left text-xs">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold text-emerald-950 block">Owner Account Linked</span>
+                    <p className="text-[11px] text-emerald-800 leading-snug mt-0.5">
+                      Automatically recognized & linked to your owner account. Your Edit and Delete controls are ready.
+                    </p>
+                  </div>
                 </div>
               </div>
 
+              {/* Bottom Button */}
               <button
                 type="button"
                 onClick={() => {
                   setShowReapprovalPopup(false);
                   onClose();
                 }}
-                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm min-h-[48px] flex items-center justify-center active:scale-95"
+                className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs sm:text-sm font-extrabold transition-all cursor-pointer shadow-sm min-h-[48px] flex items-center justify-center"
               >
                 Close & View Rentals
               </button>
