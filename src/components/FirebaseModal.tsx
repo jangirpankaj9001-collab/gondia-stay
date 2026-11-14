@@ -523,6 +523,39 @@ service cloud.firestore {
         && !existsAfter(/databases/$(database)/documents/services/$(resource.data.serviceId))
       );
     }
+
+    // User Feedback Collection: Bug Reports, Suggestions & General Queries
+    // Strictly private to verified administrators. Public users can submit new feedback only.
+    match /user_feedback/{feedbackId} {
+      allow read: if isAdmin();
+
+      allow create: if request.resource.data.status == 'pending'
+                    && request.resource.data.category in ['bug_report', 'suggestion', 'general_query']
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() >= 5
+                    && request.resource.data.message.size() <= 2000
+                    && (!('subject' in request.resource.data) || (request.resource.data.subject is string && request.resource.data.subject.size() <= 200))
+                    && (!('screenshotUrl' in request.resource.data) || (request.resource.data.screenshotUrl is string && request.resource.data.screenshotUrl.size() <= 1000))
+                    && (!('contactName' in request.resource.data) || (request.resource.data.contactName is string && request.resource.data.contactName.size() <= 100))
+                    && (!('contactInfo' in request.resource.data) || (request.resource.data.contactInfo is string && request.resource.data.contactInfo.size() <= 150))
+                    && (!('pageContext' in request.resource.data) || (request.resource.data.pageContext is string && request.resource.data.pageContext.size() <= 100))
+                    && request.resource.data.createdAt is number
+                    && request.resource.data.updatedAt is number
+                    && request.resource.data.keys().hasOnly([
+                      'category',
+                      'subject',
+                      'message',
+                      'screenshotUrl',
+                      'contactName',
+                      'contactInfo',
+                      'pageContext',
+                      'status',
+                      'createdAt',
+                      'updatedAt'
+                    ]);
+
+      allow update, delete: if isAdmin();
+    }
   }
 }
 `;

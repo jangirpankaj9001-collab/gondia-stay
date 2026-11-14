@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   Database,
-  Plus
+  Plus,
+  MessageSquarePlus
 } from 'lucide-react';
 import { useApp, useBackHandler } from '../context/AppContext';
 import { ServicesHouseIcon } from './BottomNav';
@@ -28,7 +29,8 @@ export const Header: React.FC = () => {
     openPostListing,
     isAdminAuthenticated,
     ownerSubTab,
-    setOwnerSubTab
+    setOwnerSubTab,
+    setIsFeedbackModalOpen
   } = useApp();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -275,6 +277,23 @@ export const Header: React.FC = () => {
           >
             <MapPin className="w-4 h-4 text-blue-600" />
             Interactive Gondia Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsFeedbackModalOpen(true);
+              setMobileMenuOpen(false);
+            }}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <MessageSquarePlus className="w-4 h-4 text-blue-600" />
+              <span>Feedback & Report a Problem</span>
+            </div>
+            <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+              Support
+            </span>
           </button>
 
           {/* Admin Panel Entry - Moved into menu, protected & accessible on any device */}

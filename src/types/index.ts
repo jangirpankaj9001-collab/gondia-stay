@@ -336,3 +336,24 @@ export const DEFAULT_OWNER_PROFILE: OwnerProfile = {
   email: '',
   deviceToken: ''
 };
+
+export type FeedbackCategory = 'bug_report' | 'suggestion' | 'general_query';
+
+export type FeedbackStatus = 'pending' | 'reviewed' | 'resolved';
+
+export interface FeedbackItem {
+  id: string;
+  category: FeedbackCategory;
+  subject?: string;
+  message: string;
+  screenshotUrl?: string;
+  contactName?: string;
+  contactInfo?: string;
+  pageContext?: string;
+  status: FeedbackStatus;
+  createdAt: number;
+  updatedAt: number;
+  reviewedAt?: number;
+  reviewedBy?: string;
+}
+

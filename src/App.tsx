@@ -56,7 +56,11 @@ import {
   Shirt,
   Pencil,
   RotateCcw,
-  Calendar
+  Calendar,
+  MessageSquarePlus,
+  Bug,
+  Lightbulb,
+  HelpCircle
 } from 'lucide-react';
 import { 
   uploadMultiplePropertyPhotos, 
@@ -82,6 +86,7 @@ import { FilterModal } from './components/FilterModal';
 import { FirebaseModal } from './components/FirebaseModal';
 import { GondiaMap } from './components/GondiaMap';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
+import { FeedbackModal } from './components/FeedbackModal';
 import { 
   PropertyListing, 
   PropertyType, 
@@ -104,7 +109,9 @@ import {
   isAvailable,
   ServiceItem,
   ServiceCategory,
-  SERVICE_CATEGORIES
+  SERVICE_CATEGORIES,
+  FeedbackItem,
+  FeedbackStatus
 } from './types';
 import { formatDisplayPhone, openWhatsApp, dialPhone, openGoogleMaps, isValidIndianMobileNumber, formatExactDateTime } from './utils/contact';
 import { getDeletedServiceIds } from './firebase/servicesService';
@@ -175,7 +182,12 @@ export const App: React.FC = () => {
     saveServiceId,
     ownerSubTab,
     setOwnerSubTab,
-    openPostListing
+    openPostListing,
+    isFeedbackModalOpen,
+    setIsFeedbackModalOpen,
+    feedbackItems,
+    isFeedbackLoading,
+    updateFeedbackStatus
   } = useApp();
 
   const [firebaseModalTab, setFirebaseModalTab] = useState<'status' | 'rules' | 'manual' | 'cloudinary' | 'json'>('status');
@@ -187,8 +199,11 @@ export const App: React.FC = () => {
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
   const [copiedPropId, setCopiedPropId] = useState<string | null>(null);
   const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'pending_edits' | 'approved' | 'rejected'>('pending');
-  const [adminModerationSection, setAdminModerationSection] = useState<'properties' | 'services'>('properties');
+  const [adminModerationSection, setAdminModerationSection] = useState<'properties' | 'services' | 'feedback'>('properties');
   const [adminServiceModerationFilter, setAdminServiceModerationFilter] = useState<'pending' | 'pending_edits' | 'approved' | 'rejected'>('pending');
+  const [adminFeedbackFilter, setAdminFeedbackFilter] = useState<'all' | FeedbackStatus>('pending');
+  const [updatingFeedbackId, setUpdatingFeedbackId] = useState<string | null>(null);
+  const [previewFeedbackScreenshot, setPreviewFeedbackScreenshot] = useState<string | null>(null);
   
   // Services Section States
   const [selectedServiceCategory, setSelectedServiceCategory] = useState<'ALL' | ServiceCategory>('ALL');
@@ -222,6 +237,7 @@ export const App: React.FC = () => {
   useBackHandler(ownerSubTab === 'moderation', () => setOwnerSubTab('listings'), 'admin-moderation');
   useBackHandler(isFirebaseModalOpen, () => setIsFirebaseModalOpen(false), 'firebase-modal');
   useBackHandler(deleteConfirmState.isOpen, () => setDeleteConfirmState(prev => ({ ...prev, isOpen: false })), 'delete-confirm-dialog');
+  useBackHandler(Boolean(previewFeedbackScreenshot), () => setPreviewFeedbackScreenshot(null), 'feedback-screenshot-lightbox');
   useBackHandler(activeTab === 'detail', () => goBack(), 'detail-view');
 
   // Sync external post listing triggers to open AddPropertyModal
@@ -3001,18 +3017,18 @@ export const App: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Admin Moderation Section Selector (Properties vs Services) */}
-                    <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl">
+                    {/* Admin Moderation Section Selector (Properties vs Services vs User Feedback) */}
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl">
                       <button
                         type="button"
                         onClick={() => setAdminModerationSection('properties')}
-                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                           adminModerationSection === 'properties'
                             ? 'bg-white text-slate-900 shadow-xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <Building2 className="w-4 h-4 text-blue-600" />
+                        <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
                         <span>Rental Properties</span>
                         {(pendingProperties.length > 0 || pendingEditProperties.length > 0) && (
                           <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
@@ -3024,7 +3040,7 @@ export const App: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setAdminModerationSection('services')}
-                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                           adminModerationSection === 'services'
                             ? 'bg-white text-slate-900 shadow-xs'
                             : 'text-slate-600 hover:text-slate-900'
@@ -3035,6 +3051,24 @@ export const App: React.FC = () => {
                         {(pendingServices.length > 0 || pendingEditServices.length > 0) && (
                           <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
                             {pendingServices.length + pendingEditServices.length} pending
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminModerationSection('feedback')}
+                        className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          adminModerationSection === 'feedback'
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <MessageSquarePlus className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <span>User Feedback</span>
+                        {feedbackItems.filter(f => f.status === 'pending').length > 0 && (
+                          <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                            {feedbackItems.filter(f => f.status === 'pending').length} pending
                           </span>
                         )}
                       </button>
@@ -3761,6 +3795,265 @@ export const App: React.FC = () => {
                     })()}
                   </div>
                 )}
+
+                {/* User Feedback Management Section (Strictly Admin Only) */}
+                {adminModerationSection === 'feedback' && isAdminAuthenticated && (
+                  <div className="space-y-4">
+                    {/* Feedback Status Filter Tabs */}
+                    <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
+                      {(() => {
+                        const pendingFbCount = feedbackItems.filter(f => f.status === 'pending').length;
+                        const reviewedFbCount = feedbackItems.filter(f => f.status === 'reviewed').length;
+                        const resolvedFbCount = feedbackItems.filter(f => f.status === 'resolved').length;
+
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setAdminFeedbackFilter('pending')}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                adminFeedbackFilter === 'pending'
+                                  ? 'bg-amber-500 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>Pending</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                                adminFeedbackFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {pendingFbCount}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setAdminFeedbackFilter('reviewed')}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                adminFeedbackFilter === 'reviewed'
+                                  ? 'bg-blue-600 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                              <span>Reviewed</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                                adminFeedbackFilter === 'reviewed' ? 'bg-blue-800 text-white' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {reviewedFbCount}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setAdminFeedbackFilter('resolved')}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                adminFeedbackFilter === 'resolved'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Resolved</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                                adminFeedbackFilter === 'resolved' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {resolvedFbCount}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setAdminFeedbackFilter('all')}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                adminFeedbackFilter === 'all'
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <span>All</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                                adminFeedbackFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {feedbackItems.length}
+                              </span>
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {(() => {
+                      const visibleFeedback = adminFeedbackFilter === 'all'
+                        ? feedbackItems
+                        : feedbackItems.filter(f => f.status === adminFeedbackFilter);
+
+                      if (isFeedbackLoading && feedbackItems.length === 0) {
+                        return (
+                          <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center space-y-2">
+                            <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
+                            <p className="text-xs font-semibold text-slate-500">Loading user feedback...</p>
+                          </div>
+                        );
+                      }
+
+                      if (visibleFeedback.length === 0) {
+                        return (
+                          <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center space-y-2">
+                            <MessageSquarePlus className="w-8 h-8 text-slate-300 mx-auto" />
+                            <p className="text-sm font-bold text-slate-600">
+                              {adminFeedbackFilter === 'pending'
+                                ? 'No pending user feedback.'
+                                : adminFeedbackFilter === 'reviewed'
+                                  ? 'No reviewed feedback items.'
+                                  : adminFeedbackFilter === 'resolved'
+                                    ? 'No resolved feedback items yet.'
+                                    : 'No user feedback submissions yet.'}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          {visibleFeedback.map((fb: FeedbackItem) => {
+                            const categoryBadge =
+                              fb.category === 'bug_report'
+                                ? { label: 'Bug Report', classes: 'bg-rose-50 text-rose-800 border-rose-200', icon: <Bug className="w-3 h-3" /> }
+                                : fb.category === 'suggestion'
+                                  ? { label: 'Suggestion', classes: 'bg-amber-50 text-amber-800 border-amber-200', icon: <Lightbulb className="w-3 h-3" /> }
+                                  : { label: 'General Query', classes: 'bg-blue-50 text-blue-800 border-blue-200', icon: <HelpCircle className="w-3 h-3" /> };
+
+                            const statusBadge =
+                              fb.status === 'resolved'
+                                ? { label: 'Resolved', classes: 'bg-emerald-100 text-emerald-800' }
+                                : fb.status === 'reviewed'
+                                  ? { label: 'Reviewed', classes: 'bg-blue-100 text-blue-800' }
+                                  : { label: 'Pending', classes: 'bg-amber-100 text-amber-800' };
+
+                            const isUpdating = updatingFeedbackId === fb.id;
+
+                            return (
+                              <div
+                                key={fb.id}
+                                className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${categoryBadge.classes}`}>
+                                      {categoryBadge.icon}
+                                      <span>{categoryBadge.label}</span>
+                                    </span>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wide ${statusBadge.classes}`}>
+                                      {statusBadge.label}
+                                    </span>
+                                    {fb.pageContext && (
+                                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                        Screen: {fb.pageContext}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 text-slate-400" />
+                                    {formatExactDateTime(fb.createdAt)}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1">
+                                  {fb.subject && (
+                                    <h4 className="text-sm font-extrabold text-slate-900">
+                                      {fb.subject}
+                                    </h4>
+                                  )}
+                                  <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                    {fb.message}
+                                  </p>
+                                </div>
+
+                                {(fb.contactName || fb.contactInfo) && (
+                                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                                    {fb.contactName && (
+                                      <span>
+                                        From: <strong className="font-bold text-slate-800">{fb.contactName}</strong>
+                                      </span>
+                                    )}
+                                    {fb.contactName && fb.contactInfo && <span>•</span>}
+                                    {fb.contactInfo && (
+                                      <span>
+                                        Contact: <strong className="font-bold text-slate-800">{fb.contactInfo}</strong>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {fb.screenshotUrl && (
+                                  <div className="pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewFeedbackScreenshot(fb.screenshotUrl!)}
+                                      className="inline-flex items-center gap-2.5 p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    >
+                                      <img
+                                        src={fb.screenshotUrl}
+                                        alt="Attached feedback screenshot"
+                                        className="w-14 h-14 rounded-lg object-cover border border-slate-200"
+                                      />
+                                      <span className="text-xs font-bold text-blue-700 pr-2 flex items-center gap-1">
+                                        <ImageIcon className="w-3.5 h-3.5" />
+                                        View Screenshot
+                                      </span>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Status Management Buttons (Pending, Reviewed, Resolved) */}
+                                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold text-slate-500">
+                                    Set Status:
+                                  </span>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {(['pending', 'reviewed', 'resolved'] as FeedbackStatus[]).map((targetStatus) => {
+                                      const isActive = fb.status === targetStatus;
+                                      const btnLabel =
+                                        targetStatus === 'pending'
+                                          ? 'Pending'
+                                          : targetStatus === 'reviewed'
+                                            ? 'Reviewed'
+                                            : 'Resolved';
+                                      return (
+                                        <button
+                                          key={targetStatus}
+                                          type="button"
+                                          disabled={isActive || isUpdating}
+                                          onClick={async () => {
+                                            setUpdatingFeedbackId(fb.id);
+                                            await updateFeedbackStatus(fb.id, targetStatus);
+                                            setUpdatingFeedbackId(null);
+                                          }}
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+                                            isActive
+                                              ? targetStatus === 'resolved'
+                                                ? 'bg-emerald-600 text-white shadow-xs cursor-default'
+                                                : targetStatus === 'reviewed'
+                                                  ? 'bg-blue-600 text-white shadow-xs cursor-default'
+                                                  : 'bg-amber-500 text-slate-950 shadow-xs cursor-default'
+                                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                          }`}
+                                        >
+                                          {isUpdating && !isActive ? '...' : btnLabel}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             )}
 
@@ -4421,6 +4714,41 @@ export const App: React.FC = () => {
         onConfirm={deleteConfirmState.onConfirm}
         onCancel={() => setDeleteConfirmState(prev => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Feedback & Report a Problem Modal */}
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+      />
+
+      {/* Admin Feedback Screenshot Lightbox */}
+      {previewFeedbackScreenshot && isAdminAuthenticated && (
+        <div
+          className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewFeedbackScreenshot(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] flex flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewFeedbackScreenshot(null)}
+              className="self-end p-2 rounded-full bg-white/90 hover:bg-white text-slate-900 shadow-lg cursor-pointer"
+              aria-label="Close screenshot preview"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={previewFeedbackScreenshot}
+              alt="Feedback screenshot full view"
+              className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl border border-white/20"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Temporary Property Deletion UNDO Option (7 seconds) */}
       {/* Property deleted – UNDO */}

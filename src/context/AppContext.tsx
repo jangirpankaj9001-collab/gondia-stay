@@ -8,7 +8,9 @@ import {
   FilterCriteria, 
   DEFAULT_OWNER_PROFILE,
   OwnerProfile,
-  isDeletedByAdmin
+  isDeletedByAdmin,
+  FeedbackItem,
+  FeedbackStatus
 } from '../types';
 import { 
   signInWithEmailAndPassword, 
@@ -54,6 +56,12 @@ import {
   clearAllServicesFromFirestore,
   ensureServicesStorageWiped
 } from '../firebase/servicesService';
+import {
+  submitFeedbackToFirestore,
+  subscribeToFirestoreFeedback,
+  updateFeedbackStatusInFirestore,
+  SubmitFeedbackInput
+} from '../firebase/feedbackService';
 import { isValidIndianMobileNumber } from '../utils/contact';
 
 export interface PendingPropertyDeletion {
@@ -149,6 +157,12 @@ interface AppContextType {
   ownerSubTab: 'listings' | 'new' | 'moderation';
   setOwnerSubTab: React.Dispatch<React.SetStateAction<'listings' | 'new' | 'moderation'>>;
   openPostListing: () => void;
+  isFeedbackModalOpen: boolean;
+  setIsFeedbackModalOpen: (open: boolean) => void;
+  feedbackItems: FeedbackItem[];
+  isFeedbackLoading: boolean;
+  submitFeedback: (input: SubmitFeedbackInput) => Promise<{ success: boolean; feedbackId?: string; error?: string }>;
+  updateFeedbackStatus: (feedbackId: string, status: FeedbackStatus) => Promise<boolean>;
 }
 
 const defaultFilterCriteria: FilterCriteria = {
@@ -272,6 +286,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(isFirebaseConfigured());
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState<boolean>(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState<boolean>(false);
 
   // Firebase Authentication states
   const [adminUser, setAdminUser] = useState<User | null>(null);
@@ -912,6 +929,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubscribe();
     };
   }, [myServiceTokens, myServiceIds, isAdminAuthenticated]);
+
+  // Real-time Firestore listener for User Feedback — strictly restricted to verified Admin
+  useEffect(() => {
+    if (!isAdminAuthenticated || !isFirebaseConfigured()) {
+      setFeedbackItems([]);
+      setIsFeedbackLoading(false);
+      return;
+    }
+
+    setIsFeedbackLoading(true);
+    const unsubscribe = subscribeToFirestoreFeedback(
+      (items) => {
+        setFeedbackItems(items);
+        setIsFeedbackLoading(false);
+      },
+      (err) => {
+        console.warn('[GondiaStay] Feedback sync notice:', err.message);
+        setIsFeedbackLoading(false);
+      },
+      true
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isAdminAuthenticated]);
 
   useEffect(() => {
     localStorage.setItem('gondia_stay_tiffins', JSON.stringify(tiffinServices));
@@ -2167,6 +2210,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [ownerSubTab, setOwnerSubTab] = useState<'listings' | 'new' | 'moderation'>('listings');
 
+  const submitFeedback = async (input: SubmitFeedbackInput) => {
+    const result = await submitFeedbackToFirestore(input);
+    if (!result.success && result.error) {
+      showToast(result.error);
+    }
+    return result;
+  };
+
+  const updateFeedbackStatus = async (feedbackId: string, status: FeedbackStatus): Promise<boolean> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to manage user feedback.");
+      return false;
+    }
+    const adminEmail = adminUser?.email || 'admin';
+    const success = await updateFeedbackStatusInFirestore(feedbackId, status, adminEmail);
+    if (success) {
+      setFeedbackItems(prev =>
+        prev.map(item =>
+          item.id === feedbackId
+            ? {
+                ...item,
+                status,
+                updatedAt: Date.now(),
+                reviewedAt: Date.now(),
+                reviewedBy: adminEmail
+              }
+            : item
+        )
+      );
+      const label = status === 'reviewed' ? 'Reviewed' : status === 'resolved' ? 'Resolved' : 'Pending';
+      showToast(`Feedback marked as ${label}.`);
+    } else {
+      showToast("Failed to update feedback status.");
+    }
+    return success;
+  };
+
   const openPostListing = useCallback(() => {
     setOwnerSubTab('new');
     navigateTo('owner');
@@ -2256,7 +2336,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       saveServiceToken,
       getServiceToken,
       setIsFirebaseModalOpen,
-      clearFirestoreError
+      clearFirestoreError,
+      isFeedbackModalOpen,
+      setIsFeedbackModalOpen,
+      feedbackItems,
+      isFeedbackLoading,
+      submitFeedback,
+      updateFeedbackStatus
     }}>
       {children}
     </AppContext.Provider>
