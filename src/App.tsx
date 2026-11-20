@@ -87,6 +87,7 @@ import { FirebaseModal } from './components/FirebaseModal';
 import { GondiaMap } from './components/GondiaMap';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { FeedbackModal } from './components/FeedbackModal';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import { 
   PropertyListing, 
   PropertyType, 
@@ -204,6 +205,45 @@ export const App: React.FC = () => {
   const [adminFeedbackFilter, setAdminFeedbackFilter] = useState<'all' | FeedbackStatus>('pending');
   const [updatingFeedbackId, setUpdatingFeedbackId] = useState<string | null>(null);
   const [previewFeedbackScreenshot, setPreviewFeedbackScreenshot] = useState<string | null>(null);
+
+  // GondiaStay Welcome Pages state (bypass automatically for direct edit/admin deep links)
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState<boolean>(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash || '';
+      const hasDeepLink = Boolean(
+        searchParams.get('edit') ||
+        searchParams.get('token') ||
+        searchParams.get('service') ||
+        searchParams.get('serviceEdit') ||
+        searchParams.get('admin') ||
+        hash.includes('admin') ||
+        hash.includes('token=')
+      );
+      if (hasDeepLink) return false;
+      return sessionStorage.getItem('gondia_stay_welcome_dismissed') !== '1';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleWelcomeExploreStay = () => {
+    try {
+      sessionStorage.setItem('gondia_stay_welcome_dismissed', '1');
+    } catch {}
+    setShowWelcomeScreen(false);
+    navigateTo('explore');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleWelcomeExploreServices = () => {
+    try {
+      sessionStorage.setItem('gondia_stay_welcome_dismissed', '1');
+    } catch {}
+    setShowWelcomeScreen(false);
+    navigateTo('services');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   
   // Services Section States
   const [selectedServiceCategory, setSelectedServiceCategory] = useState<'ALL' | ServiceCategory>('ALL');
@@ -1426,6 +1466,14 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 md:pb-12">
+      {/* Swipeable GondiaStay Welcome Pages */}
+      {showWelcomeScreen && (
+        <WelcomeScreen
+          onExploreStay={handleWelcomeExploreStay}
+          onExploreServices={handleWelcomeExploreServices}
+        />
+      )}
+
       {/* Top Header */}
       <Header />
 
