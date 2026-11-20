@@ -188,7 +188,8 @@ export const App: React.FC = () => {
     setIsFeedbackModalOpen,
     feedbackItems,
     isFeedbackLoading,
-    updateFeedbackStatus
+    updateFeedbackStatus,
+    deleteFeedback
   } = useApp();
 
   const [firebaseModalTab, setFirebaseModalTab] = useState<'status' | 'rules' | 'manual' | 'cloudinary' | 'json'>('status');
@@ -202,7 +203,7 @@ export const App: React.FC = () => {
   const [adminModerationFilter, setAdminModerationFilter] = useState<'pending' | 'pending_edits' | 'approved' | 'rejected'>('pending');
   const [adminModerationSection, setAdminModerationSection] = useState<'properties' | 'services' | 'feedback'>('properties');
   const [adminServiceModerationFilter, setAdminServiceModerationFilter] = useState<'pending' | 'pending_edits' | 'approved' | 'rejected'>('pending');
-  const [adminFeedbackFilter, setAdminFeedbackFilter] = useState<'all' | FeedbackStatus>('pending');
+  const [adminFeedbackFilter, setAdminFeedbackFilter] = useState<'pending' | 'resolved'>('pending');
   const [updatingFeedbackId, setUpdatingFeedbackId] = useState<string | null>(null);
   const [previewFeedbackScreenshot, setPreviewFeedbackScreenshot] = useState<string | null>(null);
 
@@ -258,7 +259,7 @@ export const App: React.FC = () => {
   // Global Delete Confirmation Dialog state
   const [deleteConfirmState, setDeleteConfirmState] = useState<{
     isOpen: boolean;
-    itemType: 'property' | 'service';
+    itemType: 'property' | 'service' | 'feedback';
     itemTitle?: string;
     onConfirm: () => void;
   }>({
@@ -3840,11 +3841,10 @@ export const App: React.FC = () => {
                 {/* User Feedback Management Section (Strictly Admin Only) */}
                 {adminModerationSection === 'feedback' && isAdminAuthenticated && (
                   <div className="space-y-4">
-                    {/* Feedback Status Filter Tabs */}
+                    {/* Feedback Status Filter Tabs (Pending & Resolved Only) */}
                     <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
                       {(() => {
-                        const pendingFbCount = feedbackItems.filter(f => f.status === 'pending').length;
-                        const reviewedFbCount = feedbackItems.filter(f => f.status === 'reviewed').length;
+                        const pendingFbCount = feedbackItems.filter(f => f.status !== 'resolved').length;
                         const resolvedFbCount = feedbackItems.filter(f => f.status === 'resolved').length;
 
                         return (
@@ -3869,24 +3869,6 @@ export const App: React.FC = () => {
 
                             <button
                               type="button"
-                              onClick={() => setAdminFeedbackFilter('reviewed')}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                adminFeedbackFilter === 'reviewed'
-                                  ? 'bg-blue-600 text-white shadow-xs'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                              <span>Reviewed</span>
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                                adminFeedbackFilter === 'reviewed' ? 'bg-blue-800 text-white' : 'bg-slate-200 text-slate-700'
-                              }`}>
-                                {reviewedFbCount}
-                              </span>
-                            </button>
-
-                            <button
-                              type="button"
                               onClick={() => setAdminFeedbackFilter('resolved')}
                               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                 adminFeedbackFilter === 'resolved'
@@ -3902,32 +3884,15 @@ export const App: React.FC = () => {
                                 {resolvedFbCount}
                               </span>
                             </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setAdminFeedbackFilter('all')}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                adminFeedbackFilter === 'all'
-                                  ? 'bg-slate-900 text-white shadow-xs'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              <span>All</span>
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                                adminFeedbackFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
-                              }`}>
-                                {feedbackItems.length}
-                              </span>
-                            </button>
                           </>
                         );
                       })()}
                     </div>
 
                     {(() => {
-                      const visibleFeedback = adminFeedbackFilter === 'all'
-                        ? feedbackItems
-                        : feedbackItems.filter(f => f.status === adminFeedbackFilter);
+                      const visibleFeedback = adminFeedbackFilter === 'resolved'
+                        ? feedbackItems.filter(f => f.status === 'resolved')
+                        : feedbackItems.filter(f => f.status !== 'resolved');
 
                       if (isFeedbackLoading && feedbackItems.length === 0) {
                         return (
@@ -3945,11 +3910,7 @@ export const App: React.FC = () => {
                             <p className="text-sm font-bold text-slate-600">
                               {adminFeedbackFilter === 'pending'
                                 ? 'No pending user feedback.'
-                                : adminFeedbackFilter === 'reviewed'
-                                  ? 'No reviewed feedback items.'
-                                  : adminFeedbackFilter === 'resolved'
-                                    ? 'No resolved feedback items yet.'
-                                    : 'No user feedback submissions yet.'}
+                                : 'No resolved feedback items yet.'}
                             </p>
                           </div>
                         );
@@ -3968,9 +3929,7 @@ export const App: React.FC = () => {
                             const statusBadge =
                               fb.status === 'resolved'
                                 ? { label: 'Resolved', classes: 'bg-emerald-100 text-emerald-800' }
-                                : fb.status === 'reviewed'
-                                  ? { label: 'Reviewed', classes: 'bg-blue-100 text-blue-800' }
-                                  : { label: 'Pending', classes: 'bg-amber-100 text-amber-800' };
+                                : { label: 'Pending', classes: 'bg-amber-100 text-amber-800' };
 
                             const isUpdating = updatingFeedbackId === fb.id;
 
@@ -4047,20 +4006,18 @@ export const App: React.FC = () => {
                                   </div>
                                 )}
 
-                                {/* Status Management Buttons (Pending, Reviewed, Resolved) */}
+                                {/* Status Management & Permanent Delete Buttons (Pending, Resolved, Delete) */}
                                 <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                                   <span className="text-[11px] font-bold text-slate-500">
-                                    Set Status:
+                                    Actions:
                                   </span>
                                   <div className="flex flex-wrap items-center gap-1.5">
-                                    {(['pending', 'reviewed', 'resolved'] as FeedbackStatus[]).map((targetStatus) => {
-                                      const isActive = fb.status === targetStatus;
-                                      const btnLabel =
-                                        targetStatus === 'pending'
-                                          ? 'Pending'
-                                          : targetStatus === 'reviewed'
-                                            ? 'Reviewed'
-                                            : 'Resolved';
+                                    {(['pending', 'resolved'] as FeedbackStatus[]).map((targetStatus) => {
+                                      const isActive =
+                                        targetStatus === 'resolved'
+                                          ? fb.status === 'resolved'
+                                          : fb.status !== 'resolved';
+                                      const btnLabel = targetStatus === 'pending' ? 'Pending' : 'Resolved';
                                       return (
                                         <button
                                           key={targetStatus}
@@ -4075,9 +4032,7 @@ export const App: React.FC = () => {
                                             isActive
                                               ? targetStatus === 'resolved'
                                                 ? 'bg-emerald-600 text-white shadow-xs cursor-default'
-                                                : targetStatus === 'reviewed'
-                                                  ? 'bg-blue-600 text-white shadow-xs cursor-default'
-                                                  : 'bg-amber-500 text-slate-950 shadow-xs cursor-default'
+                                                : 'bg-amber-500 text-slate-950 shadow-xs cursor-default'
                                               : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                                           }`}
                                         >
@@ -4085,6 +4040,30 @@ export const App: React.FC = () => {
                                         </button>
                                       );
                                     })}
+
+                                    <button
+                                      type="button"
+                                      disabled={isUpdating}
+                                      data-testid="delete-feedback-btn"
+                                      onClick={() => {
+                                        const previewTitle = fb.subject || fb.message.slice(0, 60);
+                                        setDeleteConfirmState({
+                                          isOpen: true,
+                                          itemType: 'feedback',
+                                          itemTitle: previewTitle,
+                                          onConfirm: async () => {
+                                            setDeleteConfirmState(prev => ({ ...prev, isOpen: false }));
+                                            setUpdatingFeedbackId(fb.id);
+                                            await deleteFeedback(fb.id);
+                                            setUpdatingFeedbackId(null);
+                                          }
+                                        });
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[36px] bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Delete</span>
+                                    </button>
                                   </div>
                                 </div>
                               </div>

@@ -64,6 +64,7 @@ import {
   submitFeedbackToFirestore,
   subscribeToFirestoreFeedback,
   updateFeedbackStatusInFirestore,
+  deleteFeedbackFromFirestore,
   SubmitFeedbackInput
 } from '../firebase/feedbackService';
 import { isValidIndianMobileNumber } from '../utils/contact';
@@ -167,6 +168,7 @@ interface AppContextType {
   isFeedbackLoading: boolean;
   submitFeedback: (input: SubmitFeedbackInput) => Promise<{ success: boolean; feedbackId?: string; error?: string }>;
   updateFeedbackStatus: (feedbackId: string, status: FeedbackStatus) => Promise<boolean>;
+  deleteFeedback: (feedbackId: string) => Promise<boolean>;
 }
 
 const defaultFilterCriteria: FilterCriteria = {
@@ -2441,6 +2443,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return success;
   };
 
+  const deleteFeedback = async (feedbackId: string): Promise<boolean> => {
+    if (!isAdminAuthenticated) {
+      showToast("Admin verification required to manage user feedback.");
+      return false;
+    }
+    const success = await deleteFeedbackFromFirestore(feedbackId);
+    if (success) {
+      setFeedbackItems(prev => prev.filter(item => item.id !== feedbackId));
+      showToast("Feedback permanently deleted.");
+    } else {
+      showToast("Failed to delete feedback.");
+    }
+    return success;
+  };
+
   const openPostListing = useCallback(() => {
     setOwnerSubTab('new');
     navigateTo('owner');
@@ -2536,7 +2553,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       feedbackItems,
       isFeedbackLoading,
       submitFeedback,
-      updateFeedbackStatus
+      updateFeedbackStatus,
+      deleteFeedback
     }}>
       {children}
     </AppContext.Provider>

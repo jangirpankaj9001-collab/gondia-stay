@@ -3,6 +3,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   Unsubscribe
 } from 'firebase/firestore';
@@ -197,6 +198,31 @@ export const updateFeedbackStatusInFirestore = async (
     return true;
   } catch (err) {
     console.error('[GondiaStay] Error updating feedback status:', err);
+    return false;
+  }
+};
+
+/**
+ * Permanently deletes a user feedback document from Firestore.
+ * Strictly requires verified administrator authentication (enforced in Firestore rules).
+ */
+export const deleteFeedbackFromFirestore = async (
+  feedbackId: string
+): Promise<boolean> => {
+  if (!db || !isFirebaseConfigured()) {
+    return false;
+  }
+
+  if (!auth?.currentUser) {
+    return false;
+  }
+
+  try {
+    const docRef = doc(db, FEEDBACK_COLLECTION, feedbackId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (err) {
+    console.error('[GondiaStay] Error deleting feedback:', err);
     return false;
   }
 };

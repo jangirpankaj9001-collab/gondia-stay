@@ -120,7 +120,8 @@ test('Feedback & Report a Problem Feature Verification', async (t) => {
     );
   });
 
-  await t.test('7. Admin Panel displays "User Feedback" section with Pending, Reviewed, and Resolved options', () => {
+  await t.test('7. Admin Panel displays "User Feedback" section with Pending and Resolved sections only (no Reviewed) and permanent Delete with confirmation popup', () => {
+    const deleteModalContent = fs.readFileSync('src/components/DeleteConfirmationModal.tsx', 'utf8');
     assert.ok(
       appContent.includes('<span>User Feedback</span>'),
       'Admin Panel must include User Feedback section tab'
@@ -129,18 +130,43 @@ test('Feedback & Report a Problem Feature Verification', async (t) => {
       appContent.includes("adminModerationSection === 'feedback' && isAdminAuthenticated"),
       'User Feedback section must render strictly when admin is authenticated'
     );
-    const feedbackSection = appContent.slice(
-      appContent.indexOf("adminModerationSection === 'feedback' && isAdminAuthenticated")
+    const feedbackSectionStart = appContent.indexOf("adminModerationSection === 'feedback' && isAdminAuthenticated");
+    const feedbackSectionEnd = appContent.indexOf('</div>\n            )}', feedbackSectionStart);
+    const feedbackSection = appContent.slice(feedbackSectionStart, feedbackSectionEnd);
+    assert.ok(
+      feedbackSection.includes('<span>Pending</span>') &&
+      feedbackSection.includes('<span>Resolved</span>'),
+      'User Feedback section must display Pending and Resolved sections'
     );
     assert.ok(
-      feedbackSection.includes('Pending') &&
-      feedbackSection.includes('Reviewed') &&
-      feedbackSection.includes('Resolved'),
-      'User Feedback section must support Pending, Reviewed, and Resolved status filters and actions'
+      !feedbackSection.includes('<span>Reviewed</span>') &&
+      !feedbackSection.includes("'reviewed'"),
+      'Reviewed section and Reviewed status button must be removed from Admin Panel -> User Feedback'
     );
     assert.ok(
       feedbackSection.includes('updateFeedbackStatus(fb.id, targetStatus)'),
-      'Admin can update feedback status to pending, reviewed, or resolved'
+      'Admin can update feedback status between pending and resolved'
+    );
+    assert.ok(
+      feedbackSection.includes('data-testid="delete-feedback-btn"') &&
+      feedbackSection.includes("itemType: 'feedback'") &&
+      feedbackSection.includes('await deleteFeedback(fb.id)'),
+      'Admin Panel -> User Feedback must include a Delete button with confirmation popup wired to deleteFeedback'
+    );
+    assert.ok(
+      feedbackServiceContent.includes('export const deleteFeedbackFromFirestore') &&
+      feedbackServiceContent.includes('await deleteDoc(docRef)'),
+      'feedbackService must permanently delete feedback documents from Firestore'
+    );
+    assert.ok(
+      appContextContent.includes('const deleteFeedback = async (feedbackId: string)') &&
+      appContextContent.includes('await deleteFeedbackFromFirestore(feedbackId)'),
+      'AppContext must provide admin-gated deleteFeedback action'
+    );
+    assert.ok(
+      deleteModalContent.includes("itemType: 'property' | 'service' | 'feedback'") &&
+      deleteModalContent.includes('Are you sure you want to permanently delete this feedback?'),
+      'DeleteConfirmationModal must support permanent feedback deletion confirmation popup'
     );
   });
 });

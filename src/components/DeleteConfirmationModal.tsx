@@ -4,7 +4,7 @@ import { useBackHandler } from '../context/AppContext';
 
 export interface DeleteConfirmationModalProps {
   isOpen: boolean;
-  itemType: 'property' | 'service';
+  itemType: 'property' | 'service' | 'feedback';
   itemTitle?: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -23,9 +23,17 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   if (!isOpen) return null;
 
   const isProperty = itemType === 'property';
-  const questionText = isProperty 
-    ? 'Are you sure you want to delete this property?' 
-    : 'Are you sure you want to delete this service?';
+  const isFeedback = itemType === 'feedback';
+  const dialogTitle = isProperty
+    ? 'Delete Property'
+    : isFeedback
+      ? 'Delete Feedback'
+      : 'Delete Service';
+  const questionText = isProperty
+    ? 'Are you sure you want to delete this property?'
+    : isFeedback
+      ? 'Are you sure you want to permanently delete this feedback?'
+      : 'Are you sure you want to delete this service?';
 
   return (
     <div 
@@ -60,7 +68,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
 
         {/* Dialog Title */}
         <h3 id="delete-dialog-title" className="text-base font-extrabold text-slate-900">
-          Delete {isProperty ? 'Property' : 'Service'}
+          {dialogTitle}
         </h3>
 
         {/* Question Text */}
