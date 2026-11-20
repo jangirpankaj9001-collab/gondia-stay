@@ -583,6 +583,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return myServiceTokens[serviceId];
   }, [myServiceTokens]);
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  }, []);
+
   // Temporary Service Deletion UNDO state (7 seconds window)
   const [pendingServiceDeletion, setPendingServiceDeletion] = useState<PendingServiceDeletion | null>(null);
   const serviceDeletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -720,14 +729,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [filterCriteria, setFilterCriteria] = useState<FilterCriteria>(defaultFilterCriteria);
   const [selectedProperty, setSelectedProperty] = useState<PropertyListing | null>(null);
   const [activeTab, setActiveTab] = useState<'explore' | 'map' | 'tiffin' | 'services' | 'saved' | 'owner' | 'detail'>('explore');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
-  }, []);
 
   // Real-time Firebase Authentication listener for Admin and Landlords
   useEffect(() => {
