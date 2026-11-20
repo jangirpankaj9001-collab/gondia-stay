@@ -54,16 +54,31 @@ test('WelcomeScreen embeds the uploaded welcome image asset directly and matches
   assert.match(src, /<GondiaStayWelcomeLogo idPrefix="services" \/>/);
 });
 
-test('WelcomeScreen implements horizontal swipe navigation, pagination dots, and CTA button hooks', () => {
+test('WelcomeScreen implements horizontal swipe navigation, dynamic pagination dots, and CTA button hooks', () => {
   const src = readFile('src/components/WelcomeScreen.tsx');
 
-  // Touch & mouse swipe handlers + transform track
+  // Touch & mouse swipe handlers, touch-none gesture reliability, and changedTouches end detection
   assert.match(src, /onTouchStart=\{handleTouchStart\}/);
   assert.match(src, /onTouchMove=\{handleTouchMove\}/);
   assert.match(src, /onTouchEnd=\{handleTouchEnd\}/);
+  assert.match(src, /e\.changedTouches\[0\]/);
   assert.match(src, /onMouseDown=\{handleMouseDown\}/);
+  assert.match(src, /touch-none/);
   assert.match(src, /translate3d\(calc\(\$\{-activePage \* 100\}%/);
+  assert.match(src, /translate3d\(\$\{-activePage \* 100\}%, 0, 0\)/);
+
+  // Left swipe advances activePage (0 -> 1); right swipe returns to page 1 (1 -> 0)
+  assert.match(src, /if \(dx < 0\)[\s\S]*Math\.min\(TOTAL_PAGES - 1, prev \+ 1\)/);
+  assert.match(src, /else if \(dx > 0\)[\s\S]*Math\.max\(0, prev - 1\)/);
+
+  // Single dynamic pagination dot bar synchronized directly to activePage (never static per slide)
+  assert.doesNotMatch(src, /renderPaginationDots\(0\)/, 'Dots must not be statically baked into slide 1');
+  assert.doesNotMatch(src, /renderPaginationDots\(1\)/, 'Dots must not be statically baked into slide 2');
+  assert.match(src, /data-testid="welcome-pagination-dots"/);
+  assert.match(src, /const isCurrent = activePage === idx;/);
   assert.match(src, /data-testid=\{`welcome-dot-\$\{idx\}`\}/);
+  assert.match(src, /data-active=\{isCurrent \? 'true' : 'false'\}/);
+  assert.match(src, /aria-selected=\{isCurrent\}/);
 
   // Clickable CTA buttons
   assert.match(src, /data-testid="explore-gondiastay-btn"/);

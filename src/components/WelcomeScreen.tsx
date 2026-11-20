@@ -7,8 +7,8 @@ interface WelcomeScreenProps {
 
 const WELCOME_ASSET_URL = '/assets/aistudio/IMG-20261120-WA3582_6a7bdbdb.jpg';
 const TOTAL_PAGES = 2;
-const SWIPE_THRESHOLD_PX = 45;
-const DRAG_ACTIVATION_PX = 8;
+const SWIPE_THRESHOLD_PX = 40;
+const DRAG_ACTIVATION_PX = 6;
 
 const SCRIPT_FONT_STYLE: React.CSSProperties = {
   fontFamily: "'Kaushan Script', 'Brush Script MT', cursive",
@@ -71,7 +71,7 @@ const GondiaStayWelcomeLogo: React.FC<{ idPrefix: string }> = ({ idPrefix }) => 
  * Shared Gondia heritage skyline + orange side arcs + curved navy tagline footer
  */
 const WelcomeSkylineFooter: React.FC<{ variant: 'stay' | 'services' }> = ({ variant }) => (
-  <div className="relative w-full shrink-0 select-none pointer-events-none">
+  <div className="relative w-full shrink-0 bg-[#F3F7FD] select-none pointer-events-none">
     {/* Skyline silhouette with orange curved accents */}
     <svg
       viewBox="0 0 420 96"
@@ -404,21 +404,32 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const activePageRef = useRef<number>(0);
+  const lastTouchTimeRef = useRef<number>(0);
+  const didSwipeRef = useRef<boolean>(false);
   const gestureRef = useRef<{
     active: boolean;
+    pointerType: 'touch' | 'mouse' | null;
     lockedHorizontal: boolean;
     startX: number;
     startY: number;
     startTime: number;
     lastX: number;
+    lastY: number;
   }>({
     active: false,
+    pointerType: null,
     lockedHorizontal: false,
     startX: 0,
     startY: 0,
     startTime: 0,
     lastX: 0,
+    lastY: 0,
   });
+
+  useEffect(() => {
+    activePageRef.current = activePage;
+  }, [activePage]);
 
   // Lock background page scroll while Welcome Screen is visible
   useEffect(() => {
@@ -442,76 +453,116 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const beginGesture = useCallback((clientX: number, clientY: number) => {
-    gestureRef.current = {
-      active: true,
-      lockedHorizontal: false,
-      startX: clientX,
-      startY: clientY,
-      startTime: Date.now(),
-      lastX: clientX,
-    };
-  }, []);
-
-  const moveGesture = useCallback(
-    (clientX: number, clientY: number) => {
-      const g = gestureRef.current;
-      if (!g.active) return;
-
-      const dx = clientX - g.startX;
-      const dy = clientY - g.startY;
-      g.lastX = clientX;
-
-      if (!g.lockedHorizontal) {
-        if (Math.abs(dx) < DRAG_ACTIVATION_PX && Math.abs(dy) < DRAG_ACTIVATION_PX) {
-          return;
-        }
-        if (Math.abs(dx) > Math.abs(dy)) {
-          g.lockedHorizontal = true;
-          setIsDragging(true);
-        } else {
-          // Vertical scroll gesture — release horizontal tracking
-          g.active = false;
-          return;
-        }
-      }
-
-      // Rubber-band resistance at the outer boundaries
-      const pullingPastStart = activePage === 0 && dx > 0;
-      const pullingPastEnd = activePage === TOTAL_PAGES - 1 && dx < 0;
-      const dampedDx = pullingPastStart || pullingPastEnd ? dx * 0.25 : dx;
-      setDragOffsetX(dampedDx);
+  const beginGesture = useCallback(
+    (clientX: number, clientY: number, pointerType: 'touch' | 'mouse') => {
+      didSwipeRef.current = false;
+      gestureRef.current = {
+        active: true,
+        pointerType,
+        lockedHorizontal: false,
+        startX: clientX,
+        startY: clientY,
+        startTime: Date.now(),
+        lastX: clientX,
+        lastY: clientY,
+      };
     },
-    [activePage]
+    []
   );
 
-  const endGesture = useCallback(() => {
+  const moveGesture = useCallback((clientX: number, clientY: number) => {
+    const g = gestureRef.current;
+    if (!g.active) return;
+
+    const dx = clientX - g.startX;
+    const dy = clientY - g.startY;
+    g.lastX = clientX;
+    g.lastY = clientY;
+
+    if (!g.lockedHorizontal) {
+      if (Math.abs(dx) < DRAG_ACTIVATION_PX) {
+        return;
+      }
+      // Generous diagonal tolerance so natural one-handed Android thumb arcs always swipe smoothly
+      if (Math.abs(dx) >= Math.abs(dy) * 0.5) {
+        g.lockedHorizontal = true;
+        didSwipeRef.current = true;
+        setIsDragging(true);
+      } else {
+        return;
+      }
+    }
+
+    // Rubber-band resistance at the outer boundaries
+    const current = activePageRef.current;
+    const pullingPastStart = current === 0 && dx > 0;
+    const pullingPastEnd = current === TOTAL_PAGES - 1 && dx < 0;
+    const dampedDx = pullingPastStart || pullingPastEnd ? dx * 0.25 : dx;
+    setDragOffsetX(dampedDx);
+  }, []);
+
+  const endGesture = useCallback((endClientX?: number, endClientY?: number) => {
     const g = gestureRef.current;
     if (!g.active) return;
     g.active = false;
+    g.pointerType = null;
 
-    if (g.lockedHorizontal) {
-      const dx = g.lastX - g.startX;
-      const elapsed = Math.max(1, Date.now() - g.startTime);
-      const velocity = Math.abs(dx) / elapsed;
-      const shouldSwitch = Math.abs(dx) >= SWIPE_THRESHOLD_PX || (Math.abs(dx) >= 24 && velocity > 0.35);
+    const finalX = typeof endClientX === 'number' ? endClientX : g.lastX;
+    const finalY = typeof endClientY === 'number' ? endClientY : g.lastY;
+    const dx = finalX - g.startX;
+    const dy = finalY - g.startY;
+    const elapsed = Math.max(1, Date.now() - g.startTime);
+    const velocity = Math.abs(dx) / elapsed;
 
-      if (shouldSwitch) {
-        if (dx < 0 && activePage < TOTAL_PAGES - 1) {
-          setActivePage(activePage + 1);
-        } else if (dx > 0 && activePage > 0) {
-          setActivePage(activePage - 1);
-        }
+    const isHorizontalSwipe =
+      g.lockedHorizontal || (Math.abs(dx) >= 22 && Math.abs(dx) >= Math.abs(dy) * 0.6);
+    const shouldSwitch =
+      isHorizontalSwipe &&
+      (Math.abs(dx) >= SWIPE_THRESHOLD_PX || (Math.abs(dx) >= 22 && velocity > 0.25));
+
+    if (shouldSwitch) {
+      didSwipeRef.current = true;
+      if (dx < 0) {
+        setActivePage((prev) => Math.min(TOTAL_PAGES - 1, prev + 1));
+      } else if (dx > 0) {
+        setActivePage((prev) => Math.max(0, prev - 1));
       }
+    }
+
+    if (didSwipeRef.current) {
+      window.setTimeout(() => {
+        didSwipeRef.current = false;
+      }, 80);
     }
 
     setIsDragging(false);
     setDragOffsetX(0);
-  }, [activePage]);
+  }, []);
+
+  // Keep desktop mouse drags responsive even if cursor leaves the 460px phone frame
+  useEffect(() => {
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      if (gestureRef.current.active && gestureRef.current.pointerType === 'mouse') {
+        moveGesture(e.clientX, e.clientY);
+      }
+    };
+    const handleWindowMouseUp = (e: MouseEvent) => {
+      if (gestureRef.current.active && gestureRef.current.pointerType === 'mouse') {
+        endGesture(e.clientX, e.clientY);
+      }
+    };
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [moveGesture, endGesture]);
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length !== 1) return;
-    beginGesture(e.touches[0].clientX, e.touches[0].clientY);
+    lastTouchTimeRef.current = Date.now();
+    beginGesture(e.touches[0].clientX, e.touches[0].clientY, 'touch');
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -519,56 +570,43 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     moveGesture(e.touches[0].clientX, e.touches[0].clientY);
   };
 
-  const handleTouchEnd = () => {
-    endGesture();
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    lastTouchTimeRef.current = Date.now();
+    const touch = e.changedTouches[0];
+    endGesture(touch?.clientX, touch?.clientY);
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Allow interactive buttons to handle clicks natively without interference
+    if (e.button !== 0) return;
+    didSwipeRef.current = false;
+    // Ignore synthesized mouse events fired right after touch events on mobile browsers
+    if (Date.now() - lastTouchTimeRef.current < 500) return;
     if ((e.target as HTMLElement).closest('button')) return;
-    beginGesture(e.clientX, e.clientY);
+    beginGesture(e.clientX, e.clientY, 'mouse');
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!gestureRef.current.active) return;
+    if (!gestureRef.current.active || gestureRef.current.pointerType !== 'mouse') return;
     moveGesture(e.clientX, e.clientY);
   };
 
-  const handleMouseUp = () => {
-    endGesture();
+  const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!gestureRef.current.active || gestureRef.current.pointerType !== 'mouse') return;
+    endGesture(e.clientX, e.clientY);
   };
 
-  const renderPaginationDots = (pageIndex: number) => (
-    <div
-      className="flex items-center justify-center gap-2 pt-2 pb-1"
-      role="tablist"
-      aria-label="Welcome pages"
-    >
-      {[0, 1].map((idx) => {
-        const isCurrent = pageIndex === idx;
-        return (
-          <button
-            key={idx}
-            type="button"
-            role="tab"
-            aria-selected={isCurrent}
-            aria-label={`Welcome page ${idx + 1}`}
-            data-testid={`welcome-dot-${idx}`}
-            onClick={() => setActivePage(idx)}
-            className={`rounded-full transition-all duration-200 cursor-pointer p-1.5 -m-1.5 flex items-center justify-center`}
-          >
-            <span
-              className={`block rounded-full transition-all duration-200 ${
-                isCurrent
-                  ? 'w-2.5 h-2.5 bg-[#F36B16] scale-110'
-                  : 'w-2 h-2 bg-[#BFC8D6] hover:bg-[#94A3B8]'
-              }`}
-            />
-          </button>
-        );
-      })}
-    </div>
-  );
+  const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Prevent accidental button activation when finishing a horizontal swipe drag
+    if (didSwipeRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      didSwipeRef.current = false;
+    }
+  };
+
+  const trackTransform = isDragging
+    ? `translate3d(calc(${-activePage * 100}% + ${dragOffsetX}px), 0, 0)`
+    : `translate3d(${-activePage * 100}%, 0, 0)`;
 
   return (
     <div
@@ -585,26 +623,28 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        className="relative w-full max-w-[460px] h-[100dvh] bg-gradient-to-b from-[#FFFFFF] via-[#FBFDFE] to-[#F4F8FE] overflow-hidden shadow-2xl select-none touch-pan-y"
+        onClickCapture={handleClickCapture}
+        className="relative w-full max-w-[460px] h-[100dvh] flex flex-col bg-gradient-to-b from-[#FFFFFF] via-[#FBFDFE] to-[#F4F8FE] overflow-hidden shadow-2xl select-none touch-none overscroll-none"
       >
-        {/* Horizontal Swipeable Track */}
-        <div
-          data-testid="welcome-track"
-          data-active-page={activePage}
-          className={`flex w-full h-full will-change-transform ${
-            isDragging ? '' : 'transition-transform duration-300 ease-out'
-          }`}
-          style={{
-            transform: `translate3d(calc(${-activePage * 100}% + ${dragOffsetX}px), 0, 0)`,
-          }}
-        >
-          {/* ==================== PAGE 1: FIND YOUR PERFECT STAY IN GONDIA ==================== */}
-          <section
-            data-testid="welcome-page-1"
-            aria-label="Find Your Perfect Stay in Gondia"
-            className="w-full h-full shrink-0 flex flex-col justify-between bg-gradient-to-b from-[#FFFFFF] via-[#FAFBFD] to-[#F3F7FD] overflow-hidden"
+        {/* Horizontal Swipeable Pages Viewport */}
+        <div className="flex-1 min-h-0 w-full overflow-hidden">
+          <div
+            data-testid="welcome-track"
+            data-active-page={activePage}
+            className={`flex w-full h-full will-change-transform ${
+              isDragging ? '' : 'transition-transform duration-300 ease-out'
+            }`}
+            style={{
+              transform: trackTransform,
+            }}
           >
+            {/* ==================== PAGE 1: FIND YOUR PERFECT STAY IN GONDIA ==================== */}
+            <section
+              data-testid="welcome-page-1"
+              aria-label="Find Your Perfect Stay in Gondia"
+              aria-hidden={activePage !== 0}
+              className="w-full h-full shrink-0 flex flex-col justify-between bg-gradient-to-b from-[#FFFFFF] via-[#FAFBFD] to-[#F3F7FD] overflow-hidden"
+            >
             {/* Top Brand & Headline */}
             <div className="pt-[max(14px,env(safe-area-inset-top))] sm:pt-5 px-5 text-center shrink-0">
               <GondiaStayWelcomeLogo idPrefix="stay" />
@@ -728,18 +768,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                   <path d="m13 6 6 6-6 6" />
                 </svg>
               </button>
-
-              {renderPaginationDots(0)}
             </div>
-
-            {/* Bottom Heritage Skyline & Tagline */}
-            <WelcomeSkylineFooter variant="stay" />
           </section>
 
           {/* ==================== PAGE 2: TRUSTED HOME SERVICES IN GONDIA ==================== */}
           <section
             data-testid="welcome-page-2"
             aria-label="Trusted Home Services in Gondia"
+            aria-hidden={activePage !== 1}
             className="w-full h-full shrink-0 flex flex-col justify-between bg-gradient-to-b from-[#FFFFFF] via-[#FAFBFD] to-[#F3F7FD] overflow-hidden"
           >
             {/* Top Brand & Headline */}
@@ -880,14 +916,47 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                   <path d="m13 6 6 6-6 6" />
                 </svg>
               </button>
-
-              {renderPaginationDots(1)}
             </div>
-
-            {/* Bottom Heritage Skyline & Tagline */}
-            <WelcomeSkylineFooter variant="services" />
           </section>
+          </div>
         </div>
+
+        {/* Dynamic Pagination Dots synchronized to activePage (dot 1 -> dot 2 on left swipe, dot 2 -> dot 1 on right swipe) */}
+        <div
+          data-testid="welcome-pagination-dots"
+          className="shrink-0 bg-[#F3F7FD] flex items-center justify-center gap-2.5 pt-2 pb-1"
+          role="tablist"
+          aria-label="Welcome pages"
+        >
+          {[0, 1].map((idx) => {
+            const isCurrent = activePage === idx;
+            return (
+              <button
+                key={idx}
+                type="button"
+                role="tab"
+                aria-selected={isCurrent}
+                aria-current={isCurrent ? 'step' : undefined}
+                aria-label={`Welcome page ${idx + 1}`}
+                data-testid={`welcome-dot-${idx}`}
+                data-active={isCurrent ? 'true' : 'false'}
+                onClick={() => setActivePage(idx)}
+                className="rounded-full transition-all duration-200 cursor-pointer p-2 -m-1 flex items-center justify-center"
+              >
+                <span
+                  className={`block rounded-full transition-all duration-300 ${
+                    isCurrent
+                      ? 'w-3 h-3 bg-[#F36B16] shadow-[0_0_0_3px_rgba(243,107,22,0.2)] scale-110'
+                      : 'w-2.5 h-2.5 bg-[#BFC8D6] hover:bg-[#94A3B8]'
+                  }`}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bottom Heritage Skyline & Dynamic Tagline */}
+        <WelcomeSkylineFooter variant={activePage === 0 ? 'stay' : 'services'} />
       </div>
     </div>
   );
