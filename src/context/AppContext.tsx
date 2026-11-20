@@ -8,6 +8,7 @@ import {
   FilterCriteria, 
   DEFAULT_OWNER_PROFILE,
   OwnerProfile,
+  isApproved,
   isDeletedByAdmin,
   FeedbackItem,
   FeedbackStatus
@@ -53,7 +54,6 @@ import {
   getCachedServices,
   getDeletedServiceIds,
   purgeAllDeletedServicesFromFirestore,
-  clearAllServicesFromFirestore,
   ensureServicesStorageWiped
 } from '../firebase/servicesService';
 import {
@@ -812,17 +812,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [isAdminAuthenticated]);
 
+  // Track service IDs confirmed live & approved in Cloud Firestore so stale/missing edit tokens never hide them
+  const remoteApprovedServiceIdsRef = useRef<Set<string>>(new Set());
+
   // Set up real-time Cloud Firestore subscription on the 'services' collection
   useEffect(() => {
     const configured = isFirebaseConfigured();
     if (!configured) return;
 
-    // Permanently purge any previously admin-deleted services from Firestore
-    purgeAllDeletedServicesFromFirestore().catch(() => {});
-    clearAllServicesFromFirestore().catch(() => {});
+    // Only run obsolete/deleted service cleanup when authenticated as admin
+    if (isAdminAuthenticated) {
+      purgeAllDeletedServicesFromFirestore().catch(() => {});
+    }
 
     const unsubscribe = subscribeToFirestoreServices(
       (remoteServices) => {
+        remoteApprovedServiceIdsRef.current = new Set(
+          remoteServices.filter(s => isApproved(s.status)).map(s => s.id)
+        );
         setServices(() => {
           const remoteMap = new Map(remoteServices.map(s => [s.id, s]));
           const merged: ServiceItem[] = [...remoteServices];
@@ -909,6 +916,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubscribe = subscribeToOwnerServicesStatus(
       myServiceTokens,
       (serviceId, newStatus) => {
+        // Never allow a missing or stale-pending token to remove/hide a live approved service from Firestore
+        if (remoteApprovedServiceIdsRef.current.has(serviceId) && (newStatus === 'deleted' || newStatus === 'pending')) {
+          return;
+        }
         if (newStatus === 'deleted') {
           removeSubmittedService(serviceId);
           setServices(prev => prev.filter(s => s.id !== serviceId));
@@ -1922,6 +1933,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logoutAdmin = async (): Promise<void> => {
+    // Transition to public mode before revoking Firebase auth so admin listeners cleanly switch to public approved queries
+    setAdminUser(null);
+    setIsAdminAuthenticated(false);
+    setAuthUser(null);
+    setIsOwnerAuthenticated(false);
     if (auth) {
       try {
         await signOut(auth);
@@ -1929,10 +1945,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Firebase sign-out error:', err);
       }
     }
-    setAdminUser(null);
-    setIsAdminAuthenticated(false);
-    setAuthUser(null);
-    setIsOwnerAuthenticated(false);
 
     // Restore persistent owner profile so saved details and greeting remain intact after admin sign-out
     try {

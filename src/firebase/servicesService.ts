@@ -25,7 +25,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './config';
 import { isAuthorizedAdminEmail } from './propertiesService';
-import { ServiceItem, ServiceCategory, isDeletedByAdmin } from '../types';
+import { ServiceItem, ServiceCategory, isApproved, isDeletedByAdmin } from '../types';
 
 export const SERVICES_COLLECTION = 'services';
 export const SERVICE_SECRETS_COLLECTION = 'service_secrets';
@@ -119,35 +119,45 @@ export const clearAllServicesFromFirestore = async (): Promise<number> => {
     const batch = writeBatch(db);
     let count = 0;
     const deletedIds = getDeletedServiceIds();
+    const activeServiceIds = new Set<string>();
+    const pastServiceDocs: any[] = [];
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       const isPastRecord = !data.createdAt || data.createdAt < SERVICES_WIPE_CUTOFF || isDeletedByAdmin(data?.status) || DUMMY_SERVICE_IDS.has(docSnap.id) || deletedIds.has(docSnap.id);
       if (isPastRecord) {
+        pastServiceDocs.push(docSnap);
         batch.delete(docSnap.ref);
         batch.delete(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id));
         deletedIds.add(docSnap.id);
         count++;
+      } else {
+        activeServiceIds.add(docSnap.id);
       }
     });
 
-    // Also delete any orphan service_secrets
+    // Only delete orphan or past/deleted service_secrets — NEVER delete secrets for active services
     try {
       const secretsRef = collection(db, SERVICE_SECRETS_COLLECTION);
       const secretsSnap = await getDocs(secretsRef);
       secretsSnap.forEach((secSnap) => {
-        batch.delete(secSnap.ref);
-        count++;
+        if (!activeServiceIds.has(secSnap.id)) {
+          batch.delete(secSnap.ref);
+          count++;
+        }
       });
     } catch {}
 
-    // Also delete any service_edit_tokens
+    // Only delete orphan or past/deleted service_edit_tokens — NEVER delete tokens for active services
     try {
       const tokensRef = collection(db, SERVICE_EDIT_TOKENS_COLLECTION);
       const tokensSnap = await getDocs(tokensRef);
       tokensSnap.forEach((tokSnap) => {
-        batch.delete(tokSnap.ref);
-        count++;
+        const tokServiceId = tokSnap.data()?.serviceId;
+        if (!tokServiceId || !activeServiceIds.has(tokServiceId)) {
+          batch.delete(tokSnap.ref);
+          count++;
+        }
       });
     } catch {}
 
@@ -155,17 +165,18 @@ export const clearAllServicesFromFirestore = async (): Promise<number> => {
       try {
         await batch.commit();
       } catch {
-        // Fallback: delete docs individually if batch encounters error
-        snapshot.forEach((docSnap) => {
+        // Fallback: delete ONLY past/deleted docs individually — never delete active services
+        pastServiceDocs.forEach((docSnap) => {
           deleteDoc(docSnap.ref).catch(() => {});
           deleteDoc(doc(db!, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
         });
       }
       try {
         localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify([...deletedIds]));
-        localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify([]));
+        const cached = getCachedServices().filter(s => !deletedIds.has(s.id) && (activeServiceIds.size === 0 || activeServiceIds.has(s.id)));
+        localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(cached));
       } catch {}
-      console.log(`[GondiaStay] Permanently removed all ${count} service records from Cloud Firestore.`);
+      console.log(`[GondiaStay] Permanently removed ${count} obsolete service records from Cloud Firestore.`);
     }
     return count;
   } catch (err) {
@@ -200,15 +211,18 @@ export const subscribeToFirestoreServices = (
     return null;
   }
 
-  // Trigger permanent purge of all service records from Firestore
-  clearAllServicesFromFirestore().catch(() => {});
-  purgeAllDeletedServicesFromFirestore().catch(() => {});
+  // Only trigger permanent purge of obsolete/deleted service records when authenticated as admin
+  if (isAdmin) {
+    clearAllServicesFromFirestore().catch(() => {});
+  }
 
   const servicesRef = collection(db, SERVICES_COLLECTION);
   let activeUnsubscribe: Unsubscribe | null = null;
   let hasReceivedData = false;
+  let isUnsubscribed = false;
 
   const handleSnapshot = (snapshot: any) => {
+    if (isUnsubscribed) return;
     hasReceivedData = true;
     const deletedIds = getDeletedServiceIds();
     const items: ServiceItem[] = [];
@@ -344,6 +358,7 @@ export const subscribeToFirestoreServices = (
   };
 
   const handleQueryError = (err: any) => {
+    if (isUnsubscribed) return;
     console.warn('[GondiaStay] Firestore services query notice:', err);
     const cached = getCachedServices();
     onUpdate(cached);
@@ -354,6 +369,43 @@ export const subscribeToFirestoreServices = (
     }
   };
 
+  const startPublicApprovedListener = () => {
+    if (isUnsubscribed) return;
+    try {
+      // Primary public query matches firestore.rules: status in ['approved', 'APPROVED']
+      const q = query(servicesRef, where('status', 'in', ['approved', 'APPROVED']));
+      activeUnsubscribe = onSnapshot(
+        q,
+        handleSnapshot,
+        () => {
+          if (isUnsubscribed) return;
+          // Fallback 1: lowercase 'approved'
+          try {
+            const qLower = query(servicesRef, where('status', '==', 'approved'));
+            activeUnsubscribe = onSnapshot(
+              qLower,
+              handleSnapshot,
+              () => {
+                if (isUnsubscribed) return;
+                // Fallback 2: uppercase 'APPROVED'
+                try {
+                  const qUpper = query(servicesRef, where('status', '==', 'APPROVED'));
+                  activeUnsubscribe = onSnapshot(qUpper, handleSnapshot, handleQueryError);
+                } catch (fallbackErr) {
+                  handleQueryError(fallbackErr);
+                }
+              }
+            );
+          } catch (lowerErr) {
+            handleQueryError(lowerErr);
+          }
+        }
+      );
+    } catch (err) {
+      handleQueryError(err);
+    }
+  };
+
   try {
     if (isAdmin) {
       // Admin sees all submissions including pending & rejected
@@ -361,43 +413,41 @@ export const subscribeToFirestoreServices = (
         servicesRef,
         handleSnapshot,
         (error) => {
-          // If direct snapshot fails, attempt status in filter
+          if (isUnsubscribed) return;
+          // If admin signed out while listener was active, switch cleanly to public approved listener
+          if (!auth?.currentUser) {
+            startPublicApprovedListener();
+            return;
+          }
+          // If direct snapshot fails while still admin, attempt status in filter
           try {
             const q = query(servicesRef, where('status', 'in', ['pending', 'approved', 'rejected', 'PENDING', 'APPROVED', 'REJECTED']));
-            activeUnsubscribe = onSnapshot(q, handleSnapshot, handleQueryError);
+            activeUnsubscribe = onSnapshot(q, handleSnapshot, (fallbackErr) => {
+              if (isUnsubscribed) return;
+              if (!auth?.currentUser) {
+                startPublicApprovedListener();
+                return;
+              }
+              handleQueryError(fallbackErr);
+            });
           } catch {
             handleQueryError(error);
           }
         }
       );
     } else {
-      // Public visitors: only approved services
-      try {
-        const q = query(servicesRef, where('status', '==', 'approved'));
-        activeUnsubscribe = onSnapshot(
-          q,
-          handleSnapshot,
-          () => {
-            // Fallback for uppercase 'APPROVED'
-            try {
-              const qUpper = query(servicesRef, where('status', '==', 'APPROVED'));
-              activeUnsubscribe = onSnapshot(qUpper, handleSnapshot, handleQueryError);
-            } catch (fallbackErr) {
-              handleQueryError(fallbackErr);
-            }
-          }
-        );
-      } catch (err) {
-        handleQueryError(err);
-      }
+      // Public visitors: all approved services (both 'approved' and 'APPROVED')
+      startPublicApprovedListener();
     }
   } catch (err) {
     handleQueryError(err);
   }
 
   return () => {
+    isUnsubscribed = true;
     if (activeUnsubscribe) {
       activeUnsubscribe();
+      activeUnsubscribe = null;
     }
   };
 };
@@ -449,7 +499,7 @@ export const saveServiceToFirestore = async (
   const editToken = serviceData.editToken || generateServiceEditToken();
 
   // Non-admin or unauthenticated submissions ALWAYS default to 'pending' so security rules succeed
-  const cleanStatus = (isRealAdminAuth && serviceData.status) ? serviceData.status : 'pending';
+  const cleanStatus = (isRealAdminAuth && serviceData.status) ? String(serviceData.status).toLowerCase() : 'pending';
 
   const cleanTitle = (serviceData.title || '').trim().substring(0, 200);
   const cleanProvider = (serviceData.providerName || serviceData.ownerName || '').trim().substring(0, 150);
@@ -535,7 +585,7 @@ export const saveServiceToFirestore = async (
     batch.set(tokenRef, {
       serviceId,
       ownerId,
-      status: 'pending',
+      status: cleanStatus,
       serviceData: clientCachedData,
       createdAt: Date.now()
     });
@@ -653,7 +703,10 @@ export const updateServiceInFirestore = async (
   let finalPayload: any;
 
   if (isRealAdminAuth) {
-    // Admin direct update & publish
+    // Admin direct update & publish (normalize status to lowercase if provided)
+    if (typeof sanitized.status === 'string' && sanitized.status.trim()) {
+      sanitized.status = sanitized.status.trim().toLowerCase();
+    }
     finalPayload = {
       ...sanitized,
       hasPendingEdit: false,
@@ -733,11 +786,45 @@ export const updateServiceInFirestore = async (
 
     try {
       await updateDoc(docRef, finalPayload);
-      return { success: true };
     } catch (updateErr: any) {
       await setDoc(docRef, finalPayload, { merge: true });
-      return { success: true };
     }
+
+    // Keep service_edit_tokens status synchronized when admin updates status directly
+    if (isRealAdminAuth && finalPayload.status) {
+      try {
+        const syncedStatus = String(finalPayload.status).toLowerCase();
+        let tokenFound = false;
+        const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+        const secretSnap = await getDoc(secretRef);
+        if (secretSnap.exists()) {
+          const tok = secretSnap.data()?.editToken;
+          if (tok) {
+            tokenFound = true;
+            await setDoc(doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tok), {
+              status: syncedStatus,
+              'serviceData.status': syncedStatus,
+              updatedAt: Date.now()
+            }, { merge: true });
+          }
+        }
+        if (!tokenFound) {
+          const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
+          const qSnap = await getDocs(q);
+          for (const tDoc of qSnap.docs) {
+            await setDoc(tDoc.ref, {
+              status: syncedStatus,
+              'serviceData.status': syncedStatus,
+              updatedAt: Date.now()
+            }, { merge: true });
+          }
+        }
+      } catch (tokenSyncErr) {
+        console.warn('[GondiaStay] Error syncing admin service update to token:', tokenSyncErr);
+      }
+    }
+
+    return { success: true };
   } catch (err: any) {
     console.error('[GondiaStay] Error updating service in Firestore:', err);
     const rawError = err?.message || String(err);
@@ -1276,6 +1363,24 @@ export const subscribeToOwnerServicesStatus = (
   if (!db || !isFirebaseConfigured()) return () => {};
   const firestore = db;
   const unsubs: Unsubscribe[] = [];
+  let isUnsubscribed = false;
+
+  // Verify against the public /services document before treating a missing or stale-pending token
+  // as deleted/pending, so live approved services never disappear after admin sign-out or refresh.
+  const isLiveApprovedInFirestore = async (serviceId: string): Promise<boolean> => {
+    try {
+      const srvSnap = await getDoc(doc(firestore, SERVICES_COLLECTION, serviceId));
+      if (srvSnap.exists()) {
+        const srvStatus = srvSnap.data()?.status;
+        if (isApproved(srvStatus)) {
+          return true;
+        }
+      }
+    } catch {
+      // Unapproved or deleted docs deny public getDoc — fall through cleanly
+    }
+    return false;
+  };
 
   // 1. Subscribe to status on private edit tokens (works on any device, unauthenticated or authenticated)
   Object.entries(tokenMap).forEach(([serviceId, token]) => {
@@ -1283,15 +1388,37 @@ export const subscribeToOwnerServicesStatus = (
     try {
       const tokenRef = doc(firestore, SERVICE_EDIT_TOKENS_COLLECTION, token.trim());
       const unsub = onSnapshot(tokenRef, (snap) => {
+        if (isUnsubscribed) return;
         if (snap.exists()) {
           const data = snap.data();
           const rawStatus = (data?.status || data?.serviceData?.status || '').toLowerCase();
-          if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
+          if (rawStatus === 'pending') {
+            isLiveApprovedInFirestore(serviceId).then((liveApproved) => {
+              if (isUnsubscribed) return;
+              if (liveApproved) {
+                onStatusUpdate(serviceId, 'approved');
+              } else {
+                onStatusUpdate(serviceId, rawStatus as any);
+              }
+            }).catch(() => {
+              if (!isUnsubscribed) onStatusUpdate(serviceId, rawStatus as any);
+            });
+          } else if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
             onStatusUpdate(serviceId, rawStatus as any);
           }
         } else {
-          // Token document was removed (e.g., owner permanently deleted the service)
-          onStatusUpdate(serviceId, 'deleted');
+          // Verify whether the service is still live & approved before treating a missing token as deleted
+          isLiveApprovedInFirestore(serviceId).then((liveApproved) => {
+            if (isUnsubscribed) return;
+            if (liveApproved) {
+              onStatusUpdate(serviceId, 'approved');
+            } else {
+              // Token document was removed (e.g., owner permanently deleted the service)
+              onStatusUpdate(serviceId, 'deleted');
+            }
+          }).catch(() => {
+            if (!isUnsubscribed) onStatusUpdate(serviceId, 'deleted');
+          });
         }
       }, (err) => {
         console.warn(`[GondiaStay] Service token status sync notice (${serviceId}):`, err);
@@ -1309,6 +1436,7 @@ export const subscribeToOwnerServicesStatus = (
       try {
         const srvRef = doc(firestore, SERVICES_COLLECTION, srvId);
         const unsub = onSnapshot(srvRef, (snap) => {
+          if (isUnsubscribed) return;
           if (snap.exists()) {
             const rawStatus = (snap.data()?.status || '').toLowerCase();
             if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
@@ -1327,6 +1455,7 @@ export const subscribeToOwnerServicesStatus = (
   }
 
   return () => {
+    isUnsubscribed = true;
     unsubs.forEach(u => {
       try { u(); } catch {}
     });
