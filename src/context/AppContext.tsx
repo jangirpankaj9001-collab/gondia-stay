@@ -55,6 +55,7 @@ import {
   deleteServiceInFirestore,
   getCachedServices,
   getDeletedServiceIds,
+  SERVICES_CACHE_KEY,
   DELETED_SERVICES_KEY,
   purgeAllDeletedServicesFromFirestore,
   ensureServicesStorageWiped
@@ -499,6 +500,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (pendingServiceDeletionRef.current) {
         const item = pendingServiceDeletionRef.current;
         pendingServiceDeletionRef.current = null;
+        try {
+          localStorage.setItem('gondia_stay_pending_service_finalize', JSON.stringify({
+            serviceId: item.service.id,
+            token: item.token,
+            ownerId: item.ownerId
+          }));
+          const rawDel = localStorage.getItem(DELETED_SERVICES_KEY);
+          const delArr: string[] = rawDel ? JSON.parse(rawDel) : [];
+          if (!delArr.includes(item.service.id)) {
+            delArr.push(item.service.id);
+            localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify(delArr));
+          }
+          const cached = getCachedServices().filter(s => s.id !== item.service.id);
+          localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(cached));
+        } catch {}
         if (isFirebaseConfigured()) {
           deleteServiceInFirestore(item.service.id, item.token, item.ownerId, isAdminAuthenticated).catch(() => {});
         }
@@ -509,6 +525,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const tokens = JSON.parse(raw);
             delete tokens[item.service.id];
             localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(tokens));
+          }
+        } catch {}
+        try {
+          const rawIds = localStorage.getItem('gondia_stay_my_service_ids');
+          if (rawIds) {
+            const ids = JSON.parse(rawIds);
+            if (Array.isArray(ids)) {
+              localStorage.setItem('gondia_stay_my_service_ids', JSON.stringify(ids.filter((id: any) => id !== item.service.id)));
+            }
           }
         } catch {}
       }
@@ -579,10 +604,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isFirebaseConfigured()) {
       try {
-        await deleteServiceInFirestore(item.service.id, item.token, item.ownerId, isAdminAuthenticated);
+        const deleted = await deleteServiceInFirestore(item.service.id, item.token, item.ownerId, isAdminAuthenticated);
+        if (!deleted) {
+          // Restore service to UI if Firestore deletion did not succeed
+          setServices(prev => {
+            if (prev.some(s => s.id === item.service.id)) return prev;
+            const restored = [item.service, ...prev];
+            restored.sort((a, b) => {
+              if (a.isFeatured && !b.isFeatured) return -1;
+              if (!a.isFeatured && b.isFeatured) return 1;
+              return (b.createdAt || 0) - (a.createdAt || 0);
+            });
+            return restored;
+          });
+          showToast('Failed to delete service. Please check your connection or permissions.');
+          return;
+        }
       } catch (err: any) {
         console.warn('Firestore permanent delete service notice:', err);
+        setServices(prev => {
+          if (prev.some(s => s.id === item.service.id)) return prev;
+          const restored = [item.service, ...prev];
+          restored.sort((a, b) => {
+            if (a.isFeatured && !b.isFeatured) return -1;
+            if (!a.isFeatured && b.isFeatured) return 1;
+            return (b.createdAt || 0) - (a.createdAt || 0);
+          });
+          return restored;
+        });
+        showToast('Failed to delete service: ' + (err?.message || 'Please check connection'));
+        return;
       }
+    } else {
+      try {
+        await deleteServiceInFirestore(item.service.id, item.token, item.ownerId, isAdminAuthenticated);
+      } catch {}
     }
 
     setMyServiceTokens(prev => {
@@ -597,7 +653,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('gondia_stay_my_service_ids', JSON.stringify(updated));
       return updated;
     });
-  }, [isAdminAuthenticated]);
+    try {
+      localStorage.removeItem('gondia_stay_pending_service_finalize');
+    } catch {}
+  }, [isAdminAuthenticated, showToast]);
+
+  // Complete any owner service deletion that was interrupted by a page reload during the 7-second Undo window
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('gondia_stay_pending_service_finalize');
+      if (!raw) return;
+      localStorage.removeItem('gondia_stay_pending_service_finalize');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.serviceId === 'string' && parsed.serviceId) {
+        deleteServiceInFirestore(parsed.serviceId, parsed.token, parsed.ownerId, false).catch(() => {});
+      }
+    } catch {}
+  }, []);
 
   /**
    * Secure service ownership check:
@@ -892,12 +964,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
-          merged.sort((a, b) => {
+          const pendingDeleteId = pendingServiceDeletionRef.current?.service.id;
+          const visibleMerged = pendingDeleteId
+            ? merged.filter(s => s.id !== pendingDeleteId)
+            : merged;
+
+          visibleMerged.sort((a, b) => {
             if (a.isFeatured && !b.isFeatured) return -1;
             if (!a.isFeatured && b.isFeatured) return 1;
             return (b.createdAt || 0) - (a.createdAt || 0);
           });
-          return merged;
+          return visibleMerged;
         });
       },
       (error) => {
@@ -1741,7 +1818,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const token = myServiceTokens[serviceId] || targetService.editToken;
     const ownerId = targetService.ownerId;
-    const serviceCopy: ServiceItem = { ...targetService };
+    const serviceCopy: ServiceItem = {
+      ...targetService,
+      photos: Array.isArray(targetService.photos) ? [...targetService.photos] : [],
+      serviceAreas: Array.isArray(targetService.serviceAreas) ? [...targetService.serviceAreas] : [],
+      specialties: Array.isArray(targetService.specialties) ? [...targetService.specialties] : undefined,
+    };
 
     // If caller is Admin: permanently delete service, secrets, and edit tokens from Firestore and all devices
     if (isAdminAuthenticated) {
@@ -1780,34 +1862,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     }
 
-    // Owner deletion: remove from Firestore and start 7-second undo window
-    if (isFirebaseConfigured()) {
-      try {
-        const deleted = await deleteServiceInFirestore(serviceId, token, ownerId, false);
-        if (!deleted) {
-          showToast("Failed to delete service. Please check your connection or permissions.");
-          return false;
-        }
-      } catch (err: any) {
-        console.error('Failed to delete service from Firestore:', err);
-        showToast('Failed to delete service: ' + (err.message || 'Please check connection'));
-        return false;
-      }
-    } else {
-      try {
-        await deleteServiceInFirestore(serviceId, token, ownerId, false);
-      } catch {}
-    }
-
-    // Update UI and immediately clean up submitted service storage so refresh does not resurrect it
-    removeSubmittedService(serviceId);
-    setServices(prev => prev.filter(s => s.id !== serviceId));
-
-    // 7-second temporary undo option
+    // Owner deletion: hide immediately in UI and hold permanent Firestore deletion for the 7-second Undo window.
+    // Keeping the Firestore document untouched until the timer expires ensures Undo restores the exact original
+    // service (including its previous 'approved' status and all details) without resetting to Pending Approval.
     const DURATION_SECONDS = 7;
     const expiresAt = Date.now() + DURATION_SECONDS * 1000;
     const pendingItem = { service: serviceCopy, token, ownerId };
     pendingServiceDeletionRef.current = pendingItem;
+
+    // Immediately remove from visible state while undo banner is active
+    setServices(prev => prev.filter(s => s.id !== serviceId));
 
     setPendingServiceDeletion({
       service: serviceCopy,
@@ -1843,7 +1907,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /**
-   * Restores the deleted service with all its original details, photos, ownership credentials, and status.
+   * Restores the deleted service with all its original details, photos, ownership credentials, and exact previous approval status.
+   * Because permanent Firestore deletion is deferred until the 7-second Undo window expires, Undo restores the live listing
+   * immediately without changing its status to Pending Approval or requiring admin reapproval.
    */
   const undoServiceDeletion = useCallback(async () => {
     if (serviceDeletionTimerRef.current) {
@@ -1861,49 +1927,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pendingServiceDeletionRef.current = null;
     setPendingServiceDeletion(null);
 
-    // If deleted from Firestore, restore it back
-    if (isFirebaseConfigured()) {
-      try {
-        await saveServiceToFirestore(item.service, isAdminAuthenticated);
-      } catch (err) {
-        console.warn('Error restoring service in Firestore:', err);
-      }
-    }
-
-    // Restore service with all original details and approval status
-    setServices(prev => {
-      if (prev.some(s => s.id === item.service.id)) return prev;
-      return [item.service, ...prev];
-    });
-
-    // Restore ownership credentials / token
-    if (item.token) {
-      setMyServiceTokens(prev => {
-        const updated = { ...prev, [item.service.id]: item.token! };
-        localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated));
-        return updated;
-      });
-    }
-
-    // Clear from deleted services set so it restores cleanly without being filtered
     try {
-      const raw = localStorage.getItem('gondia_stay_deleted_services');
+      localStorage.removeItem('gondia_stay_pending_service_finalize');
+    } catch {}
+
+    // Ensure service ID is not listed in deleted services storage
+    try {
+      const raw = localStorage.getItem(DELETED_SERVICES_KEY);
       if (raw) {
         const deletedArr = JSON.parse(raw);
         if (Array.isArray(deletedArr)) {
           localStorage.setItem(
-            'gondia_stay_deleted_services',
+            DELETED_SERVICES_KEY,
             JSON.stringify(deletedArr.filter((id: string) => id !== item.service.id))
           );
         }
       }
     } catch {}
 
+    // Keep live-approved guard in sync if the restored service was already approved
+    if (isApproved(item.service.status)) {
+      remoteApprovedServiceIdsRef.current.add(item.service.id);
+    }
+
+    // Restore service in state with exact original details and approval status
+    setServices(prev => {
+      const withoutDup = prev.filter(s => s.id !== item.service.id);
+      const restored = [item.service, ...withoutDup];
+      restored.sort((a, b) => {
+        if (a.isFeatured && !b.isFeatured) return -1;
+        if (!a.isFeatured && b.isFeatured) return 1;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
+      return restored;
+    });
+
+    // Ensure local cache, submitted storage, and ownership credentials remain intact with exact previous status
+    try {
+      const cached = getCachedServices().filter(s => s.id !== item.service.id);
+      localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify([item.service, ...cached]));
+    } catch {}
+
+    if (item.token) {
+      setMyServiceTokens(prev => {
+        const updated = { ...prev, [item.service.id]: item.token! };
+        try { localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
+
     saveSubmittedService(item.service);
     saveServiceId(item.service.id);
 
     showToast("Service restored successfully");
-  }, [saveServiceId]);
+  }, [saveServiceId, showToast]);
 
 
   /**
