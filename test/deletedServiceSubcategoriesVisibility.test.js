@@ -8,30 +8,30 @@ const appContextCode = fs.readFileSync('src/context/AppContext.tsx', 'utf8');
 const servServiceCode = fs.readFileSync('src/firebase/servicesService.ts', 'utf8');
 
 test('Deleted Service Visibility in Home Services Subcategories', async (t) => {
-  await t.test('1. ServiceCategoryGrid filters both isDeletedByAdmin and getDeletedServiceIds in dedicated subcategory view', () => {
+  await t.test('1. ServiceCategoryGrid filters isDeletedByAdmin, isRejected, and getDeletedServiceIds in dedicated subcategory view', () => {
     assert.ok(
       gridCode.includes('import { getDeletedServiceIds } from'),
       'ServiceCategoryGrid imports getDeletedServiceIds'
     );
     assert.ok(
-      gridCode.includes('if (isDeletedByAdmin(service.status)) return false;') &&
+      gridCode.includes('if (isDeletedByAdmin(service.status) || isRejected(service.status)) return false;') &&
       gridCode.includes('if (getDeletedServiceIds().has(service.id)) return false;'),
-      'dedicatedProviders strictly filters out both isDeletedByAdmin and getDeletedServiceIds'
+      'dedicatedProviders strictly filters out isDeletedByAdmin, isRejected, and getDeletedServiceIds'
     );
   });
 
-  await t.test('2. App.tsx filters both isDeletedByAdmin and getDeletedServiceIds in servicesForCategoryGrid and filteredServices', () => {
+  await t.test('2. App.tsx filters isDeletedByAdmin, isRejected, and getDeletedServiceIds in servicesForCategoryGrid and filteredServices', () => {
     assert.ok(
       appCode.includes('import { getDeletedServiceIds } from'),
       'App.tsx imports getDeletedServiceIds'
     );
     assert.ok(
-      appCode.includes('if (isDeletedByAdmin(s.status)) {\n        return false;\n      }\n      if (getDeletedServiceIds().has(s.id)) {\n        return false;\n      }'),
-      'filteredServices strictly excludes deleted services and deleted service IDs'
+      appCode.includes('if (isDeletedByAdmin(s.status) || isRejected(s.status)) {\n        return false;\n      }\n      if (getDeletedServiceIds().has(s.id)) {\n        return false;\n      }'),
+      'filteredServices strictly excludes deleted/rejected services and deleted service IDs'
     );
     assert.ok(
-      appCode.includes('if (isDeletedByAdmin(s.status)) return false;\n      if (getDeletedServiceIds().has(s.id)) return false;'),
-      'servicesForCategoryGrid strictly excludes deleted services and deleted service IDs'
+      appCode.includes('if (isDeletedByAdmin(s.status) || isRejected(s.status)) return false;\n      if (getDeletedServiceIds().has(s.id)) return false;'),
+      'servicesForCategoryGrid strictly excludes deleted/rejected services and deleted service IDs'
     );
   });
 
@@ -45,12 +45,12 @@ test('Deleted Service Visibility in Home Services Subcategories', async (t) => {
       'Initial services state excludes deletedIds and isDeletedByAdmin to ensure services never reappear on refresh/restart'
     );
     assert.ok(
-      appContextCode.includes('if (!deletedIds.has(localSrv.id) && !isDeletedByAdmin(localSrv.status))'),
+      appContextCode.includes('if (deletedIds.has(localSrv.id) || isDeletedByAdmin(localSrv.status))'),
       'Real-time Firestore listener checks deletedIds and isDeletedByAdmin before adding any locally tracked service'
     );
     assert.ok(
-      appContextCode.includes('removeSubmittedService(localSrv.id);'),
-      'Stale local services are cleaned up from local storage'
+      appContextCode.includes("localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updatedLocallyTracked))"),
+      'Stale or deleted local services are cleaned up from local storage'
     );
   });
 
@@ -66,7 +66,9 @@ test('Deleted Service Visibility in Home Services Subcategories', async (t) => {
       'subscribeToOwnerServicesStatus dispatches deleted status when Firestore document is deleted'
     );
     assert.ok(
-      appContextCode.includes("if (newStatus === 'deleted') {\n          removeSubmittedService(serviceId);\n          setServices(prev => prev.filter(s => s.id !== serviceId));"),
+      appContextCode.includes("if (newStatus === 'deleted' || newStatus === 'deleted_by_admin')") &&
+      appContextCode.includes('removeSubmittedService(serviceId);') &&
+      appContextCode.includes('setServices(prev => prev.filter(s => s.id !== serviceId));'),
       'AppContext reacts to deleted status by immediately removing service from state and storage'
     );
   });

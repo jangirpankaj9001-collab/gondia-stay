@@ -191,6 +191,17 @@ export const subscribeToFirestoreProperties = (
     snapshot.forEach((docSnap: any) => {
       if (deletedIds.has(docSnap.id)) return;
       const data = docSnap.data();
+      if (isDeletedByAdmin(data?.status)) {
+        // Permanently purge any legacy soft-deleted property docs when admin is connected
+        if (isAdmin && db) {
+          deletePropertyFromFirestore(docSnap.id, undefined, undefined, true).catch(() => {});
+        }
+        deletedIds.add(docSnap.id);
+        try {
+          localStorage.setItem(DELETED_PROPERTIES_KEY, JSON.stringify([...deletedIds]));
+        } catch {}
+        return;
+      }
       items.push({
         ...(data as PropertyListing),
         id: docSnap.id,
@@ -954,180 +965,136 @@ export const deletePropertyFromFirestore = async (
     (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
   );
 
-  // If caller is admin: mark status as 'deleted_by_admin' in Firestore and token document so it syncs to owner device
-  if (isRealAdmin) {
-    const adminEmail = auth?.currentUser?.email || 'admin';
-    try {
-      const cached = getCachedProperties();
-      const updated = cached.map(p => p.id === propertyId ? {
-        ...p,
-        status: 'deleted_by_admin' as any,
-        deletedAt: Date.now(),
-        deletedBy: adminEmail,
-        updatedAt: Date.now()
-      } : p);
-      localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
-    } catch {}
-
-    if (!db || !isFirebaseConfigured()) {
-      return true;
+  // Capture any locally stored edit token BEFORE clearing local storage so the Firestore token doc is also deleted
+  let localStoredToken: string | undefined;
+  try {
+    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_listing_tokens') || '{}');
+    if (typeof savedTokens[propertyId] === 'string' && savedTokens[propertyId].trim()) {
+      localStoredToken = savedTokens[propertyId].trim();
     }
+  } catch {}
 
+  const cleanupLocalPropertyStorage = () => {
     try {
-      const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
-      const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
-
-      await setDoc(docRef, {
-        status: 'deleted_by_admin',
-        deletedAt: Date.now(),
-        deletedBy: adminEmail,
-        moderatedAt: Date.now(),
-        moderatedBy: adminEmail,
-        updatedAt: Date.now()
-      }, { merge: true });
-
-      let tokenToUpdate = token?.trim();
-      if (!tokenToUpdate) {
-        try {
-          const secretSnap = await getDoc(secretRef);
-          if (secretSnap.exists()) {
-            tokenToUpdate = secretSnap.data()?.editToken;
-          }
-        } catch {}
+      const rawDeleted = localStorage.getItem(DELETED_PROPERTIES_KEY);
+      const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
+      if (!deletedArr.includes(propertyId)) {
+        deletedArr.push(propertyId);
+        localStorage.setItem(DELETED_PROPERTIES_KEY, JSON.stringify(deletedArr));
       }
 
-      if (tokenToUpdate) {
-        try {
-          const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToUpdate);
-          await setDoc(tokenRef, {
-            status: 'deleted_by_admin',
-            'propertyData.status': 'deleted_by_admin',
-            deletedAt: Date.now(),
-            deletedBy: adminEmail,
-            moderatedAt: Date.now(),
-            moderatedBy: adminEmail,
-            updatedAt: Date.now()
-          }, { merge: true });
-        } catch (err) {
-          console.warn('[GondiaStay] Error syncing deleted_by_admin status to token:', err);
-        }
-      } else {
-        try {
-          const q = query(collection(db, PROPERTY_EDIT_TOKENS_COLLECTION), where('propertyId', '==', propertyId));
-          const qSnap = await getDocs(q);
-          for (const tDoc of qSnap.docs) {
-            await setDoc(tDoc.ref, {
-              status: 'deleted_by_admin',
-              'propertyData.status': 'deleted_by_admin',
-              deletedAt: Date.now(),
-              deletedBy: adminEmail,
-              moderatedAt: Date.now(),
-              moderatedBy: adminEmail,
-              updatedAt: Date.now()
-            }, { merge: true });
-          }
-        } catch {}
-      }
+      const cached = getCachedProperties();
+      const updated = cached.filter(p => p.id !== propertyId);
+      localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
 
-      // Clean up local cache and track as deleted on admin's device so it never reappears on reload
-      try {
-        const rawDeleted = localStorage.getItem(DELETED_PROPERTIES_KEY);
-        const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
-        if (!deletedArr.includes(propertyId)) {
-          deletedArr.push(propertyId);
-          localStorage.setItem(DELETED_PROPERTIES_KEY, JSON.stringify(deletedArr));
-        }
+      // Clean up local token
+      const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_listing_tokens') || '{}');
+      delete savedTokens[propertyId];
+      localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(savedTokens));
 
-        const cached = getCachedProperties();
-        const updated = cached.filter(p => p.id !== propertyId);
-        localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
-
-        // Clean up favorites
-        const rawFavs = localStorage.getItem('gondia_stay_favorites');
-        if (rawFavs) {
-          const favs = JSON.parse(rawFavs);
-          if (Array.isArray(favs)) {
+      // Clean up both submitted property storage keys
+      for (const key of ['gondia_stay_my_submitted_properties', 'gondia_stay_submitted_properties']) {
+        const rawSubmitted = localStorage.getItem(key);
+        if (rawSubmitted) {
+          const submitted = JSON.parse(rawSubmitted);
+          if (Array.isArray(submitted)) {
             localStorage.setItem(
-              'gondia_stay_favorites',
-              JSON.stringify(favs.filter((id: any) => id !== propertyId))
+              key,
+              JSON.stringify(submitted.filter((p: any) => p.id !== propertyId))
             );
           }
         }
-      } catch (e) {
-        console.warn('[GondiaStay] Error updating admin local deleted properties cache:', e);
       }
 
-      return true;
+      // Clean up local property IDs
+      const rawMyIds = localStorage.getItem('gondia_stay_my_property_ids');
+      if (rawMyIds) {
+        const ids = JSON.parse(rawMyIds);
+        if (Array.isArray(ids)) {
+          localStorage.setItem(
+            'gondia_stay_my_property_ids',
+            JSON.stringify(ids.filter((id: any) => id !== propertyId))
+          );
+        }
+      }
+
+      // Clean up favorites
+      const rawFavs = localStorage.getItem('gondia_stay_favorites');
+      if (rawFavs) {
+        const favs = JSON.parse(rawFavs);
+        if (Array.isArray(favs)) {
+          localStorage.setItem(
+            'gondia_stay_favorites',
+            JSON.stringify(favs.filter((id: any) => id !== propertyId))
+          );
+        }
+      }
     } catch (err) {
-      console.error('[GondiaStay] Error setting deleted_by_admin in Firestore:', err);
-      return false;
+      console.warn('[GondiaStay] Error cleaning up local property cache on delete:', err);
     }
-  }
-
-  // Owner deletion: update local cache and deleted tracking immediately
-  try {
-    const rawDeleted = localStorage.getItem(DELETED_PROPERTIES_KEY);
-    const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
-    if (!deletedArr.includes(propertyId)) {
-      deletedArr.push(propertyId);
-      localStorage.setItem(DELETED_PROPERTIES_KEY, JSON.stringify(deletedArr));
-    }
-
-    const cached = getCachedProperties();
-    const updated = cached.filter(p => p.id !== propertyId);
-    localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updated));
-
-    // Clean up local token
-    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_listing_tokens') || '{}');
-    delete savedTokens[propertyId];
-    localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(savedTokens));
-
-    // Clean up submitted property storage
-    const rawSubmitted = localStorage.getItem('gondia_stay_submitted_properties');
-    if (rawSubmitted) {
-      const submitted = JSON.parse(rawSubmitted);
-      if (Array.isArray(submitted)) {
-        localStorage.setItem(
-          'gondia_stay_submitted_properties',
-          JSON.stringify(submitted.filter((p: any) => p.id !== propertyId))
-        );
-      }
-    }
-    // Clean up local property IDs
-    const rawMyIds = localStorage.getItem('gondia_stay_my_property_ids');
-    if (rawMyIds) {
-      const ids = JSON.parse(rawMyIds);
-      if (Array.isArray(ids)) {
-        localStorage.setItem(
-          'gondia_stay_my_property_ids',
-          JSON.stringify(ids.filter((id: any) => id !== propertyId))
-        );
-      }
-    }
-
-    // Clean up favorites
-    const rawFavs = localStorage.getItem('gondia_stay_favorites');
-    if (rawFavs) {
-      const favs = JSON.parse(rawFavs);
-      if (Array.isArray(favs)) {
-        localStorage.setItem(
-          'gondia_stay_favorites',
-          JSON.stringify(favs.filter((id: any) => id !== propertyId))
-        );
-      }
-    }
-  } catch (err) {
-    console.warn('[GondiaStay] Error cleaning up local property cache on delete:', err);
-  }
+  };
 
   if (!db || !isFirebaseConfigured()) {
+    cleanupLocalPropertyStorage();
     return true;
   }
 
   const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
   const secretRef = doc(db, PROPERTY_SECRETS_COLLECTION, propertyId);
 
-  let tokenToDelete = token?.trim();
+  // Admin permanent deletion: permanently delete property, property_secrets, and ALL property_edit_tokens records
+  if (isRealAdmin) {
+    try {
+      const tokensToDelete = new Set<string>();
+      if (token?.trim()) tokensToDelete.add(token.trim());
+      if (localStoredToken) tokensToDelete.add(localStoredToken);
+
+      try {
+        const secretSnap = await getDoc(secretRef);
+        if (secretSnap.exists()) {
+          const secretToken = secretSnap.data()?.editToken;
+          if (typeof secretToken === 'string' && secretToken.trim()) {
+            tokensToDelete.add(secretToken.trim());
+          }
+        }
+      } catch {}
+
+      try {
+        const q = query(collection(db, PROPERTY_EDIT_TOKENS_COLLECTION), where('propertyId', '==', propertyId));
+        const qSnap = await getDocs(q);
+        qSnap.docs.forEach((tDoc) => {
+          tokensToDelete.add(tDoc.id);
+        });
+      } catch {}
+
+      const batch = writeBatch(db);
+      batch.delete(docRef);
+      batch.delete(secretRef);
+      tokensToDelete.forEach((tok) => {
+        batch.delete(doc(db!, PROPERTY_EDIT_TOKENS_COLLECTION, tok));
+      });
+
+      try {
+        await batch.commit();
+      } catch (batchErr) {
+        console.warn('[GondiaStay] Admin batch property delete notice, falling back to direct deletes:', batchErr);
+        await deleteDoc(docRef);
+        try { await deleteDoc(secretRef); } catch {}
+        for (const tok of tokensToDelete) {
+          try { await deleteDoc(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tok)); } catch {}
+        }
+      }
+
+      cleanupLocalPropertyStorage();
+      return true;
+    } catch (err) {
+      console.error('[GondiaStay] Error permanently deleting property in Firestore:', err);
+      return false;
+    }
+  }
+
+  // Owner permanent deletion: atomically delete property, property_secrets, and property_edit_tokens
+  let tokenToDelete = token?.trim() || localStoredToken;
   if (!tokenToDelete) {
     try {
       const secretSnap = await getDoc(secretRef);
@@ -1137,8 +1104,7 @@ export const deletePropertyFromFirestore = async (
     } catch {}
   }
 
-  // Owner deletion using private Edit Token:
-  // Uses atomic writeBatch to delete the property, delete the token doc, and delete the secret doc
+  // 1. Atomic writeBatch using private Edit Token (deletes properties, property_secrets, and property_edit_tokens together)
   if (tokenToDelete) {
     const cleanToken = tokenToDelete.trim();
     const batch = writeBatch(db);
@@ -1148,42 +1114,54 @@ export const deletePropertyFromFirestore = async (
     batch.delete(secretRef);
     try {
       await batch.commit();
+      cleanupLocalPropertyStorage();
       return true;
     } catch (bErr) {
       console.warn('[GondiaStay] Batch property delete notice, falling back:', bErr);
     }
   }
 
-  // Also query and remove any remaining tokens for this property to permanently erase them
-  try {
-    const q = query(collection(db, PROPERTY_EDIT_TOKENS_COLLECTION), where('propertyId', '==', propertyId));
-    const qSnap = await getDocs(q);
-    for (const tDoc of qSnap.docs) {
-      await deleteDoc(tDoc.ref);
+  // 2. Authenticated owner deletion via Firebase Auth (UID or email match)
+  if (auth?.currentUser && (!ownerId || auth.currentUser.uid === ownerId || auth.currentUser.email)) {
+    try {
+      const batch = writeBatch(db);
+      batch.delete(docRef);
+      batch.delete(secretRef);
+      if (tokenToDelete) {
+        batch.delete(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToDelete.trim()));
+      }
+      await batch.commit();
+      cleanupLocalPropertyStorage();
+      return true;
+    } catch {
+      try {
+        await deleteDoc(docRef);
+        try { await deleteDoc(secretRef); } catch {}
+        if (tokenToDelete) {
+          try { await deleteDoc(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToDelete.trim())); } catch {}
+        }
+        cleanupLocalPropertyStorage();
+        return true;
+      } catch (authDelErr) {
+        console.error('[GondiaStay] Authenticated owner property delete failed:', authDelErr);
+        return false;
+      }
     }
-  } catch {}
-
-  // Owner deletion using Firebase Auth (authenticated owner)
-  if (ownerId && auth?.currentUser?.uid && auth.currentUser.uid === ownerId) {
-    try {
-      await deleteDoc(docRef);
-    } catch {}
-    try {
-      await deleteDoc(secretRef);
-    } catch {}
-    return true;
   }
 
-  // Direct deletion fallback
+  // 3. Direct fallback if document already removed
   try {
     await deleteDoc(docRef);
-  } catch {}
-  try {
-    await deleteDoc(secretRef);
-  } catch {}
-  return true;
-
-  return true;
+    try { await deleteDoc(secretRef); } catch {}
+    if (tokenToDelete) {
+      try { await deleteDoc(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, tokenToDelete.trim())); } catch {}
+    }
+    cleanupLocalPropertyStorage();
+    return true;
+  } catch (err) {
+    console.error('[GondiaStay] Error permanently deleting property from Firestore:', err);
+    return false;
+  }
 };
 
 /**
@@ -1250,6 +1228,24 @@ export const subscribeToOwnerPropertiesStatus = (
   if (!db || !isFirebaseConfigured()) return () => {};
   const firestore = db;
   const unsubs: Unsubscribe[] = [];
+  let isUnsubscribed = false;
+
+  // Verify against the public /properties document before treating a missing or stale-pending token
+  // as deleted/pending, so live approved properties never disappear after refresh or admin sign-out.
+  const isLiveApprovedPropertyInFirestore = async (propertyId: string): Promise<boolean> => {
+    try {
+      const propSnap = await getDoc(doc(firestore, PROPERTIES_COLLECTION, propertyId));
+      if (propSnap.exists()) {
+        const propStatus = (propSnap.data()?.status || '').toLowerCase();
+        if (propStatus === 'approved') {
+          return true;
+        }
+      }
+    } catch {
+      // Unapproved or deleted docs deny public getDoc — fall through cleanly
+    }
+    return false;
+  };
 
   // 1. Subscribe to status on private edit tokens (works on any device, unauthenticated or authenticated)
   Object.entries(tokenMap).forEach(([propertyId, token]) => {
@@ -1257,12 +1253,28 @@ export const subscribeToOwnerPropertiesStatus = (
     try {
       const tokenRef = doc(firestore, PROPERTY_EDIT_TOKENS_COLLECTION, token.trim());
       const unsub = onSnapshot(tokenRef, (snap) => {
+        if (isUnsubscribed) return;
         if (snap.exists()) {
           const data = snap.data();
           const rawStatus = (data?.status || data?.propertyData?.status || '').toLowerCase();
-          if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
+          if (rawStatus === 'pending') {
+            isLiveApprovedPropertyInFirestore(propertyId).then((liveApproved) => {
+              if (isUnsubscribed) return;
+              onStatusUpdate(propertyId, liveApproved ? 'approved' : 'pending');
+            }).catch(() => {
+              if (!isUnsubscribed) onStatusUpdate(propertyId, 'pending');
+            });
+          } else if (['approved', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
             onStatusUpdate(propertyId, rawStatus as any);
           }
+        } else {
+          // Token document was permanently deleted from Firestore: verify property is not still live & approved
+          isLiveApprovedPropertyInFirestore(propertyId).then((liveApproved) => {
+            if (isUnsubscribed) return;
+            onStatusUpdate(propertyId, liveApproved ? 'approved' : 'deleted');
+          }).catch(() => {
+            if (!isUnsubscribed) onStatusUpdate(propertyId, 'deleted');
+          });
         }
       }, (err) => {
         console.warn(`[GondiaStay] Property token status sync notice (${propertyId}):`, err);
@@ -1280,11 +1292,15 @@ export const subscribeToOwnerPropertiesStatus = (
       try {
         const propRef = doc(firestore, PROPERTIES_COLLECTION, propId);
         const unsub = onSnapshot(propRef, (snap) => {
+          if (isUnsubscribed) return;
           if (snap.exists()) {
             const rawStatus = (snap.data()?.status || '').toLowerCase();
             if (['approved', 'pending', 'rejected', 'deleted_by_admin', 'deleted'].includes(rawStatus)) {
               onStatusUpdate(propId, rawStatus as any);
             }
+          } else {
+            // Property document was permanently removed from Firestore
+            onStatusUpdate(propId, 'deleted');
           }
         }, () => {
           // Gracefully handle rule checks
@@ -1295,6 +1311,7 @@ export const subscribeToOwnerPropertiesStatus = (
   }
 
   return () => {
+    isUnsubscribed = true;
     unsubs.forEach(u => {
       try { u(); } catch {}
     });

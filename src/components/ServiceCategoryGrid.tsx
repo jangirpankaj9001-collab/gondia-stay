@@ -21,7 +21,7 @@ import {
   Camera,
   Trash2
 } from 'lucide-react';
-import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isDeletedByAdmin } from '../types';
+import { ServiceItem, ServiceCategory, SERVICE_CATEGORIES, isApproved, isRejected, isDeletedByAdmin } from '../types';
 import { getDeletedServiceIds } from '../firebase/servicesService';
 import { openWhatsApp, formatDisplayPhone } from '../utils/contact';
 import { useBackHandler, useApp } from '../context/AppContext';
@@ -234,10 +234,10 @@ export const ServiceCategoryGrid: React.FC<ServiceCategoryGridProps> = ({
   // Filter approved providers (and owner's pending listings) for the dedicated view
   const dedicatedProviders = activeDedicatedCategory
     ? services.filter(service => {
-        // Permanently hide deleted items from all subcategories on every device, including admin's mobile while logged in
-        if (isDeletedByAdmin(service.status)) return false;
+        // Permanently hide deleted, rejected, and unapproved items from all public Home Services subcategories
+        if (isDeletedByAdmin(service.status) || isRejected(service.status)) return false;
         if (getDeletedServiceIds().has(service.id)) return false;
-        if (!isAdmin && !isApproved(service.status) && !isServiceOwner(service)) return false;
+        if (!isApproved(service.status)) return false;
         if (!matchesSubcategory(service.category, activeDedicatedCategory)) return false;
 
         // Locality filter

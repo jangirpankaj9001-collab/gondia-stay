@@ -235,10 +235,9 @@ export const subscribeToFirestoreServices = (
                         (!data.createdAt || data.createdAt < SERVICES_WIPE_CUTOFF);
 
       if (isDeleted) {
-        // Permanently purge any service from Firestore if it still exists
-        if (db) {
-          deleteDoc(docSnap.ref).catch(() => {});
-          deleteDoc(doc(db, SERVICE_SECRETS_COLLECTION, docSnap.id)).catch(() => {});
+        // Permanently purge any deleted service, its secret, and its edit tokens when admin is connected
+        if (isAdmin && db) {
+          deleteServiceInFirestore(docSnap.id, undefined, undefined, true).catch(() => {});
         }
         if (!deletedIds.has(docSnap.id)) {
           deletedIds.add(docSnap.id);
@@ -1069,9 +1068,16 @@ export const deleteServiceInFirestore = async (
     (auth?.currentUser?.email && isAuthorizedAdminEmail(auth.currentUser.email))
   );
 
-  // If caller is admin: mark status as 'deleted_by_admin' in Firestore and token document so it syncs to owner device
-  if (isRealAdmin) {
-    const adminEmail = auth?.currentUser?.email || 'admin';
+  // Capture any locally stored edit token BEFORE clearing local storage so the Firestore token doc is also deleted
+  let localStoredToken: string | undefined;
+  try {
+    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
+    if (typeof savedTokens[serviceId] === 'string' && savedTokens[serviceId].trim()) {
+      localStoredToken = savedTokens[serviceId].trim();
+    }
+  } catch {}
+
+  const cleanupLocalServiceStorage = () => {
     try {
       const rawDeleted = localStorage.getItem(DELETED_SERVICES_KEY);
       const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
@@ -1083,139 +1089,104 @@ export const deleteServiceInFirestore = async (
       const cached = getCachedServices();
       const updated = cached.filter(s => s.id !== serviceId);
       localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
-    } catch {}
 
-    if (!db || !isFirebaseConfigured()) {
-      return true;
-    }
+      // Clean up local token
+      const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
+      delete savedTokens[serviceId];
+      localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
 
-    try {
-      const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
-      const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
-
-      let tokenToUpdate = token?.trim();
-      if (!tokenToUpdate) {
-        try {
-          const secretSnap = await getDoc(secretRef);
-          if (secretSnap.exists()) {
-            tokenToUpdate = secretSnap.data()?.editToken;
-          }
-        } catch {}
-      }
-
-      if (tokenToUpdate) {
-        try {
-          const tokenRef = doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tokenToUpdate);
-          await setDoc(tokenRef, {
-            status: 'deleted_by_admin',
-            'serviceData.status': 'deleted_by_admin',
-            deletedAt: Date.now(),
-            deletedBy: adminEmail,
-            moderatedAt: Date.now(),
-            moderatedBy: adminEmail,
-            updatedAt: Date.now()
-          }, { merge: true });
-        } catch (err) {
-          console.warn('[GondiaStay] Error syncing deleted_by_admin status to service token:', err);
+      // Clean up both submitted service storage keys
+      for (const key of ['gondia_stay_my_submitted_services', 'gondia_stay_submitted_services']) {
+        const rawSubmitted = localStorage.getItem(key);
+        if (rawSubmitted) {
+          try {
+            const submitted = JSON.parse(rawSubmitted);
+            if (Array.isArray(submitted)) {
+              localStorage.setItem(
+                key,
+                JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
+              );
+            }
+          } catch {}
         }
-      } else {
-        try {
-          const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
-          const qSnap = await getDocs(q);
-          for (const tDoc of qSnap.docs) {
-            await setDoc(tDoc.ref, {
-              status: 'deleted_by_admin',
-              'serviceData.status': 'deleted_by_admin',
-              deletedAt: Date.now(),
-              deletedBy: adminEmail,
-              moderatedAt: Date.now(),
-              moderatedBy: adminEmail,
-              updatedAt: Date.now()
-            }, { merge: true });
-          }
-        } catch {}
       }
 
-      // Permanently remove service document and secret document from Cloud Firestore so it never reappears on any device
-      await deleteDoc(srvRef);
+      // Clean up local service IDs
+      const rawMyIds = localStorage.getItem('gondia_stay_my_service_ids');
+      if (rawMyIds) {
+        const ids = JSON.parse(rawMyIds);
+        if (Array.isArray(ids)) {
+          localStorage.setItem(
+            'gondia_stay_my_service_ids',
+            JSON.stringify(ids.filter((id: any) => id !== serviceId))
+          );
+        }
+      }
+    } catch {}
+  };
+
+  if (!db || !isFirebaseConfigured()) {
+    cleanupLocalServiceStorage();
+    return true;
+  }
+
+  const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
+  const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
+
+  // Admin permanent deletion: permanently delete service, service_secrets, and ALL service_edit_tokens records
+  if (isRealAdmin) {
+    try {
+      const tokensToDelete = new Set<string>();
+      if (token?.trim()) tokensToDelete.add(token.trim());
+      if (localStoredToken) tokensToDelete.add(localStoredToken);
+
       try {
-        await deleteDoc(secretRef);
+        const secretSnap = await getDoc(secretRef);
+        if (secretSnap.exists()) {
+          const secretToken = secretSnap.data()?.editToken;
+          if (typeof secretToken === 'string' && secretToken.trim()) {
+            tokensToDelete.add(secretToken.trim());
+          }
+        }
       } catch {}
 
+      try {
+        const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
+        const qSnap = await getDocs(q);
+        qSnap.docs.forEach((tDoc) => {
+          tokensToDelete.add(tDoc.id);
+        });
+      } catch {}
+
+      const batch = writeBatch(db);
+      batch.delete(srvRef);
+      batch.delete(secretRef);
+      tokensToDelete.forEach((tok) => {
+        batch.delete(doc(db!, SERVICE_EDIT_TOKENS_COLLECTION, tok));
+      });
+
+      try {
+        await batch.commit();
+      } catch (batchErr) {
+        console.warn('[GondiaStay] Admin batch service delete notice, falling back to direct deletes:', batchErr);
+        await deleteDoc(srvRef);
+        try { await deleteDoc(secretRef); } catch {}
+        for (const tok of tokensToDelete) {
+          try { await deleteDoc(doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tok)); } catch {}
+        }
+      }
+
+      cleanupLocalServiceStorage();
       return true;
     } catch (err) {
-      console.error('[GondiaStay] Error setting deleted_by_admin for service in Firestore:', err);
+      console.error('[GondiaStay] Error permanently deleting service in Firestore:', err);
       return false;
     }
   }
 
-  // Owner deletion: update local cache and deleted tracking
+  // Owner permanent deletion: atomically delete service, service_secrets, and service_edit_tokens
   try {
-    const rawDeleted = localStorage.getItem(DELETED_SERVICES_KEY);
-    const deletedArr: string[] = rawDeleted ? JSON.parse(rawDeleted) : [];
-    if (!deletedArr.includes(serviceId)) {
-      deletedArr.push(serviceId);
-      localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify(deletedArr));
-    }
-
-    const cached = getCachedServices();
-    const updated = cached.filter(s => s.id !== serviceId);
-    localStorage.setItem(SERVICES_CACHE_KEY, JSON.stringify(updated));
-
-    // Clean up local token
-    const savedTokens = JSON.parse(localStorage.getItem('gondia_stay_service_tokens') || '{}');
-    delete savedTokens[serviceId];
-    localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(savedTokens));
-
-    // Clean up submitted service storage (both my_submitted and submitted)
-    const rawMySubmitted = localStorage.getItem('gondia_stay_my_submitted_services');
-    if (rawMySubmitted) {
-      try {
-        const submitted = JSON.parse(rawMySubmitted);
-        if (Array.isArray(submitted)) {
-          localStorage.setItem(
-            'gondia_stay_my_submitted_services',
-            JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
-          );
-        }
-      } catch {}
-    }
-
-    const rawSubmitted = localStorage.getItem('gondia_stay_submitted_services');
-    if (rawSubmitted) {
-      try {
-        const submitted = JSON.parse(rawSubmitted);
-        if (Array.isArray(submitted)) {
-          localStorage.setItem(
-            'gondia_stay_submitted_services',
-            JSON.stringify(submitted.filter((s: any) => s.id !== serviceId))
-          );
-        }
-      } catch {}
-    }
-
-    // Clean up local service IDs
-    const rawMyIds = localStorage.getItem('gondia_stay_my_service_ids');
-    if (rawMyIds) {
-      const ids = JSON.parse(rawMyIds);
-      if (Array.isArray(ids)) {
-        localStorage.setItem(
-          'gondia_stay_my_service_ids',
-          JSON.stringify(ids.filter((id: any) => id !== serviceId))
-        );
-      }
-    }
-  } catch {}
-
-  if (!db || !isFirebaseConfigured()) {
-    return true;
-  }
-
-  try {
-    const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
-    const secretRef = doc(db, SERVICE_SECRETS_COLLECTION, serviceId);
-
-    let tokenToDelete = token?.trim();
+    let tokenToDelete = token?.trim() || localStoredToken;
     if (!tokenToDelete) {
       try {
         const secretSnap = await getDoc(secretRef);
@@ -1225,8 +1196,7 @@ export const deleteServiceInFirestore = async (
       } catch {}
     }
 
-    // Owner deletion using private Edit Token:
-    // Uses an atomic writeBatch to delete the public service, delete the token doc, and delete the secret doc
+    // 1. Atomic writeBatch using private Edit Token (deletes services, service_secrets, and service_edit_tokens together)
     if (tokenToDelete) {
       const cleanToken = tokenToDelete.trim();
       const batch = writeBatch(db);
@@ -1236,31 +1206,37 @@ export const deleteServiceInFirestore = async (
       batch.delete(secretRef);
       try {
         await batch.commit();
+        cleanupLocalServiceStorage();
         return true;
       } catch (bErr) {
         console.warn('[GondiaStay] Batch service delete notice, falling back:', bErr);
       }
     }
 
-    // Also query and remove any remaining tokens for this service to permanently erase them
-    try {
-      const q = query(collection(db, SERVICE_EDIT_TOKENS_COLLECTION), where('serviceId', '==', serviceId));
-      const qSnap = await getDocs(q);
-      for (const tDoc of qSnap.docs) {
-        await deleteDoc(tDoc.ref);
-      }
-    } catch {}
-
-    // Authenticated owner deletion via Firebase Auth (UID match)
-    if (auth?.currentUser) {
-      await deleteDoc(srvRef);
+    // 2. Authenticated owner deletion via Firebase Auth (UID or email match)
+    if (auth?.currentUser && (!ownerId || auth.currentUser.uid === ownerId || auth.currentUser.email)) {
       try {
-        await deleteDoc(secretRef);
-      } catch {}
-      return true;
+        const batch = writeBatch(db);
+        batch.delete(srvRef);
+        batch.delete(secretRef);
+        if (tokenToDelete) {
+          batch.delete(doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tokenToDelete.trim()));
+        }
+        await batch.commit();
+        cleanupLocalServiceStorage();
+        return true;
+      } catch {
+        await deleteDoc(srvRef);
+        try { await deleteDoc(secretRef); } catch {}
+        if (tokenToDelete) {
+          try { await deleteDoc(doc(db, SERVICE_EDIT_TOKENS_COLLECTION, tokenToDelete.trim())); } catch {}
+        }
+        cleanupLocalServiceStorage();
+        return true;
+      }
     }
 
-    return true;
+    return false;
   } catch (err) {
     console.error('[GondiaStay] Error deleting service from Firestore:', err);
     return false;

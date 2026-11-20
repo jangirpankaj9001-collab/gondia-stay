@@ -27,16 +27,24 @@ test('Admin Rejection & Deletion Functional Sync & Public Exclusion', async (t) 
     assert.ok(servicesServiceCode.includes('status: newStatus'), 'moderateServiceInFirestore sets status: newStatus in Firestore');
   });
 
-  await t.test('3. Admin permanent deletion marks status: "deleted_by_admin" in Firestore document and token document', () => {
+  await t.test('3. Admin permanent deletion removes main document, secrets, and edit-token records in Firestore', () => {
     // Check deletePropertyFromFirestore implementation
     assert.ok(propertiesServiceCode.includes('deletePropertyFromFirestore'), 'deletePropertyFromFirestore must exist');
-    assert.ok(propertiesServiceCode.includes("status: 'deleted_by_admin'"), 'deletePropertyFromFirestore sets status: deleted_by_admin');
-    assert.ok(propertiesServiceCode.includes("'propertyData.status': 'deleted_by_admin'"), 'deletePropertyFromFirestore updates token document status');
+    assert.ok(
+      propertiesServiceCode.includes('batch.delete(docRef)') &&
+      propertiesServiceCode.includes('batch.delete(secretRef)') &&
+      propertiesServiceCode.includes('batch.delete(doc(db!, PROPERTY_EDIT_TOKENS_COLLECTION, tok))'),
+      'deletePropertyFromFirestore permanently deletes property, secret, and edit-token documents'
+    );
 
     // Check deleteServiceInFirestore implementation
     assert.ok(servicesServiceCode.includes('deleteServiceInFirestore'), 'deleteServiceInFirestore must exist');
-    assert.ok(servicesServiceCode.includes("status: 'deleted_by_admin'"), 'deleteServiceInFirestore sets status: deleted_by_admin');
-    assert.ok(servicesServiceCode.includes("'serviceData.status': 'deleted_by_admin'"), 'deleteServiceInFirestore updates token document status');
+    assert.ok(
+      servicesServiceCode.includes('batch.delete(srvRef)') &&
+      servicesServiceCode.includes('batch.delete(secretRef)') &&
+      servicesServiceCode.includes('batch.delete(doc(db!, SERVICE_EDIT_TOKENS_COLLECTION, tok))'),
+      'deleteServiceInFirestore permanently deletes service, secret, and edit-token documents'
+    );
   });
 
   await t.test('4. Real-time status listeners sync rejection and admin deletion immediately to the owner device', () => {
@@ -57,35 +65,28 @@ test('Admin Rejection & Deletion Functional Sync & Public Exclusion', async (t) 
     assert.ok(appContextCode.includes('subscribeToOwnerPropertiesStatus'), 'AppContext imports subscribeToOwnerPropertiesStatus');
     assert.ok(appContextCode.includes('subscribeToOwnerServicesStatus'), 'AppContext imports subscribeToOwnerServicesStatus');
 
-    // AppContext updates local tracking and state on status change
+    // AppContext updates local tracking and state on status change (e.g. rejected)
     assert.ok(appContextCode.includes('updateSubmittedPropertyStatus(propertyId, newStatus)'), 'AppContext updates submitted property status in storage');
     assert.ok(appContextCode.includes('updateSubmittedServiceStatus(serviceId, newStatus)'), 'AppContext updates submitted service status in storage');
 
-    // Admin deletion updates AppContext with deleted_by_admin and persists immediately
-    assert.ok(appContextCode.includes("updateSubmittedPropertyStatus(propertyId, 'deleted_by_admin')"), 'AppContext updates submitted property to deleted_by_admin');
-    assert.ok(appContextCode.includes("updateSubmittedServiceStatus(serviceId, 'deleted_by_admin')"), 'AppContext updates submitted service to deleted_by_admin');
+    // Permanent deletion removes listing from state and all local storage caches
+    assert.ok(appContextCode.includes('removeSubmittedProperty(propertyId);'), 'AppContext removes permanently deleted property from local storage');
+    assert.ok(appContextCode.includes('removeSubmittedService(serviceId);'), 'AppContext removes permanently deleted service from local storage');
   });
 
-  await t.test('6. Owner Section renders "Rejected" or "Deleted by Admin" badge for owner listings', () => {
-    // Check App.tsx for property badges
+  await t.test('6. Owner Section renders red "Rejected" badge for rejected owner listings', () => {
     assert.ok(
-      /isDeletedByAdmin\(property\.status\)\s*\?\s*['"](Property )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode), 
-      'App.tsx displays Deleted by Admin or Rejected for non-approved non-pending properties'
-    );
-    assert.ok(appCode.includes("'bg-rose-100 text-rose-800'"), 'App.tsx uses rose styling for rejected/deleted status');
-
-    // Check App.tsx for service badges
-    assert.ok(
-      /isDeletedByAdmin\(srv\.status\)\s*\?\s*['"](Service )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode), 
-      'App.tsx displays Deleted by Admin or Rejected for non-approved non-pending services'
+      appCode.includes("'bg-red-100 text-red-700 border border-red-200'") &&
+      appCode.includes(": 'Rejected'"),
+      'App.tsx displays red Rejected badge for rejected owner properties and services'
     );
   });
 
-  await t.test('7. Admin moderation cards display "Deleted by Admin" when status is deleted by admin', () => {
+  await t.test('7. Admin moderation cards display "Deleted by Admin" or "Rejected" badge', () => {
     assert.ok(/isDeletedByAdmin\(prop\.status\)\s*\?\s*['"](Property )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode),
-      'Admin property card displays Deleted by Admin');
+      'Admin property card displays Rejected badge');
     assert.ok(/isDeletedByAdmin\(srv\.status\)\s*\?\s*['"](Service )?Deleted by Admin['"]\s*:\s*['"]Rejected['"]/.test(appCode),
-      'Admin service card displays Deleted by Admin');
+      'Admin service card displays Rejected badge');
   });
 
   await t.test('8. Public tabs strictly exclude rejected and deleted properties and services from public view', () => {
@@ -96,8 +97,11 @@ test('Admin Rejection & Deletion Functional Sync & Public Exclusion', async (t) 
       'Rejected and deleted properties are filtered out of explore, map, and saved');
 
     // Services tab
-    assert.ok(appCode.includes("if (!isAdminAuthenticated && !isApproved(s.status))"), 
-      'Rejected and deleted services are filtered out of public Services tab');
+    assert.ok(
+      appCode.includes('if (isDeletedByAdmin(s.status) || isRejected(s.status)) {\n        return false;\n      }') &&
+      appCode.includes('if (!isApproved(s.status)) return false;'),
+      'Rejected and deleted services are strictly filtered out of public Services tab'
+    );
   });
 
   await t.test('9. Types define isDeletedByAdmin and support deleted_by_admin status', () => {

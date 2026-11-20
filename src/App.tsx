@@ -439,12 +439,12 @@ export const App: React.FC = () => {
       const directPropId = searchParams.get('property') || searchParams.get('stay') || hashParams.get('property') || hashParams.get('stay');
       if (directPropId && properties.length > 0 && !selectedProperty && activeTab !== 'detail') {
         const found = properties.find(p => p.id === directPropId);
-        if (found && !isDeletedByAdmin(found.status)) {
+        if (found && !isDeletedByAdmin(found.status) && (isApproved(found.status) || isAdminAuthenticated || isPropertyOwner(found))) {
           navigateTo('detail', found);
         }
       }
     } catch {}
-  }, [properties, selectedProperty, activeTab, navigateTo]);
+  }, [properties, selectedProperty, activeTab, navigateTo, isAdminAuthenticated, isPropertyOwner]);
 
   // Selected photos for property listing (supports multiple photos, gallery picker, reordering, duplicate prevention, and compression)
   const [selectedPhotos, setSelectedPhotos] = useState<Array<{
@@ -723,8 +723,8 @@ export const App: React.FC = () => {
   // Requirement 6: Comprehensive search by title, locality, address, accommodation type, rent, amenities
   const filteredProperties = useMemo(() => {
     return properties.filter(p => {
-      // Permanently hide deleted items from Rentals (Explore, Map, Saved) on every device, including admin's mobile while logged in
-      if (isDeletedByAdmin(p.status)) {
+      // Permanently hide deleted and rejected items from public Rentals (Explore, Map, Saved) on every device
+      if (isDeletedByAdmin(p.status) || isRejected(p.status)) {
         return false;
       }
 
@@ -898,9 +898,9 @@ export const App: React.FC = () => {
     });
   }, [properties, activeTab, favorites, selectedLocality, selectedType, filterCriteria, searchQuery, sortOption]);
 
-  // Owner properties (strictly displays only listings belonging to this device/owner)
+  // Owner properties (strictly displays only non-deleted listings belonging to this device/owner, keeping Rejected visible)
   const myProperties = useMemo(() => {
-    return properties.filter(p => isPropertyOwner(p));
+    return properties.filter(p => isPropertyOwner(p) && !isDeletedByAdmin(p.status));
   }, [properties, isPropertyOwner]);
 
   // Properties grouped for Admin Moderation Workflow
@@ -917,7 +917,7 @@ export const App: React.FC = () => {
   }, [properties]);
 
   const rejectedProperties = useMemo(() => {
-    return properties.filter(p => isRejected(p.status) || isDeletedByAdmin(p.status));
+    return properties.filter(p => isRejected(p.status));
   }, [properties]);
 
   // Gondia Services grouped for Admin Moderation & Public display
@@ -934,22 +934,22 @@ export const App: React.FC = () => {
   }, [services]);
 
   const rejectedServices = useMemo(() => {
-    return services.filter(s => isRejected(s.status) || isDeletedByAdmin(s.status));
+    return services.filter(s => isRejected(s.status));
   }, [services]);
 
-  // Filtered services for the Services Tab
+  // Filtered services for the public Home Services Tab
   const filteredServices = useMemo(() => {
     return services.filter(s => {
-      // Permanently hide deleted items from Home Services and all subcategories on every device, including admin's mobile while logged in
-      if (isDeletedByAdmin(s.status)) {
+      // Permanently hide deleted and rejected items from public Home Services and all subcategories on every device
+      if (isDeletedByAdmin(s.status) || isRejected(s.status)) {
         return false;
       }
       if (getDeletedServiceIds().has(s.id)) {
         return false;
       }
 
-      // Ordinary public visitors only see approved listings
-      if (!isAdminAuthenticated && !isApproved(s.status)) {
+      // Public Home Services strictly displays approved listings only
+      if (!isApproved(s.status)) {
         return false;
       }
 
@@ -999,11 +999,12 @@ export const App: React.FC = () => {
   // Services available for the Category Grid (filtered by locality & query, preserving all categories)
   const servicesForCategoryGrid = useMemo(() => {
     return services.filter(s => {
-      // Permanently hide deleted items on every device, including admin's mobile while logged in
-      if (isDeletedByAdmin(s.status)) return false;
+      // Permanently hide deleted and rejected items on every device
+      if (isDeletedByAdmin(s.status) || isRejected(s.status)) return false;
       if (getDeletedServiceIds().has(s.id)) return false;
 
-      if (!isAdminAuthenticated && !isApproved(s.status)) return false;
+      // Public Home Services category grid strictly displays approved listings only
+      if (!isApproved(s.status)) return false;
 
       // Locality filter
       if (serviceLocalityFilter !== 'All') {
@@ -2531,17 +2532,13 @@ export const App: React.FC = () => {
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : isPending(property.status)
                                     ? 'bg-amber-100 text-amber-800'
-                                    : isDeletedByAdmin(property.status)
-                                      ? 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold'
-                                      : 'bg-rose-100 text-rose-800'
+                                    : 'bg-red-100 text-red-700 border border-red-200'
                               }`}>
                                 {isApproved(property.status)
                                   ? 'Approved · Live'
                                   : isPending(property.status)
                                     ? 'Pending Approval'
-                                    : isDeletedByAdmin(property.status)
-                                      ? 'Property Deleted by Admin'
-                                      : 'Rejected'}
+                                    : 'Rejected'}
                               </span>
 
                               {/* Requirement 5: Occupancy badge */}
@@ -2698,7 +2695,7 @@ export const App: React.FC = () => {
 
                 {/* My Home Services Section (if owner has registered any local services) */}
                 {(() => {
-                  const myOwnerServices = services.filter(s => isServiceOwner(s));
+                  const myOwnerServices = services.filter(s => isServiceOwner(s) && !isDeletedByAdmin(s.status));
                   if (myOwnerServices.length === 0) return null;
                   return (
                     <div className="pt-4 border-t border-slate-200 space-y-3">
@@ -2744,17 +2741,13 @@ export const App: React.FC = () => {
                                       ? 'bg-emerald-100 text-emerald-800'
                                       : isPending(srv.status)
                                         ? 'bg-amber-100 text-amber-800'
-                                        : isDeletedByAdmin(srv.status)
-                                          ? 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold'
-                                          : 'bg-rose-100 text-rose-800'
+                                        : 'bg-red-100 text-red-700 border border-red-200'
                                   }`}>
                                     {isApproved(srv.status)
                                       ? 'Approved · Live'
                                       : isPending(srv.status)
                                         ? 'Pending Approval'
-                                        : isDeletedByAdmin(srv.status)
-                                          ? 'Service Deleted by Admin'
-                                          : 'Rejected'}
+                                        : 'Rejected'}
                                   </span>
                                   {srv.hasPendingEdit && (
                                     <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">

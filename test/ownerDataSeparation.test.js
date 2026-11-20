@@ -43,13 +43,13 @@ test('Strict Owner-Wise Data Separation (User Request 10)', async (t) => {
 
     // Must not return all properties when admin is authenticated
     assert.ok(!body.includes('if (isAdminAuthenticated) return properties;'), 'myProperties must NOT return all properties for admin');
-    assert.ok(body.includes('return properties.filter(p => isPropertyOwner(p));'), 'myProperties filters strictly by isPropertyOwner');
+    assert.ok(body.includes('return properties.filter(p => isPropertyOwner(p) && !isDeletedByAdmin(p.status));'), 'myProperties filters strictly by isPropertyOwner and excludes deleted items');
   });
 
   await t.test('4. myOwnerServices in App.tsx filters strictly by isServiceOwner', () => {
     assert.ok(
-      app.includes('const myOwnerServices = services.filter(s => isServiceOwner(s));'),
-      'myOwnerServices filters strictly using isServiceOwner'
+      app.includes('const myOwnerServices = services.filter(s => isServiceOwner(s) && !isDeletedByAdmin(s.status));'),
+      'myOwnerServices filters strictly using isServiceOwner and excludes deleted items'
     );
   });
 
@@ -57,7 +57,7 @@ test('Strict Owner-Wise Data Separation (User Request 10)', async (t) => {
     // Admin panel moderation lists
     assert.ok(app.includes('properties.filter(p => isPending(p.status))'), 'Admin panel accesses all pending properties');
     assert.ok(app.includes('properties.filter(p => isApproved(p.status))'), 'Admin panel accesses all approved properties');
-    assert.ok(app.includes('properties.filter(p => isRejected(p.status) || isDeletedByAdmin(p.status))') || app.includes('properties.filter(p => (p.status || \'\').toLowerCase() === \'rejected\')'), 'Admin panel accesses all rejected properties');
+    assert.ok(app.includes('properties.filter(p => isRejected(p.status))'), 'Admin panel accesses all rejected properties');
     assert.ok(app.includes('services.filter(s => isPending(s.status))'), 'Admin panel accesses all pending services');
     assert.ok(app.includes('services.filter(s => isApproved(s.status))'), 'Admin panel accesses all approved services');
     

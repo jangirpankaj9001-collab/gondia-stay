@@ -38,6 +38,8 @@ import {
   subscribeToOwnerProfile,
   SavePropertyResult,
   getCachedProperties,
+  getDeletedPropertyIds,
+  DELETED_PROPERTIES_KEY,
   generateDeviceToken,
   generateUniqueOwnerId,
   verifyDeviceToken,
@@ -53,6 +55,7 @@ import {
   deleteServiceInFirestore,
   getCachedServices,
   getDeletedServiceIds,
+  DELETED_SERVICES_KEY,
   purgeAllDeletedServicesFromFirestore,
   ensureServicesStorageWiped
 } from '../firebase/servicesService';
@@ -184,7 +187,11 @@ export const isAuthorizedAdminEmail = (email?: string | null): boolean => {
 export const getSubmittedProperties = (): PropertyListing[] => {
   try {
     const raw = localStorage.getItem('gondia_stay_my_submitted_properties');
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const deletedIds = getDeletedPropertyIds();
+    return parsed.filter(p => p && p.id && !deletedIds.has(p.id) && !isDeletedByAdmin(p.status));
   } catch {
     return [];
   }
@@ -272,10 +279,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [properties, setProperties] = useState<PropertyListing[]>(() => {
     const cached = getCachedProperties();
     const submitted = getSubmittedProperties();
+    const deletedIds = getDeletedPropertyIds();
     const map = new Map(cached.map(p => [p.id, p]));
     const merged = [...cached];
     submitted.forEach(p => {
-      if (!map.has(p.id)) {
+      if (!map.has(p.id) && !deletedIds.has(p.id) && !isDeletedByAdmin(p.status)) {
         merged.push(p);
       }
     });
@@ -747,6 +755,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setFirestoreError(null);
   }, []);
 
+  // Track property IDs confirmed live & approved in Cloud Firestore so missing/stale tokens never hide them
+  const remoteApprovedPropertyIdsRef = useRef<Set<string>>(new Set());
+
   // Set up real-time Cloud Firestore subscription on the 'properties' collection
   // Requirement 4: Real-time listener ensures admin dashboard and public users update automatically
   useEffect(() => {
@@ -764,22 +775,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (remoteProperties) => {
         setIsFirestoreLoading(false);
         setFirestoreError(null);
+        remoteApprovedPropertyIdsRef.current = new Set(
+          remoteProperties.filter(p => isApproved(p.status)).map(p => p.id)
+        );
         setProperties(() => {
           const remoteMap = new Map(remoteProperties.map(p => [p.id, p]));
           const merged: PropertyListing[] = [...remoteProperties];
 
+          const deletedIds = getDeletedPropertyIds();
           const locallyTracked = getSubmittedProperties();
           let localUpdated = false;
-          const updatedLocallyTracked = locallyTracked.map(localProp => {
+          const updatedLocallyTracked: PropertyListing[] = [];
+
+          locallyTracked.forEach(localProp => {
+            if (deletedIds.has(localProp.id) || isDeletedByAdmin(localProp.status)) {
+              localUpdated = true;
+              return;
+            }
             const remoteVersion = remoteMap.get(localProp.id);
             if (remoteVersion) {
               if (remoteVersion.status !== localProp.status) {
                 localUpdated = true;
-                return { ...localProp, status: remoteVersion.status };
+                updatedLocallyTracked.push({ ...localProp, status: remoteVersion.status });
+              } else {
+                updatedLocallyTracked.push(localProp);
               }
+            } else if (isAdminAuthenticated) {
+              // Admin receives the authoritative full collection: absent local items were permanently deleted
+              localUpdated = true;
+            } else {
+              updatedLocallyTracked.push(localProp);
+              merged.push(localProp);
             }
-            return localProp;
           });
+
           if (localUpdated) {
             try {
               localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updatedLocallyTracked));
@@ -787,12 +816,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               // Ignore
             }
           }
-
-          locallyTracked.forEach(localProp => {
-            if (!remoteMap.has(localProp.id)) {
-              merged.push(localProp);
-            }
-          });
 
           merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           return merged;
@@ -834,18 +857,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const remoteMap = new Map(remoteServices.map(s => [s.id, s]));
           const merged: ServiceItem[] = [...remoteServices];
 
+          const deletedIds = getDeletedServiceIds();
           const locallyTracked = getSubmittedServices();
           let localUpdated = false;
-          const updatedLocallyTracked = locallyTracked.map(localSrv => {
+          const updatedLocallyTracked: ServiceItem[] = [];
+
+          locallyTracked.forEach(localSrv => {
+            if (deletedIds.has(localSrv.id) || isDeletedByAdmin(localSrv.status)) {
+              localUpdated = true;
+              return;
+            }
             const remoteVersion = remoteMap.get(localSrv.id);
             if (remoteVersion) {
               if (remoteVersion.status !== localSrv.status) {
                 localUpdated = true;
-                return { ...localSrv, status: remoteVersion.status };
+                updatedLocallyTracked.push({ ...localSrv, status: remoteVersion.status });
+              } else {
+                updatedLocallyTracked.push(localSrv);
               }
+            } else if (isAdminAuthenticated) {
+              // Admin receives the authoritative full collection: absent local items were permanently deleted
+              localUpdated = true;
+            } else {
+              updatedLocallyTracked.push(localSrv);
+              merged.push(localSrv);
             }
-            return localSrv;
           });
+
           if (localUpdated) {
             try {
               localStorage.setItem('gondia_stay_my_submitted_services', JSON.stringify(updatedLocallyTracked));
@@ -853,17 +891,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               // Ignore
             }
           }
-
-          const deletedIds = getDeletedServiceIds();
-          locallyTracked.forEach(localSrv => {
-            if (!remoteMap.has(localSrv.id)) {
-              if (!deletedIds.has(localSrv.id) && !isDeletedByAdmin(localSrv.status)) {
-                merged.push(localSrv);
-              } else {
-                removeSubmittedService(localSrv.id);
-              }
-            }
-          });
 
           merged.sort((a, b) => {
             if (a.isFeatured && !b.isFeatured) return -1;
@@ -884,21 +911,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [isAdminAuthenticated]);
 
-  // Real-time synchronization of owner's properties moderation status (approved, pending, or rejected)
-  // Ensures rejected properties immediately sync in real-time to the owner's device
+  // Real-time synchronization of owner's properties moderation status (approved, pending, rejected, or permanently deleted)
+  // Ensures rejected properties show red Rejected badge and deleted properties disappear immediately on all devices
   useEffect(() => {
     if (!isFirebaseConfigured() || isAdminAuthenticated) return;
 
     const unsubscribe = subscribeToOwnerPropertiesStatus(
       myListingTokens,
       (propertyId, newStatus) => {
-        updateSubmittedPropertyStatus(propertyId, newStatus);
-        setProperties(prev => prev.map(p => {
-          if (p.id === propertyId) {
-            return { ...p, status: newStatus };
-          }
-          return p;
-        }));
+        // Never allow a missing or stale-pending token to remove/hide a live approved property from Firestore
+        if (remoteApprovedPropertyIdsRef.current.has(propertyId) && (newStatus === 'deleted' || newStatus === 'pending')) {
+          return;
+        }
+        if (newStatus === 'deleted' || newStatus === 'deleted_by_admin') {
+          try {
+            const rawDel = localStorage.getItem(DELETED_PROPERTIES_KEY);
+            const arr: string[] = rawDel ? JSON.parse(rawDel) : [];
+            if (!arr.includes(propertyId)) {
+              arr.push(propertyId);
+              localStorage.setItem(DELETED_PROPERTIES_KEY, JSON.stringify(arr));
+            }
+          } catch {}
+          removeSubmittedProperty(propertyId);
+          removePropertyId(propertyId);
+          setMyListingTokens(prev => {
+            if (!(propertyId in prev)) return prev;
+            const updated = { ...prev };
+            delete updated[propertyId];
+            try { localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+          setProperties(prev => prev.filter(p => p.id !== propertyId));
+          setSelectedProperty(prev => (prev && prev.id === propertyId ? null : prev));
+        } else {
+          updateSubmittedPropertyStatus(propertyId, newStatus);
+          setProperties(prev => prev.map(p => {
+            if (p.id === propertyId) {
+              return { ...p, status: newStatus };
+            }
+            return p;
+          }));
+        }
       },
       myPropertyIds
     );
@@ -906,10 +959,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubscribe();
     };
-  }, [myListingTokens, myPropertyIds, isAdminAuthenticated]);
+  }, [myListingTokens, myPropertyIds, isAdminAuthenticated, removePropertyId]);
 
-  // Real-time synchronization of owner's services moderation status (approved, pending, or rejected)
-  // Ensures rejected services immediately sync in real-time to the owner's device
+  // Real-time synchronization of owner's services moderation status (approved, pending, rejected, or permanently deleted)
+  // Ensures rejected services show red Rejected badge and deleted services disappear immediately on all devices
   useEffect(() => {
     if (!isFirebaseConfigured() || isAdminAuthenticated) return;
 
@@ -920,8 +973,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (remoteApprovedServiceIdsRef.current.has(serviceId) && (newStatus === 'deleted' || newStatus === 'pending')) {
           return;
         }
-        if (newStatus === 'deleted') {
+        if (newStatus === 'deleted' || newStatus === 'deleted_by_admin') {
+          try {
+            const rawDel = localStorage.getItem(DELETED_SERVICES_KEY);
+            const arr: string[] = rawDel ? JSON.parse(rawDel) : [];
+            if (!arr.includes(serviceId)) {
+              arr.push(serviceId);
+              localStorage.setItem(DELETED_SERVICES_KEY, JSON.stringify(arr));
+            }
+          } catch {}
           removeSubmittedService(serviceId);
+          setMyServiceTokens(prev => {
+            if (!(serviceId in prev)) return prev;
+            const updated = { ...prev };
+            delete updated[serviceId];
+            try { localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+          setMyServiceIds(prev => {
+            if (!prev.includes(serviceId)) return prev;
+            const updated = prev.filter(id => id !== serviceId);
+            try { localStorage.setItem('gondia_stay_my_service_ids', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
           setServices(prev => prev.filter(s => s.id !== serviceId));
         } else {
           updateSubmittedServiceStatus(serviceId, newStatus);
@@ -1226,11 +1300,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const token = myListingTokens[propertyId];
     const propertyCopy: PropertyListing = { ...targetProp };
 
-    // If caller is Admin: permanently mark as Deleted by Admin in Firestore and sync to all devices
+    // If caller is Admin: permanently delete property, secrets, and edit tokens from Firestore and all devices
     if (isAdminAuthenticated) {
       if (isFirebaseConfigured()) {
         try {
-          await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, true);
+          const deleted = await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, true);
+          if (!deleted) {
+            showToast('Failed to delete property. Please check your connection or permissions.');
+            return;
+          }
         } catch (err: any) {
           console.error('Failed to permanently delete property from Firestore:', err);
           showToast('Failed to delete property: ' + (err.message || 'Please check connection'));
@@ -1240,20 +1318,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, true);
       }
 
-      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, status: 'deleted_by_admin' as any } : p));
-      updateSubmittedPropertyStatus(propertyId, 'deleted_by_admin');
+      removeSubmittedProperty(propertyId);
+      removePropertyId(propertyId);
+      setMyListingTokens(prev => {
+        if (!(propertyId in prev)) return prev;
+        const updated = { ...prev };
+        delete updated[propertyId];
+        try { localStorage.setItem('gondia_stay_listing_tokens', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      setProperties(prev => prev.filter(p => p.id !== propertyId));
       if (selectedProperty?.id === propertyId) {
         setSelectedProperty(null);
         setActiveTab('explore');
       }
-      showToast("Listing permanently marked as Deleted by Admin and removed from public listings.");
+      showToast("Property permanently deleted from Firestore.");
       return;
     }
 
-    // Owner deletion: remove from Firestore and start 7-second undo window
+    // Owner deletion: permanently delete property, secrets, and edit tokens from Firestore
     if (isFirebaseConfigured()) {
       try {
-        await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, false);
+        const deleted = await deletePropertyFromFirestore(propertyId, token, targetProp.ownerId, false);
+        if (!deleted) {
+          showToast('Failed to delete property. Please check your connection or permissions.');
+          return;
+        }
       } catch (err: any) {
         console.error('Failed to delete property from Firestore:', err);
         showToast('Failed to delete property: ' + (err.message || 'Please check connection'));
@@ -1265,7 +1355,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
     }
 
-    // Update UI only after successful deletion
+    // Update UI and immediately clean up submitted property storage so refresh does not resurrect it
+    removeSubmittedProperty(propertyId);
     setProperties(prev => prev.filter(p => p.id !== propertyId));
     if (selectedProperty?.id === propertyId) {
       setSelectedProperty(null);
@@ -1652,7 +1743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const ownerId = targetService.ownerId;
     const serviceCopy: ServiceItem = { ...targetService };
 
-    // If caller is Admin: permanently mark as Deleted by Admin in Firestore and sync to all devices
+    // If caller is Admin: permanently delete service, secrets, and edit tokens from Firestore and all devices
     if (isAdminAuthenticated) {
       if (isFirebaseConfigured()) {
         try {
@@ -1670,9 +1761,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await deleteServiceInFirestore(serviceId, token, ownerId, true);
       }
 
-      setServices(prev => prev.map(s => s.id === serviceId ? { ...s, status: 'deleted_by_admin' as any } : s));
-      updateSubmittedServiceStatus(serviceId, 'deleted_by_admin');
-      showToast("Service permanently marked as Deleted by Admin and removed from public listings.");
+      removeSubmittedService(serviceId);
+      setMyServiceTokens(prev => {
+        if (!(serviceId in prev)) return prev;
+        const updated = { ...prev };
+        delete updated[serviceId];
+        try { localStorage.setItem('gondia_stay_service_tokens', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      setMyServiceIds(prev => {
+        if (!prev.includes(serviceId)) return prev;
+        const updated = prev.filter(id => id !== serviceId);
+        try { localStorage.setItem('gondia_stay_my_service_ids', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      setServices(prev => prev.filter(s => s.id !== serviceId));
+      showToast("Service permanently deleted from Firestore.");
       return true;
     }
 

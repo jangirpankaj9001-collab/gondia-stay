@@ -47,49 +47,42 @@ test('Comprehensive Permanent Deletion & Real-Time Sync Verification', async (t)
     );
   });
 
-  await t.test('2. Admin Deletion: marks status as deleted_by_admin and syncs across all devices', () => {
-    // Admin deletion updates status
+  await t.test('2. Admin Deletion: permanently deletes main doc, secrets, and edit tokens and syncs removal across all devices', () => {
+    // Admin deletion deletes all related Firestore collections
     assert.ok(
-      propServiceCode.includes("status: 'deleted_by_admin'"),
-      'propertiesService sets status to deleted_by_admin on admin delete'
+      propServiceCode.includes('batch.delete(docRef)') &&
+      propServiceCode.includes('batch.delete(secretRef)') &&
+      propServiceCode.includes('batch.delete(doc(db!, PROPERTY_EDIT_TOKENS_COLLECTION, tok))'),
+      'propertiesService permanently deletes property, secret, and edit token docs on admin delete'
     );
     assert.ok(
-      servServiceCode.includes("status: 'deleted_by_admin'"),
-      'servicesService sets status to deleted_by_admin on admin delete'
+      servServiceCode.includes('batch.delete(srvRef)') &&
+      servServiceCode.includes('batch.delete(secretRef)') &&
+      servServiceCode.includes('batch.delete(doc(db!, SERVICE_EDIT_TOKENS_COLLECTION, tok))'),
+      'servicesService permanently deletes service, secret, and edit token docs on admin delete'
     );
 
-    // AppContext real-time listeners sync status
+    // AppContext real-time listeners permanently remove deleted listings on all devices
     assert.ok(
-      appContextCode.includes("updateSubmittedPropertyStatus(propertyId, 'deleted_by_admin')"),
-      'AppContext real-time listener syncs deleted_by_admin property status'
-    );
-    assert.ok(
-      appContextCode.includes("updateSubmittedServiceStatus(serviceId, 'deleted_by_admin')"),
-      'AppContext real-time listener syncs deleted_by_admin service status'
+      appContextCode.includes("if (newStatus === 'deleted' || newStatus === 'deleted_by_admin')") &&
+      appContextCode.includes('removeSubmittedProperty(propertyId);') &&
+      appContextCode.includes('removeSubmittedService(serviceId);'),
+      'AppContext real-time listeners permanently remove deleted properties and services across devices'
     );
   });
 
-  await t.test('3. Owner Section displays "Property Deleted by Admin" and "Service Deleted by Admin"', () => {
-    // Owner property card status
+  await t.test('3. Owner Section keeps Rejected listings visible with a red Rejected badge and excludes deleted listings', () => {
+    // Owner property card red Rejected badge
     assert.ok(
-      appCode.includes("isDeletedByAdmin(property.status)\n                                      ? 'Property Deleted by Admin'"),
-      'App.tsx displays Property Deleted by Admin in owner section for deleted property'
+      appCode.includes("'bg-red-100 text-red-700 border border-red-200'") &&
+      appCode.includes(": 'Rejected'"),
+      'App.tsx displays red Rejected badge in owner section for rejected listings'
     );
-
-    // Owner service card status
+    // Owner lists exclude deleted listings
     assert.ok(
-      appCode.includes("isDeletedByAdmin(srv.status)\n                                          ? 'Service Deleted by Admin'"),
-      'App.tsx displays Service Deleted by Admin in owner section for deleted service'
-    );
-
-    // Admin moderation status displays
-    assert.ok(
-      appCode.includes("isDeletedByAdmin(prop.status) ? 'Property Deleted by Admin' : 'Rejected'"),
-      'App.tsx displays Property Deleted by Admin in admin moderation'
-    );
-    assert.ok(
-      appCode.includes("isDeletedByAdmin(srv.status) ? 'Service Deleted by Admin' : 'Rejected'"),
-      'App.tsx displays Service Deleted by Admin in admin moderation'
+      appCode.includes('properties.filter(p => isPropertyOwner(p) && !isDeletedByAdmin(p.status))') &&
+      appCode.includes('services.filter(s => isServiceOwner(s) && !isDeletedByAdmin(s.status))'),
+      'Owner section hides permanently deleted listings'
     );
   });
 
@@ -133,8 +126,9 @@ test('Comprehensive Permanent Deletion & Real-Time Sync Verification', async (t)
       'Non-approved properties filtered from public tabs'
     );
     assert.ok(
-      appCode.includes("if (!isAdminAuthenticated && !isApproved(s.status)) return false;"),
-      'Non-approved services filtered from public services tab'
+      appCode.includes('if (isDeletedByAdmin(s.status) || isRejected(s.status)) {\n        return false;\n      }') &&
+      appCode.includes('if (!isApproved(s.status)) return false;'),
+      'Non-approved, rejected, and deleted services strictly filtered from public services tab'
     );
   });
 });

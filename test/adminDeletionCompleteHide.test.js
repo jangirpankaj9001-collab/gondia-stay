@@ -8,29 +8,33 @@ const propServiceCode = fs.readFileSync('src/firebase/propertiesService.ts', 'ut
 const servServiceCode = fs.readFileSync('src/firebase/servicesService.ts', 'utf8');
 
 test('Admin Deletion - Permanent Hidden State from Rentals, Home Services, and All Subcategories on Every Device', async (t) => {
-  await t.test('1. Admin deletion tags items internally with deleted_by_admin status in Firestore and tokens', () => {
+  await t.test('1. Admin deletion permanently deletes listing, secrets, and edit-token documents in Firestore', () => {
     assert.ok(
-      propServiceCode.includes("status: 'deleted_by_admin'"),
-      'propertiesService tags property status as deleted_by_admin'
+      propServiceCode.includes('batch.delete(docRef)') &&
+      propServiceCode.includes('batch.delete(secretRef)') &&
+      propServiceCode.includes('PROPERTY_EDIT_TOKENS_COLLECTION'),
+      'propertiesService permanently deletes property, property_secrets, and property_edit_tokens on admin delete'
     );
     assert.ok(
-      servServiceCode.includes("status: 'deleted_by_admin'"),
-      'servicesService tags service status as deleted_by_admin'
+      servServiceCode.includes('batch.delete(srvRef)') &&
+      servServiceCode.includes('batch.delete(secretRef)') &&
+      servServiceCode.includes('SERVICE_EDIT_TOKENS_COLLECTION'),
+      'servicesService permanently deletes service, service_secrets, and service_edit_tokens on admin delete'
     );
   });
 
-  await t.test('2. Filtered Properties permanently hides deleted items from Rentals (Explore, Map, Saved) on every device, including admin', () => {
+  await t.test('2. Filtered Properties permanently hides deleted and rejected items from Rentals (Explore, Map, Saved) on every device, including admin', () => {
     // filteredProperties in App.tsx
     assert.ok(
-      appCode.includes('if (isDeletedByAdmin(p.status)) {\n        return false;\n      }'),
-      'filteredProperties immediately returns false if isDeletedByAdmin is true'
+      appCode.includes('if (isDeletedByAdmin(p.status) || isRejected(p.status)) {\n        return false;\n      }'),
+      'filteredProperties immediately returns false if isDeletedByAdmin or isRejected is true'
     );
     assert.ok(
       appCode.includes('properties.filter(p => isApproved(p.status) && !isDeletedByAdmin(p.status))'),
-      'GondiaMap strictly excludes deleted_by_admin properties'
+      'GondiaMap strictly excludes deleted_by_admin and non-approved properties'
     );
     assert.ok(
-      appCode.includes('if (found && !isDeletedByAdmin(found.status))'),
+      appCode.includes('if (found && !isDeletedByAdmin(found.status)'),
       'Direct link resolution excludes deleted_by_admin properties'
     );
     assert.ok(
@@ -39,23 +43,23 @@ test('Admin Deletion - Permanent Hidden State from Rentals, Home Services, and A
     );
   });
 
-  await t.test('3. Home Services and Category Grid permanently hide deleted items on every device, including admin mobile', () => {
+  await t.test('3. Home Services and Category Grid permanently hide deleted and rejected items on every device, including admin mobile', () => {
     // filteredServices in App.tsx
     assert.ok(
-      appCode.includes('if (isDeletedByAdmin(s.status)) {\n        return false;\n      }'),
-      'filteredServices immediately returns false if isDeletedByAdmin is true, even when isAdminAuthenticated is true'
+      appCode.includes('if (isDeletedByAdmin(s.status) || isRejected(s.status)) {\n        return false;\n      }'),
+      'filteredServices immediately returns false if isDeletedByAdmin or isRejected is true, even when isAdminAuthenticated is true'
     );
     // servicesForCategoryGrid in App.tsx
     assert.ok(
-      appCode.includes('if (isDeletedByAdmin(s.status)) return false;'),
-      'servicesForCategoryGrid immediately returns false if isDeletedByAdmin is true'
+      appCode.includes('if (isDeletedByAdmin(s.status) || isRejected(s.status)) return false;'),
+      'servicesForCategoryGrid immediately returns false if isDeletedByAdmin or isRejected is true'
     );
   });
 
-  await t.test('4. All subcategories in ServiceCategoryGrid permanently hide deleted services on every device, including admin', () => {
+  await t.test('4. All subcategories in ServiceCategoryGrid permanently hide deleted and rejected services on every device, including admin', () => {
     assert.ok(
-      gridCode.includes('if (isDeletedByAdmin(service.status)) return false;'),
-      'dedicatedProviders in ServiceCategoryGrid strictly excludes deleted_by_admin services'
+      gridCode.includes('if (isDeletedByAdmin(service.status) || isRejected(service.status)) return false;'),
+      'dedicatedProviders in ServiceCategoryGrid strictly excludes deleted and rejected services'
     );
   });
 
