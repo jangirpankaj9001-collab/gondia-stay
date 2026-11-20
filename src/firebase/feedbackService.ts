@@ -1,7 +1,7 @@
 import {
   collection,
   doc,
-  setDoc,
+  addDoc,
   updateDoc,
   onSnapshot,
   Unsubscribe
@@ -21,9 +21,12 @@ export interface SubmitFeedbackInput {
   pageContext?: string;
 }
 
+const VALID_FEEDBACK_CATEGORIES: FeedbackCategory[] = ['bug_report', 'suggestion', 'general_query'];
+
 /**
  * Submits user feedback (Bug Report, Suggestion, or General Query) securely to a dedicated
  * Firestore collection (`user_feedback`) with status strictly initialized to 'pending'.
+ * Public users can submit without login via pure `addDoc` create.
  */
 export const submitFeedbackToFirestore = async (
   input: SubmitFeedbackInput
@@ -43,12 +46,14 @@ export const submitFeedbackToFirestore = async (
     };
   }
 
-  const feedbackId = `fb_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const normalizedCategory: FeedbackCategory = VALID_FEEDBACK_CATEGORIES.includes(input.category)
+    ? input.category
+    : 'general_query';
   const now = Date.now();
 
-  const payload: Record<string, any> = {
-    category: input.category,
-    message: cleanMessage,
+  const payload: Record<string, string | number> = {
+    category: normalizedCategory,
+    message: cleanMessage.slice(0, 2000),
     status: 'pending' as FeedbackStatus,
     createdAt: now,
     updatedAt: now
@@ -57,7 +62,7 @@ export const submitFeedbackToFirestore = async (
   const cleanSubject = (input.subject || '').trim().slice(0, 200);
   if (cleanSubject) payload.subject = cleanSubject;
 
-  const cleanScreenshot = (input.screenshotUrl || '').trim().slice(0, 1000);
+  const cleanScreenshot = (input.screenshotUrl || '').trim().slice(0, 2048);
   if (cleanScreenshot) payload.screenshotUrl = cleanScreenshot;
 
   const cleanContactName = (input.contactName || '').trim().slice(0, 100);
@@ -70,14 +75,24 @@ export const submitFeedbackToFirestore = async (
   if (cleanPageContext) payload.pageContext = cleanPageContext;
 
   try {
-    const docRef = doc(db, FEEDBACK_COLLECTION, feedbackId);
-    await setDoc(docRef, payload);
-    return { success: true, feedbackId };
+    const feedbackRef = collection(db, FEEDBACK_COLLECTION);
+    const createdDoc = await addDoc(feedbackRef, payload);
+    return { success: true, feedbackId: createdDoc.id };
   } catch (err: any) {
     console.error('[GondiaStay] Error submitting user feedback:', err);
+    const rawError = err?.message || String(err);
+    let userFriendlyError = rawError || 'Failed to submit feedback. Please try again.';
+    if (
+      rawError.toLowerCase().includes('permission') ||
+      rawError.toLowerCase().includes('insufficient') ||
+      rawError.includes('PERMISSION_DENIED')
+    ) {
+      userFriendlyError =
+        'Feedback submission blocked by Firestore rules: Please publish the latest Security Rules (including user_feedback) in Firebase Console -> Firestore Database -> Rules. (Admin can copy them from Firebase Settings -> Security Rules).';
+    }
     return {
       success: false,
-      error: err?.message || 'Failed to submit feedback. Please try again.'
+      error: userFriendlyError
     };
   }
 };

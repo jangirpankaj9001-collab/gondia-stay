@@ -37,11 +37,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper function to verify admin authorization:
-    // Strictly jangirpankaj9001@gmail.com with email_verified == true is the ONLY authorization path
+    // Strictly verified administrator email (jangirpankaj9001@gmail.com or jangirpankaj901@gmail.com) with email_verified == true
     function isAdmin() {
       return request.auth != null
         && request.auth.token.email != null 
-        && request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com'
+        && (request.auth.token.email.lower() == 'jangirpankaj9001@gmail.com' || request.auth.token.email.lower() == 'jangirpankaj901@gmail.com')
         && request.auth.token.email_verified == true;
     }
 
@@ -190,8 +190,16 @@ service cloud.firestore {
         && isValidOwnerUpdate()
       );
 
-      // 4. Delete: ONLY verified admin can delete listings.
-      allow delete: if isAdmin();
+      // Helper function to verify caller has the unguessable private edit token in property_edit_tokens for deleting this property
+      // Never grants permanent authorization: requires caller to delete /property_edit_tokens/{token} in the same write batch
+      function hasValidPropertyDeleteToken() {
+        return exists(/databases/$(database)/documents/property_secrets/$(propertyId))
+          && exists(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken))
+          && !existsAfter(/databases/$(database)/documents/property_edit_tokens/$(get(/databases/$(database)/documents/property_secrets/$(propertyId)).data.editToken));
+      }
+
+      // 4. Delete: Strictly restricted to verified administrator, authenticated listing owner, or verified edit-token holder
+      allow delete: if isAdmin() || isPropertyOwner() || hasValidPropertyDeleteToken();
     }
 
     // Property Secrets: Stores the unguessable private edit token for each property
@@ -225,8 +233,8 @@ service cloud.firestore {
       // Permanent authorization is impossible because secrets cannot be updated.
       allow update: if false;
 
-      // Only admin can delete
-      allow delete: if isAdmin();
+      // Only admin or atomic cleanup when property is deleted
+      allow delete: if isAdmin() || !existsAfter(/databases/$(database)/documents/properties/$(propertyId));
     }
 
     // Property Edit Tokens: Document ID is the unguessable token itself.
@@ -267,7 +275,11 @@ service cloud.firestore {
         && request.resource.data.lastActionAt is number
       );
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (
+        exists(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId))
+        && get(/databases/$(database)/documents/property_secrets/$(resource.data.propertyId)).data.editToken == token
+        && !existsAfter(/databases/$(database)/documents/properties/$(resource.data.propertyId))
+      );
     }
 
     // Owners collection for profile data
@@ -493,7 +505,7 @@ service cloud.firestore {
       );
       // Service secrets are strictly immutable once created.
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || !existsAfter(/databases/$(database)/documents/services/$(serviceId));
     }
 
     // Service Edit Tokens: Enables looking up service by private edit token
@@ -525,22 +537,23 @@ service cloud.firestore {
     }
 
     // User Feedback Collection: Bug Reports, Suggestions & General Queries
-    // Strictly private to verified administrators. Public users can submit new feedback only.
+    // Public users (without login) can create new pending feedback only.
+    // Strictly private to verified administrators for reading, editing, and deletion.
     match /user_feedback/{feedbackId} {
       allow read: if isAdmin();
 
-      allow create: if request.resource.data.status == 'pending'
+      allow create: if (request.resource.data.status == 'pending' || request.resource.data.status == 'PENDING')
                     && request.resource.data.category in ['bug_report', 'suggestion', 'general_query']
                     && request.resource.data.message is string
-                    && request.resource.data.message.size() >= 5
+                    && request.resource.data.message.size() >= 1
                     && request.resource.data.message.size() <= 2000
-                    && (!('subject' in request.resource.data) || (request.resource.data.subject is string && request.resource.data.subject.size() <= 200))
-                    && (!('screenshotUrl' in request.resource.data) || (request.resource.data.screenshotUrl is string && request.resource.data.screenshotUrl.size() <= 1000))
-                    && (!('contactName' in request.resource.data) || (request.resource.data.contactName is string && request.resource.data.contactName.size() <= 100))
-                    && (!('contactInfo' in request.resource.data) || (request.resource.data.contactInfo is string && request.resource.data.contactInfo.size() <= 150))
-                    && (!('pageContext' in request.resource.data) || (request.resource.data.pageContext is string && request.resource.data.pageContext.size() <= 100))
-                    && request.resource.data.createdAt is number
-                    && request.resource.data.updatedAt is number
+                    && (!('subject' in request.resource.data) || request.resource.data.subject == null || (request.resource.data.subject is string && request.resource.data.subject.size() <= 200))
+                    && (!('screenshotUrl' in request.resource.data) || request.resource.data.screenshotUrl == null || (request.resource.data.screenshotUrl is string && request.resource.data.screenshotUrl.size() <= 2048))
+                    && (!('contactName' in request.resource.data) || request.resource.data.contactName == null || (request.resource.data.contactName is string && request.resource.data.contactName.size() <= 100))
+                    && (!('contactInfo' in request.resource.data) || request.resource.data.contactInfo == null || (request.resource.data.contactInfo is string && request.resource.data.contactInfo.size() <= 150))
+                    && (!('pageContext' in request.resource.data) || request.resource.data.pageContext == null || (request.resource.data.pageContext is string && request.resource.data.pageContext.size() <= 100))
+                    && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number || request.resource.data.createdAt is timestamp)
+                    && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp)
                     && request.resource.data.keys().hasOnly([
                       'category',
                       'subject',
