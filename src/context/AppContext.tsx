@@ -36,9 +36,16 @@ import {
   updatePropertyOccupancyInFirestore,
   saveOwnerProfileToFirestore,
   subscribeToOwnerProfile,
+  subscribeToFirestoreOwners,
+  syncPropertyOwnerContactInFirestore,
+  synchronizePropertiesWithOwners,
+  isValidUniqueOwnerId,
+  normalizeOwnerPhoneDigits,
+  SyncedOwnerRecord,
   SavePropertyResult,
   getCachedProperties,
   getDeletedPropertyIds,
+  PROPERTIES_CACHE_KEY,
   DELETED_PROPERTIES_KEY,
   generateDeviceToken,
   generateUniqueOwnerId,
@@ -771,18 +778,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem('gondia_stay_current_owner', JSON.stringify(loadedProfile));
             localStorage.setItem('gondia_stay_persistent_owner', JSON.stringify(loadedProfile));
           } else {
-            // Check if there is an existing persistent device profile to associate with this UID
+            // Check if there is an existing persistent device profile belonging to this same user
             const existingSaved = localStorage.getItem('gondia_stay_current_owner') || localStorage.getItem('gondia_stay_persistent_owner');
             let existingParsed: OwnerProfile | null = null;
             if (existingSaved) {
               try { existingParsed = JSON.parse(existingSaved); } catch {}
             }
+            const canInheritDeviceProfile = Boolean(
+              existingParsed &&
+              (!existingParsed.email || !user.email || existingParsed.email.toLowerCase() === user.email.toLowerCase()) &&
+              (!existingParsed.id || existingParsed.id === user.uid || existingParsed.id.startsWith('owner_'))
+            );
             const newOwner: OwnerProfile = {
               id: user.uid,
               email: user.email || '',
-              name: existingParsed?.name || user.displayName || '',
-              phone: existingParsed?.phone || '',
-              whatsappNumber: existingParsed?.whatsappNumber || ''
+              name: (canInheritDeviceProfile ? existingParsed?.name : '') || user.displayName || '',
+              phone: (canInheritDeviceProfile ? existingParsed?.phone : '') || '',
+              whatsappNumber: (canInheritDeviceProfile ? existingParsed?.whatsappNumber : '') || ''
             };
             setCurrentOwner(newOwner);
             localStorage.setItem('gondia_stay_current_owner', JSON.stringify(newOwner));
@@ -825,6 +837,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [currentOwner.id, isAdminAuthenticated]);
 
+  // Real-time Firestore /owners collection listener so each property always stays synced
+  // with its respective owner's name & phone automatically without ever mixing owner details.
+  const ownersByIdRef = useRef<Record<string, SyncedOwnerRecord>>({});
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return;
+    const unsubscribe = subscribeToFirestoreOwners((remoteOwners) => {
+      ownersByIdRef.current = remoteOwners;
+      setProperties(prev => synchronizePropertiesWithOwners(prev, remoteOwners));
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Keep selectedProperty automatically synchronized with the latest property & owner details
+  useEffect(() => {
+    setSelectedProperty(prev => {
+      if (!prev) return prev;
+      const latest = properties.find(p => p.id === prev.id);
+      if (!latest) return prev;
+      if (
+        latest.ownerName !== prev.ownerName ||
+        latest.ownerPhone !== prev.ownerPhone ||
+        latest.ownerWhatsappNumber !== prev.ownerWhatsappNumber ||
+        latest.ownerId !== prev.ownerId ||
+        latest.updatedAt !== prev.updatedAt ||
+        latest.status !== prev.status ||
+        latest.occupancyStatus !== prev.occupancyStatus ||
+        latest.hasPendingEdit !== prev.hasPendingEdit ||
+        latest.title !== prev.title
+      ) {
+        return latest;
+      }
+      return prev;
+    });
+  }, [properties]);
+
   // Clear firestore error manually
   const clearFirestoreError = useCallback(() => {
     setFirestoreError(null);
@@ -850,12 +899,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (remoteProperties) => {
         setIsFirestoreLoading(false);
         setFirestoreError(null);
+        const syncedRemoteProperties = synchronizePropertiesWithOwners(remoteProperties, ownersByIdRef.current);
         remoteApprovedPropertyIdsRef.current = new Set(
-          remoteProperties.filter(p => isApproved(p.status)).map(p => p.id)
+          syncedRemoteProperties.filter(p => isApproved(p.status)).map(p => p.id)
         );
         setProperties(() => {
-          const remoteMap = new Map(remoteProperties.map(p => [p.id, p]));
-          const merged: PropertyListing[] = [...remoteProperties];
+          const remoteMap = new Map(syncedRemoteProperties.map(p => [p.id, p]));
+          const merged: PropertyListing[] = [...syncedRemoteProperties];
 
           const deletedIds = getDeletedPropertyIds();
           const locallyTracked = getSubmittedProperties();
@@ -869,9 +919,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             const remoteVersion = remoteMap.get(localProp.id);
             if (remoteVersion) {
-              if (remoteVersion.status !== localProp.status) {
+              if (
+                remoteVersion.status !== localProp.status ||
+                remoteVersion.ownerName !== localProp.ownerName ||
+                remoteVersion.ownerPhone !== localProp.ownerPhone ||
+                remoteVersion.ownerWhatsappNumber !== localProp.ownerWhatsappNumber ||
+                remoteVersion.ownerId !== localProp.ownerId ||
+                remoteVersion.updatedAt !== localProp.updatedAt
+              ) {
                 localUpdated = true;
-                updatedLocallyTracked.push({ ...localProp, status: remoteVersion.status });
+                updatedLocallyTracked.push(remoteVersion);
               } else {
                 updatedLocallyTracked.push(localProp);
               }
@@ -892,8 +949,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
-          merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-          return merged;
+          const finalMerged = synchronizePropertiesWithOwners(merged, ownersByIdRef.current);
+          finalMerged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          return finalMerged;
         });
       },
       (error) => {
@@ -1203,6 +1261,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`gondia_stay_owner_${updated.id}`, JSON.stringify(updated));
     }
 
+    const trimmedName = (updated.name || '').trim();
+    const trimmedPhone = (updated.phone || '').trim();
+    const trimmedWhatsapp = (updated.whatsappNumber || trimmedPhone).trim();
+    const syncTimestamp = Date.now();
+
+    // Update local owner map & strictly synchronize ONLY properties belonging to this exact ownerId
+    const ownerPropsToSync = isValidUniqueOwnerId(updated.id)
+      ? properties.filter(p => p.ownerId === updated.id)
+      : [];
+
+    if (isValidUniqueOwnerId(updated.id) && (trimmedName || trimmedPhone)) {
+      ownersByIdRef.current = {
+        ...ownersByIdRef.current,
+        [updated.id]: {
+          ...updated,
+          name: trimmedName,
+          phone: trimmedPhone,
+          whatsappNumber: trimmedWhatsapp,
+          updatedAt: syncTimestamp
+        }
+      };
+
+      if (ownerPropsToSync.length > 0) {
+        setProperties(prev => prev.map(p =>
+          p.ownerId === updated.id
+            ? {
+                ...p,
+                ownerName: trimmedName || p.ownerName,
+                ownerPhone: trimmedPhone || p.ownerPhone,
+                ownerWhatsappNumber: trimmedWhatsapp || p.ownerWhatsappNumber || p.ownerPhone,
+                updatedAt: syncTimestamp
+              }
+            : p
+        ));
+
+        try {
+          const submitted = getSubmittedProperties();
+          if (submitted.length > 0) {
+            const updatedSubmitted = submitted.map(p =>
+              p.ownerId === updated.id
+                ? {
+                    ...p,
+                    ownerName: trimmedName || p.ownerName,
+                    ownerPhone: trimmedPhone || p.ownerPhone,
+                    ownerWhatsappNumber: trimmedWhatsapp || p.ownerWhatsappNumber || p.ownerPhone,
+                    updatedAt: syncTimestamp
+                  }
+                : p
+            );
+            localStorage.setItem('gondia_stay_my_submitted_properties', JSON.stringify(updatedSubmitted));
+          }
+          const cached = getCachedProperties();
+          if (cached.length > 0) {
+            const updatedCached = cached.map(p =>
+              p.ownerId === updated.id
+                ? {
+                    ...p,
+                    ownerName: trimmedName || p.ownerName,
+                    ownerPhone: trimmedPhone || p.ownerPhone,
+                    ownerWhatsappNumber: trimmedWhatsapp || p.ownerWhatsappNumber || p.ownerPhone,
+                    updatedAt: syncTimestamp
+                  }
+                : p
+            );
+            localStorage.setItem(PROPERTIES_CACHE_KEY, JSON.stringify(updatedCached));
+          }
+        } catch {}
+      }
+    }
+
     // Secure server-side device token validation & registration
     try {
       await registerDeviceTokenInFirestore(updated.id, deviceToken, updated);
@@ -1210,21 +1338,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Server-side token registration notice:', err);
     }
 
-    if (isFirebaseConfigured() && updated.id) {
+    if (isFirebaseConfigured() && isValidUniqueOwnerId(updated.id)) {
       try {
         await saveOwnerProfileToFirestore(updated);
-        // Also update any properties belonging to this owner so tenant view sees new info
-        const myProps = properties.filter(p => p.ownerId === updated.id);
-        for (const prop of myProps) {
-          await savePropertyToFirestore({
-            ...prop,
-            ownerName: updated.name,
-            ownerPhone: updated.phone,
-            ownerWhatsappNumber: updated.whatsappNumber || updated.phone
-          }, true);
-        }
       } catch (err) {
-        console.warn('Failed to sync profile to Firestore:', err);
+        console.warn('Failed to sync owner profile to Firestore:', err);
+      }
+
+      // Synchronize updated owner name & phone to each property strictly matching this ownerId in Firestore
+      for (const prop of ownerPropsToSync) {
+        try {
+          await syncPropertyOwnerContactInFirestore(
+            prop.id,
+            updated.id,
+            {
+              name: trimmedName || prop.ownerName,
+              phone: trimmedPhone || prop.ownerPhone,
+              whatsappNumber: trimmedWhatsapp || prop.ownerWhatsappNumber || prop.ownerPhone
+            },
+            myListingTokens[prop.id]
+          );
+        } catch (err) {
+          console.warn(`Failed to sync owner contact to property ${prop.id} in Firestore:`, err);
+        }
       }
     }
 
@@ -1277,11 +1413,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<SavePropertyResult> => {
     try {
       const tokenToUse = editToken || myListingTokens[property.id];
+      const currentPhoneDigits = normalizeOwnerPhoneDigits(currentOwner.phone);
+      const propPhoneDigits = normalizeOwnerPhoneDigits(property.ownerPhone);
+      const isDifferentOwnerPhone = Boolean(
+        currentPhoneDigits && propPhoneDigits && currentPhoneDigits !== propPhoneDigits
+      );
+
+      let resolvedOwnerId = property.ownerId;
+      if (!isValidUniqueOwnerId(resolvedOwnerId)) {
+        if (!isAdminAuthenticated && !isDifferentOwnerPhone && isValidUniqueOwnerId(currentOwner.id)) {
+          resolvedOwnerId = currentOwner.id;
+        } else {
+          resolvedOwnerId = generateUniqueOwnerId();
+        }
+      }
+
       const propertyWithLinkedOwner: PropertyListing = {
         ...property,
-        ownerId: (property.ownerId && property.ownerId !== 'owner_unauthenticated')
-          ? property.ownerId
-          : (currentOwner.id || property.ownerId)
+        ownerId: resolvedOwnerId,
+        ownerName: property.ownerName ? property.ownerName.trim() : '',
+        ownerPhone: property.ownerPhone ? property.ownerPhone.trim() : '',
+        ownerWhatsappNumber: (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || ''
       };
       const result = await savePropertyToFirestore(propertyWithLinkedOwner, isEdit, tokenToUse);
       if (result.editToken) {
@@ -1304,30 +1456,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...current,
               hasPendingEdit: true,
               pendingEdit: {
-                ...property,
+                ...propertyWithLinkedOwner,
                 submittedAt: Date.now()
               },
               updatedAt: Date.now()
             };
           } else {
-            updated[existingIdx] = {
+            const directUpdated: PropertyListing = {
               ...current,
-              ...property,
+              ...propertyWithLinkedOwner,
               id: result.propertyId,
               status: isEdit ? (current.status || 'pending') : 'pending',
               hasPendingEdit: false,
               pendingEdit: undefined,
               updatedAt: Date.now()
             };
+            updated[existingIdx] = directUpdated;
+            saveSubmittedProperty(directUpdated);
           }
           return updated;
         }
         const newListing: PropertyListing = {
-          ...property,
+          ...propertyWithLinkedOwner,
           id: result.propertyId,
           status: 'pending',
-          occupancyStatus: property.occupancyStatus || 'AVAILABLE',
-          createdAt: property.createdAt || Date.now(),
+          occupancyStatus: propertyWithLinkedOwner.occupancyStatus || 'AVAILABLE',
+          createdAt: propertyWithLinkedOwner.createdAt || Date.now(),
           updatedAt: Date.now()
         };
         saveSubmittedProperty(newListing);
@@ -2244,6 +2398,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAdminUser(null);
     setCurrentOwner(DEFAULT_OWNER_PROFILE);
     localStorage.removeItem('gondia_stay_current_owner');
+    localStorage.removeItem('gondia_stay_persistent_owner');
     showToast("Signed out of Landlord Console.");
   };
 

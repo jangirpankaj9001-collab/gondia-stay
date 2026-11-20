@@ -71,7 +71,7 @@ import {
   getFileFingerprint,
   getCachedPhotoUrl
 } from './firebase/storageService';
-import { fetchPropertyDirect, fetchPropertyByEditToken } from './firebase/propertiesService';
+import { fetchPropertyDirect, fetchPropertyByEditToken, generateUniqueOwnerId, isValidUniqueOwnerId, normalizeOwnerPhoneDigits } from './firebase/propertiesService';
 import { fetchServiceByEditToken } from './firebase/servicesService';
 import { useApp, useBackHandler, isAuthorizedAdminEmail } from './context/AppContext';
 import { Header } from './components/Header';
@@ -196,7 +196,7 @@ export const App: React.FC = () => {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyListing | null>(null);
   const [currentEditToken, setCurrentEditToken] = useState<string | null>(null);
-  const [newlyCreatedLinkInfo, setNewlyCreatedLinkInfo] = useState<{ propertyId: string; editToken: string; editUrl: string; title: string } | null>(null);
+  const [newlyCreatedLinkInfo, setNewlyCreatedLinkInfo] = useState<{ propertyId: string; editToken: string; editUrl: string; title: string; ownerName?: string; ownerPhone?: string } | null>(null);
   const [showPrivateLinkModal, setShowPrivateLinkModal] = useState<boolean>(false);
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
   const [copiedPropId, setCopiedPropId] = useState<string | null>(null);
@@ -1181,7 +1181,7 @@ export const App: React.FC = () => {
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
-          ownerId: editingProperty.ownerId || 'owner_unauthenticated',
+          ownerId: isValidUniqueOwnerId(editingProperty.ownerId) ? editingProperty.ownerId : generateUniqueOwnerId(),
           ownerEmail: editingProperty.ownerEmail || (formData.ownerPhone ? `${formData.ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''),
           ownerName: formData.ownerName.trim(),
           ownerPhone: formData.ownerPhone.trim(),
@@ -1196,7 +1196,16 @@ export const App: React.FC = () => {
         setCurrentEditToken(null);
         setOwnerSubTab('listings');
       } else {
-        // Zero-login submission: Generates private edit link
+        // Zero-login submission: Generates private edit link with isolated owner identity
+        const currentPhoneDigits = normalizeOwnerPhoneDigits(currentOwner.phone);
+        const submittedPhoneDigits = normalizeOwnerPhoneDigits(formData.ownerPhone);
+        const isDifferentOwnerPhone = Boolean(
+          currentPhoneDigits && submittedPhoneDigits && currentPhoneDigits !== submittedPhoneDigits
+        );
+        const resolvedOwnerId = (!isAdminAuthenticated && !isDifferentOwnerPhone && isValidUniqueOwnerId(currentOwner.id))
+          ? currentOwner.id
+          : generateUniqueOwnerId();
+
         const newProp: PropertyListing = {
           id: `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           title: formData.title.trim(),
@@ -1216,7 +1225,7 @@ export const App: React.FC = () => {
           availableFrom: formData.availableFrom,
           amenities: formData.amenities,
           photos: finalPhotoUrls,
-          ownerId: 'owner_unauthenticated',
+          ownerId: resolvedOwnerId,
           ownerEmail: formData.ownerPhone ? `${formData.ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '',
           ownerName: formData.ownerName.trim(),
           ownerPhone: formData.ownerPhone.trim(),
@@ -1233,7 +1242,9 @@ export const App: React.FC = () => {
           propertyId: res.propertyId,
           editToken: res.editToken,
           editUrl: res.editUrl,
-          title: formData.title.trim()
+          title: formData.title.trim(),
+          ownerName: formData.ownerName.trim(),
+          ownerPhone: formData.ownerPhone.trim()
         });
         setShowPrivateLinkModal(true);
       }
@@ -4656,10 +4667,10 @@ export const App: React.FC = () => {
 
               <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-600">
                 <span>
-                  Landlord: <strong className="font-bold text-slate-800">{formData.ownerName || currentOwner.name || 'Landlord'}</strong>
+                  Landlord: <strong className="font-bold text-slate-800">{newlyCreatedLinkInfo.ownerName || formData.ownerName || 'Landlord'}</strong>
                 </span>
                 <span className="font-semibold text-slate-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                  {formData.ownerPhone || currentOwner.phone}
+                  {newlyCreatedLinkInfo.ownerPhone || formData.ownerPhone || ''}
                 </span>
               </div>
             </div>

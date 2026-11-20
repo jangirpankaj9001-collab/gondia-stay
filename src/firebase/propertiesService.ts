@@ -64,6 +64,103 @@ export const generateUniqueOwnerId = (): string => {
   }
 };
 
+export interface SyncedOwnerRecord extends OwnerProfile {
+  updatedAt?: number;
+}
+
+const GENERIC_OWNER_IDS = new Set(['owner_unauthenticated', 'owner_gondia_primary']);
+
+/**
+ * Returns true only for a real, unique owner identifier (never empty or generic placeholder).
+ */
+export const isValidUniqueOwnerId = (ownerId?: string | null): boolean => {
+  if (!ownerId || typeof ownerId !== 'string') return false;
+  const trimmed = ownerId.trim();
+  return trimmed.length > 0 && !GENERIC_OWNER_IDS.has(trimmed);
+};
+
+/**
+ * Normalizes a phone string to its last 10 digits for reliable owner identity comparison.
+ */
+export const normalizeOwnerPhoneDigits = (phone?: string | null): string => {
+  if (!phone || typeof phone !== 'string') return '';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+};
+
+/**
+ * Synchronizes a single property with its respective owner's Firestore record strictly by exact ownerId.
+ * Never mixes owner details across different owners or generic owner IDs.
+ */
+export const synchronizePropertyWithOwner = (
+  property: PropertyListing,
+  ownersById: Record<string, SyncedOwnerRecord>
+): PropertyListing => {
+  if (!property || !isValidUniqueOwnerId(property.ownerId)) {
+    return property;
+  }
+
+  const owner = ownersById[property.ownerId];
+  if (!owner || !isValidUniqueOwnerId(owner.id) || owner.id !== property.ownerId) {
+    return property;
+  }
+
+  const ownerName = owner.name?.trim() || '';
+  const ownerPhone = owner.phone?.trim() || '';
+  const ownerWhatsapp = (owner.whatsappNumber || owner.phone)?.trim() || '';
+
+  if (!ownerName && !ownerPhone && !ownerWhatsapp) {
+    return property;
+  }
+
+  const ownerUpdatedAt = typeof owner.updatedAt === 'number' ? owner.updatedAt : 0;
+  const propUpdatedAt = typeof property.updatedAt === 'number'
+    ? property.updatedAt
+    : (typeof property.createdAt === 'number' ? property.createdAt : 0);
+  const isOwnerNewerOrEqual = ownerUpdatedAt > 0 && ownerUpdatedAt >= propUpdatedAt;
+
+  const currentName = property.ownerName?.trim() || '';
+  const currentPhone = property.ownerPhone?.trim() || '';
+  const currentWhatsapp = (property.ownerWhatsappNumber || property.ownerPhone)?.trim() || '';
+
+  const nextOwnerName = (!currentName || isOwnerNewerOrEqual) && ownerName
+    ? ownerName
+    : property.ownerName;
+  const nextOwnerPhone = (!currentPhone || isOwnerNewerOrEqual) && ownerPhone
+    ? ownerPhone
+    : property.ownerPhone;
+  const nextOwnerWhatsapp = (!currentWhatsapp || isOwnerNewerOrEqual) && ownerWhatsapp
+    ? ownerWhatsapp
+    : (property.ownerWhatsappNumber || nextOwnerPhone);
+
+  if (
+    nextOwnerName === property.ownerName &&
+    nextOwnerPhone === property.ownerPhone &&
+    nextOwnerWhatsapp === property.ownerWhatsappNumber
+  ) {
+    return property;
+  }
+
+  return {
+    ...property,
+    ownerName: nextOwnerName,
+    ownerPhone: nextOwnerPhone,
+    ownerWhatsappNumber: nextOwnerWhatsapp
+  };
+};
+
+/**
+ * Synchronizes an array of properties with their respective owner records strictly by ownerId.
+ */
+export const synchronizePropertiesWithOwners = (
+  properties: PropertyListing[],
+  ownersById: Record<string, SyncedOwnerRecord>
+): PropertyListing[] => {
+  if (!ownersById || Object.keys(ownersById).length === 0) return properties;
+  return properties.map(prop => synchronizePropertyWithOwner(prop, ownersById));
+};
+
 /**
  * Server-side device token validation:
  * Validates the token entropy format and checks against registered tokens in Firestore.
@@ -417,7 +514,7 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: Array.isArray(property.photos) && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: property.ownerId || 'owner_unauthenticated',
+      ownerId: isValidUniqueOwnerId(property.ownerId) ? property.ownerId : generateUniqueOwnerId(),
       ...(property.ownerEmail ? { ownerEmail: property.ownerEmail } : {}),
       ownerName: property.ownerName ? property.ownerName.trim() : '',
       ownerPhone: property.ownerPhone ? property.ownerPhone.trim() : '',
@@ -445,6 +542,17 @@ export const savePropertyToFirestore = async (
           hasPendingEdit: false,
           pendingEdit: null
         });
+        // Best-effort sync of updated owner & listing details to private edit token fallback
+        try {
+          const secretSnap = await getDoc(doc(db, PROPERTY_SECRETS_COLLECTION, property.id));
+          const resolvedToken = secretSnap.exists() ? secretSnap.data()?.editToken : editToken;
+          if (resolvedToken && typeof resolvedToken === 'string') {
+            await setDoc(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, resolvedToken), {
+              propertyData: { ...updatePayload, hasPendingEdit: false, pendingEdit: null },
+              updatedAt: Date.now()
+            }, { merge: true });
+          }
+        } catch {}
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         return {
           propertyId: property.id,
@@ -453,13 +561,63 @@ export const savePropertyToFirestore = async (
         };
       }
 
+      // Check if this property is currently approved in Firestore and verify authenticated owner if signed in
+      let existingData: Record<string, any> | null = null;
+      try {
+        const existingSnap = await getDoc(docRef);
+        if (existingSnap.exists()) {
+          existingData = existingSnap.data();
+        }
+      } catch {
+        // Pending/rejected docs cannot be read publicly without auth; token batch handles below
+      }
+
+      const isCurrentlyApproved = Boolean(
+        existingData && (existingData.status || '').toLowerCase() === 'approved'
+      );
+
+      // Preserve original valid ownerId on the document so edits never reassign ownership to another owner
+      if (existingData && isValidUniqueOwnerId(existingData.ownerId)) {
+        updatePayload.ownerId = existingData.ownerId;
+      }
+
+      const isAuthOwner = Boolean(
+        auth?.currentUser &&
+        existingData &&
+        (
+          (existingData.ownerId && existingData.ownerId === auth.currentUser.uid) ||
+          (existingData.ownerEmail && auth.currentUser.email && existingData.ownerEmail.toLowerCase() === auth.currentUser.email.toLowerCase())
+        )
+      );
+
+      if (!editToken && isAuthOwner) {
+        if (isCurrentlyApproved) {
+          await updateDoc(docRef, {
+            hasPendingEdit: true,
+            pendingEdit: {
+              ...updatePayload,
+              submittedAt: Date.now()
+            },
+            updatedAt: Date.now()
+          });
+        } else {
+          await updateDoc(docRef, {
+            ...updatePayload,
+            status: 'pending',
+            hasPendingEdit: false,
+            pendingEdit: null
+          });
+        }
+        return {
+          propertyId: property.id,
+          editToken: '',
+          editUrl: ''
+        };
+      }
+
       if (!editToken) {
         throw new Error('Private edit link token required to update this listing.');
       }
-
-      // Check if this property is currently approved in Firestore
-      const existingSnap = await getDoc(docRef);
-      const isCurrentlyApproved = existingSnap.exists() && (existingSnap.data()?.status || '').toLowerCase() === 'approved';
 
       // Secure batch update: updates property details while verifying editToken in property_secrets
       const batch = writeBatch(db);
@@ -485,13 +643,11 @@ export const savePropertyToFirestore = async (
       }
       
       // Request-specific owner proof: update lastActionAt on property_edit_tokens/{editToken}.
-      // property_secrets remains strictly immutable. Only the caller who possesses the secret editToken
-      // can address its document ID in the write batch.
+      // Strictly touches only propertyData, lastActionAt, and updatedAt (matching firestore.rules).
       const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken);
       batch.set(tokenRef, {
         propertyId: property.id,
-        propertyData: isCurrentlyApproved ? { ...(existingSnap.data() || {}), pendingEdit: updatePayload } : updatePayload,
-        status: isCurrentlyApproved ? 'approved' : 'pending',
+        propertyData: isCurrentlyApproved ? { ...(existingData || {}), pendingEdit: updatePayload } : updatePayload,
         lastActionAt: Date.now(),
         updatedAt: Date.now()
       }, { merge: true });
@@ -534,11 +690,11 @@ export const savePropertyToFirestore = async (
       availableFrom: property.availableFrom || 'Immediate',
       amenities: Array.isArray(property.amenities) ? property.amenities : [],
       photos: property.photos && property.photos.length > 0 ? property.photos : ['/hero_gondia_stays.jpg'],
-      ownerId: property.ownerId && property.ownerId !== 'owner_unauthenticated'
+      ownerId: isValidUniqueOwnerId(property.ownerId)
         ? property.ownerId
         : (auth?.currentUser && !isAuthorizedAdminEmail(auth.currentUser.email)
             ? auth.currentUser.uid
-            : `owner_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`),
+            : generateUniqueOwnerId()),
       ...(property.ownerEmail ? { ownerEmail: property.ownerEmail } : (auth?.currentUser?.email && !isAuthorizedAdminEmail(auth.currentUser.email) ? { ownerEmail: auth.currentUser.email } : {})),
       ownerName: property.ownerName ? property.ownerName.trim() : '',
       ownerPhone: property.ownerPhone ? property.ownerPhone.trim() : '',
@@ -929,15 +1085,33 @@ export const moderatePropertyEditInFirestore = async (
 
   if (approve && pendingEdit) {
     const { submittedAt, ...fieldsToMerge } = pendingEdit;
-    await updateDoc(docRef, {
+    const preservedOwnerId = isValidUniqueOwnerId(data.ownerId)
+      ? data.ownerId
+      : (isValidUniqueOwnerId(fieldsToMerge.ownerId) ? fieldsToMerge.ownerId : generateUniqueOwnerId());
+    const mergedPayload = {
       ...fieldsToMerge,
+      ownerId: preservedOwnerId,
       status: 'approved',
       hasPendingEdit: false,
       pendingEdit: null,
       moderatedAt: Date.now(),
       moderatedBy: moderatorId,
       updatedAt: Date.now()
-    });
+    };
+    await updateDoc(docRef, mergedPayload);
+
+    // Sync approved owner & property details into private edit token fallback
+    try {
+      const secretSnap = await getDoc(doc(db, PROPERTY_SECRETS_COLLECTION, propertyId));
+      const token = secretSnap.exists() ? secretSnap.data()?.editToken : null;
+      if (token && typeof token === 'string') {
+        await setDoc(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, token), {
+          status: 'approved',
+          propertyData: { ...data, ...mergedPayload },
+          updatedAt: Date.now()
+        }, { merge: true });
+      }
+    } catch {}
   } else {
     // Reject proposed edit: discard pendingEdit, live approved listing remains completely intact
     await updateDoc(docRef, {
@@ -1165,13 +1339,152 @@ export const deletePropertyFromFirestore = async (
 };
 
 /**
- * Saves owner profile in Cloud Firestore (optional).
+ * Synchronizes an owner's updated name, phone, and WhatsApp number directly to their own
+ * property document in Firestore. Strictly verifies ownerId match so owner details are never mixed.
+ * Supports verified admin, authenticated property owner, and zero-login private edit token batch.
+ */
+export const syncPropertyOwnerContactInFirestore = async (
+  propertyId: string,
+  expectedOwnerId: string,
+  ownerContact: { name: string; phone: string; whatsappNumber?: string },
+  editToken?: string
+): Promise<boolean> => {
+  if (!db || !isFirebaseConfigured()) return false;
+  if (!propertyId || !isValidUniqueOwnerId(expectedOwnerId)) return false;
+
+  const trimmedName = (ownerContact.name || '').trim();
+  const trimmedPhone = (ownerContact.phone || '').trim();
+  const trimmedWhatsapp = (ownerContact.whatsappNumber || trimmedPhone).trim();
+
+  if (!trimmedName || trimmedPhone.length < 5) return false;
+
+  const now = Date.now();
+  const contactPayload = {
+    ownerName: trimmedName,
+    ownerPhone: trimmedPhone,
+    ownerWhatsappNumber: trimmedWhatsapp,
+    updatedAt: now
+  };
+
+  const docRef = doc(db, PROPERTIES_COLLECTION, propertyId);
+  let existingData: Record<string, any> | null = null;
+
+  try {
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      existingData = snap.data();
+    }
+  } catch {
+    // Pending/rejected listing may not be publicly readable without auth; check token doc below
+  }
+
+  // Strict owner isolation: never overwrite a property that belongs to a different ownerId
+  if (existingData && isValidUniqueOwnerId(existingData.ownerId) && existingData.ownerId !== expectedOwnerId) {
+    console.warn(`[GondiaStay] Skipped owner contact sync for ${propertyId}: ownerId mismatch.`);
+    return false;
+  }
+
+  const isUserAdmin = Boolean(
+    auth?.currentUser && isAuthorizedAdminEmail(auth.currentUser.email)
+  );
+
+  // 1. Verified Admin path
+  if (isUserAdmin) {
+    await updateDoc(docRef, contactPayload);
+    if (editToken && typeof editToken === 'string') {
+      try {
+        await setDoc(doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken.trim()), {
+          propertyData: { ...(existingData || {}), ...contactPayload },
+          updatedAt: now
+        }, { merge: true });
+      } catch {}
+    }
+    return true;
+  }
+
+  // 2. Authenticated Owner path (matches firestore.rules isPropertyOwner())
+  const isAuthOwner = Boolean(
+    auth?.currentUser &&
+    (
+      auth.currentUser.uid === expectedOwnerId ||
+      (existingData?.ownerId && existingData.ownerId === auth.currentUser.uid) ||
+      (existingData?.ownerEmail && auth.currentUser.email && existingData.ownerEmail.toLowerCase() === auth.currentUser.email.toLowerCase())
+    )
+  );
+
+  if (isAuthOwner) {
+    await updateDoc(docRef, contactPayload);
+    if (editToken && typeof editToken === 'string') {
+      try {
+        const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, editToken.trim());
+        await setDoc(tokenRef, {
+          propertyId,
+          propertyData: { ...(existingData || {}), ...contactPayload },
+          lastActionAt: now,
+          updatedAt: now
+        }, { merge: true });
+      } catch {}
+    }
+    return true;
+  }
+
+  // 3. Zero-login private edit token atomic batch (matches firestore.rules hasValidPropertyEditToken())
+  if (editToken && typeof editToken === 'string' && editToken.trim().length >= 24) {
+    const trimmedToken = editToken.trim();
+    const tokenRef = doc(db, PROPERTY_EDIT_TOKENS_COLLECTION, trimmedToken);
+
+    let tokenExistingPropertyData: Record<string, any> = existingData || {};
+    try {
+      const tokenSnap = await getDoc(tokenRef);
+      if (tokenSnap.exists()) {
+        const tData = tokenSnap.data();
+        if (tData?.propertyId && tData.propertyId !== propertyId) {
+          return false;
+        }
+        const tokenPropOwnerId = tData?.propertyData?.ownerId;
+        if (isValidUniqueOwnerId(tokenPropOwnerId) && tokenPropOwnerId !== expectedOwnerId) {
+          return false;
+        }
+        if (tData?.propertyData && typeof tData.propertyData === 'object') {
+          tokenExistingPropertyData = { ...tData.propertyData, ...(existingData || {}) };
+        }
+      }
+    } catch {}
+
+    const batch = writeBatch(db);
+    batch.update(docRef, contactPayload);
+    batch.set(tokenRef, {
+      propertyId,
+      propertyData: {
+        ...tokenExistingPropertyData,
+        ...contactPayload
+      },
+      lastActionAt: now,
+      updatedAt: now
+    }, { merge: true });
+    await batch.commit();
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Saves owner profile in Cloud Firestore when authorized (matching authenticated owner or verified admin).
  */
 export const saveOwnerProfileToFirestore = async (profile: OwnerProfile): Promise<void> => {
   if (!db || !isFirebaseConfigured()) return;
   try {
     const ownerId = profile.id || (auth?.currentUser?.uid ? auth.currentUser.uid : '');
-    if (!ownerId) return;
+    if (!isValidUniqueOwnerId(ownerId)) return;
+
+    // Respect firestore.rules /owners/{ownerId} write policy: matching authenticated UID or verified admin
+    const canWriteOwnerDoc = Boolean(
+      auth?.currentUser &&
+      (auth.currentUser.uid === ownerId || isAuthorizedAdminEmail(auth.currentUser.email))
+    );
+    if (!canWriteOwnerDoc) return;
+
     const ownerRef = doc(db, OWNERS_COLLECTION, ownerId);
     await setDoc(ownerRef, {
       id: ownerId,
@@ -1187,13 +1500,49 @@ export const saveOwnerProfileToFirestore = async (profile: OwnerProfile): Promis
 };
 
 /**
+ * Real-time listener for all owner profiles in Firestore (/owners collection).
+ * Allows every property to stay automatically synchronized with its respective ownerId's name & phone.
+ */
+export const subscribeToFirestoreOwners = (
+  onUpdate: (ownersById: Record<string, SyncedOwnerRecord>) => void
+): Unsubscribe | null => {
+  if (!db || !isFirebaseConfigured()) return null;
+  try {
+    const ownersRef = collection(db, OWNERS_COLLECTION);
+    return onSnapshot(ownersRef, (snapshot) => {
+      const ownersMap: Record<string, SyncedOwnerRecord> = {};
+      snapshot.forEach((docSnap) => {
+        if (!isValidUniqueOwnerId(docSnap.id)) return;
+        const data = docSnap.data();
+        ownersMap[docSnap.id] = {
+          id: docSnap.id,
+          name: typeof data.name === 'string' ? data.name.trim() : '',
+          phone: typeof data.phone === 'string' ? data.phone.trim() : '',
+          whatsappNumber: typeof data.whatsappNumber === 'string'
+            ? data.whatsappNumber.trim()
+            : (typeof data.phone === 'string' ? data.phone.trim() : ''),
+          email: typeof data.email === 'string' ? data.email : '',
+          updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : 0
+        };
+      });
+      onUpdate(ownersMap);
+    }, (err) => {
+      console.warn('[GondiaStay] Owners collection snapshot listener notice:', err);
+    });
+  } catch (err) {
+    console.warn('[GondiaStay] Failed to subscribe to owners collection:', err);
+    return null;
+  }
+};
+
+/**
  * Real-time listener for owner profile in Firestore.
  */
 export const subscribeToOwnerProfile = (
   ownerId: string,
   onUpdate: (profile: OwnerProfile) => void
 ): Unsubscribe | null => {
-  if (!db || !isFirebaseConfigured()) return null;
+  if (!db || !isFirebaseConfigured() || !isValidUniqueOwnerId(ownerId)) return null;
   try {
     const ownerRef = doc(db, OWNERS_COLLECTION, ownerId);
     return onSnapshot(ownerRef, (snap) => {

@@ -53,6 +53,11 @@ import {
 import { uploadMultiplePropertyPhotos } from '../firebase/storageService';
 import { isValidIndianMobileNumber } from '../utils/contact';
 import { useApp } from '../context/AppContext';
+import {
+  generateUniqueOwnerId,
+  isValidUniqueOwnerId,
+  normalizeOwnerPhoneDigits
+} from '../firebase/propertiesService';
 
 interface PhotoItem {
   id: string;
@@ -622,10 +627,12 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           amenities,
           description: description.trim(),
           photos: finalPhotoUrls,
-          ownerId: propertyToEdit.ownerId && propertyToEdit.ownerId !== 'owner_unauthenticated'
+          ownerId: isValidUniqueOwnerId(propertyToEdit.ownerId)
             ? propertyToEdit.ownerId
-            : (isRealOwnerLoggedIn && authUser?.uid ? authUser.uid : (propertyToEdit.ownerId || 'owner_unauthenticated')),
-          ownerEmail: propertyToEdit.ownerEmail || (isRealOwnerLoggedIn && authUser?.email ? authUser.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '')),
+            : (!isAdmin && isRealOwnerLoggedIn && authUser?.uid
+                ? authUser.uid
+                : generateUniqueOwnerId()),
+          ownerEmail: propertyToEdit.ownerEmail || (!isAdmin && isRealOwnerLoggedIn && authUser?.email ? authUser.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : '')),
           ownerName: ownerName.trim(),
           ownerPhone: ownerPhone.trim(),
           ownerWhatsappNumber: (ownerWhatsappNumber || ownerPhone).trim(),
@@ -663,7 +670,15 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           ownerName: updated.ownerName || '',
           ownerPhone: updated.ownerPhone || ''
         });
-        if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
+        // Only initialize empty currentOwner profile when editing own listing; never mix or overwrite other owners
+        const isOwnEditableListing = Boolean(
+          !isAdmin &&
+          isValidUniqueOwnerId(currentOwner?.id) &&
+          updated.ownerId === currentOwner?.id &&
+          !currentOwner?.name &&
+          !currentOwner?.phone
+        );
+        if (isOwnEditableListing && ownerName.trim() && ownerPhone.trim()) {
           try {
             await updateOwnerProfile({
               name: ownerName.trim(),
@@ -681,15 +696,27 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
           onSuccessToast(propertyToEdit && !isAdmin ? 'Listing updated & submitted for reapproval!' : 'Listing updated successfully!');
         }
       } else {
-        // Create new property listing linked to persistent Owner ID
+        // Create new property listing linked strictly to its respective owner ID (never mixing different owners)
         const isRealOwnerLoggedIn = Boolean(isOwnerAuthenticated && !isAdminAuthenticated);
-        const actualOwnerId = (isRealOwnerLoggedIn && authUser?.uid)
-          ? authUser.uid
-          : (currentOwner?.id ? currentOwner.id : 'owner_unauthenticated');
+        const currentPhoneDigits = normalizeOwnerPhoneDigits(currentOwner?.phone);
+        const submittedPhoneDigits = normalizeOwnerPhoneDigits(ownerPhone);
+        const isDifferentOwnerPhone = Boolean(
+          currentPhoneDigits && submittedPhoneDigits && currentPhoneDigits !== submittedPhoneDigits
+        );
 
-        const actualOwnerEmail = (isRealOwnerLoggedIn && authUser?.email)
+        const actualOwnerId = isAdmin
+          ? generateUniqueOwnerId()
+          : isDifferentOwnerPhone
+            ? generateUniqueOwnerId()
+            : (isRealOwnerLoggedIn && authUser?.uid)
+              ? authUser.uid
+              : (isValidUniqueOwnerId(currentOwner?.id) ? currentOwner.id! : generateUniqueOwnerId());
+
+        const actualOwnerEmail = (!isAdmin && !isDifferentOwnerPhone && isRealOwnerLoggedIn && authUser?.email)
           ? authUser.email
-          : (currentOwner?.email ? currentOwner.email : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''));
+          : (!isAdmin && !isDifferentOwnerPhone && currentOwner?.email
+              ? currentOwner.email
+              : (ownerPhone ? `${ownerPhone.replace(/\D/g, '')}@gondiastay.local` : ''));
 
         const newProp: PropertyListing = {
           id: `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -763,7 +790,7 @@ export const AddPropertyModal: React.FC<AddPropertyModalProps> = ({
         setShowReapprovalPopup(true);
         setIsSuccess(true);
         if (onSuccessToast) onSuccessToast('Property listing submitted for admin approval!');
-        if (!isAdmin && ownerName.trim() && ownerPhone.trim()) {
+        if (!isAdmin && !isDifferentOwnerPhone && actualOwnerId === currentOwner?.id && ownerName.trim() && ownerPhone.trim()) {
           try {
             await updateOwnerProfile({
               name: ownerName.trim(),
